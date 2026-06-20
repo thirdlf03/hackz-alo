@@ -112,6 +112,9 @@ app.post("/api/sessions/:sessionId/clock", async (c) => proxySession(c, "clock",
 app.get("/api/sessions/:sessionId/metrics", async (c) => proxySession(c, "metrics"));
 app.get("/api/sessions/:sessionId/logs", async (c) => proxySession(c, "logs"));
 app.get("/api/sessions/:sessionId/storage", async (c) => proxySession(c, "storage"));
+app.get("/api/sessions/:sessionId/files", async (c) => proxySession(c, "files"));
+app.get("/api/sessions/:sessionId/file", async (c) => proxySession(c, "file"));
+app.put("/api/sessions/:sessionId/file", async (c) => proxySession(c, "file", await c.req.json().catch(() => ({}))));
 app.get("/api/sessions/:sessionId/ws/terminal", async (c) => proxySession(c, "terminal"));
 app.post("/api/sessions/:sessionId/terminal/interrupt", async (c) => proxySession(c, "terminal-interrupt"));
 app.post("/api/sessions/:sessionId/terminal/resize", async (c) =>

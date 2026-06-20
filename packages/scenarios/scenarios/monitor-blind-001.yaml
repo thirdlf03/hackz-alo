@@ -8,7 +8,7 @@ service:
   healthUrl: http://localhost:8080/health
 briefing:
   - メトリクス欠損時はログと直接ヘルスチェックを信頼する。
-  - DevTools とターミナルを併用する。
+  - Editor とターミナルを併用する。
 startup:
   - id: api
     command: PORT=8080 node /workspace/services/unyoh-api/server.mjs

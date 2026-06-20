@@ -382,6 +382,29 @@ button:disabled {
   min-height: calc(100vh - 56px);
 }
 
+.editor-overlay {
+  position: fixed;
+  z-index: 20;
+  resize: none;
+  border: 0;
+  border-radius: 6px;
+  padding: 12px 12px 12px 52px;
+  color: #d1fae5;
+  background: rgba(5, 7, 10, 0.92);
+  caret-color: #d1fae5;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 15px;
+  line-height: 21px;
+  tab-size: 2;
+  white-space: pre;
+  overflow: auto;
+}
+
+.editor-overlay:focus {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 0;
+}
+
 canvas {
   display: block;
   width: min(100vw - 24px, 1760px);

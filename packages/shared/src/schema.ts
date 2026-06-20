@@ -22,7 +22,7 @@ const triggerTypes = new Set([
   "alert_spam",
   "runbook_gaslight"
 ]);
-const navigationPanels = new Set(["metrics", "terminal", "runbook", "slack", "devtools"]);
+const navigationPanels = new Set(["metrics", "terminal", "editor", "runbook", "slack"]);
 const alertSeverities = new Set(["info", "warning", "critical"]);
 const alertSources = new Set(["scenario", "monitor"]);
 const successTypes = new Set([
@@ -161,7 +161,7 @@ export function validateScenarioDefinition(input: unknown): ValidationResult<Sce
       requireNonNegativeInteger(item, "atMs", errors, path);
       requireString(item, "hint", errors, path);
       if (item.panel !== undefined && (typeof item.panel !== "string" || !navigationPanels.has(item.panel))) {
-        errors.push(`${path}.panel must be metrics, terminal, runbook, slack, or devtools`);
+        errors.push(`${path}.panel must be metrics, terminal, editor, runbook, or slack`);
       }
       if (item.suggestedCommand !== undefined && typeof item.suggestedCommand !== "string") {
         errors.push(`${path}.suggestedCommand must be a string`);

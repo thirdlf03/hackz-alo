@@ -23,6 +23,15 @@ export type SessionStorageResponse = {
   entries: Array<{ key: string; value: string }>;
 };
 
+export type SessionFilesResponse = {
+  files: Array<{ path: string; size?: number }>;
+};
+
+export type SessionFileResponse = {
+  path: string;
+  content: string;
+};
+
 export type SessionClockResponse = {
   gameTimeMs: number;
   gameSpeed: number;
@@ -113,6 +122,22 @@ export class ApiClient {
 
   async getSessionStorage(sessionId: string) {
     return this.get<SessionStorageResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/storage`);
+  }
+
+  async listSessionFiles(sessionId: string) {
+    return this.get<SessionFilesResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/files`);
+  }
+
+  async readSessionFile(sessionId: string, path: string) {
+    const params = new URLSearchParams({ path });
+    return this.get<SessionFileResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/file?${params}`);
+  }
+
+  async writeSessionFile(sessionId: string, path: string, content: string) {
+    return this.put<{ path: string; byteLength: number }>(
+      `/api/sessions/${encodeURIComponent(sessionId)}/file`,
+      { path, content }
+    );
   }
 
   async resizeTerminal(sessionId: string, cols: number, rows: number) {
@@ -248,6 +273,14 @@ export class ApiClient {
   private async post<T>(path: string, body: unknown): Promise<T> {
     return this.request<T>(path, {
       method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body)
+    });
+  }
+
+  private async put<T>(path: string, body: unknown): Promise<T> {
+    return this.request<T>(path, {
+      method: "PUT",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body)
     });

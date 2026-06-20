@@ -22,6 +22,16 @@ export function proxySessionTerminal(
   }).terminal(request, options);
 }
 
+export type EditableFileEntry = {
+  path: string;
+  size: number;
+};
+
+type SandboxFileApi = SandboxRuntime & {
+  readFile(path: string): Promise<{ content: string } | string>;
+  writeFile(path: string, content: string): Promise<unknown>;
+};
+
 /**
  * Cloudflare Sandbox 0.12.x PTY (Bun.Terminal) echoes ^C but does not deliver
  * SIGINT to the foreground process group. Send INT to the interactive bash instead.
@@ -129,6 +139,53 @@ export async function fetchSessionStorage(env: Bindings, sessionId: string) {
   } catch {
     return [];
   }
+}
+
+export async function listSessionFiles(env: Bindings, sessionId: string): Promise<EditableFileEntry[]> {
+  const sandbox = getSessionSandbox(env, sessionId);
+  const script = [
+    "const fs=require('fs');const path=require('path');",
+    "const roots=['/workspace/services','/workspace/run'];",
+    "const out=[];",
+    "function walk(dir){",
+    "  if(!fs.existsSync(dir)) return;",
+    "  for(const name of fs.readdirSync(dir)){",
+    "    const file=path.join(dir,name);",
+    "    let stat;",
+    "    try{stat=fs.statSync(file);}catch{continue;}",
+    "    if(stat.isDirectory()){walk(file);continue;}",
+    "    if(!stat.isFile()||stat.size>200000) continue;",
+    "    out.push({path:file,size:stat.size});",
+    "  }",
+    "}",
+    "for(const root of roots) walk(root);",
+    "out.sort((a,b)=>a.path.localeCompare(b.path));",
+    "process.stdout.write(JSON.stringify(out));"
+  ].join("");
+  const result = await sandbox.exec(`node -e ${shellArg(script)}`, { cwd: "/workspace" });
+  if (!result.success || !result.stdout?.trim()) return [];
+  try {
+    const files = JSON.parse(result.stdout) as EditableFileEntry[];
+    return files.filter((file) => isWorkspacePath(file.path) && Number.isFinite(file.size));
+  } catch {
+    return [];
+  }
+}
+
+export async function readSessionFile(env: Bindings, sessionId: string, path: string) {
+  const safePath = normalizeEditableWorkspacePath(path);
+  const sandbox = getSessionSandbox(env, sessionId) as SandboxFileApi;
+  const file = await sandbox.readFile(safePath);
+  const content = typeof file === "string" ? file : file.content;
+  return { path: safePath, content };
+}
+
+export async function writeSessionFile(env: Bindings, sessionId: string, path: string, content: string) {
+  const safePath = normalizeEditableWorkspacePath(path);
+  if (content.length > 200_000) throw new Error("file content is too large");
+  const sandbox = getSessionSandbox(env, sessionId) as SandboxFileApi;
+  await sandbox.writeFile(safePath, content);
+  return { path: safePath, byteLength: new TextEncoder().encode(content).length };
 }
 
 export async function injectFault(
@@ -279,4 +336,17 @@ function shellPathSegment(value: string) {
     throw new Error("invalid process id");
   }
   return value;
+}
+
+function normalizeEditableWorkspacePath(value: string) {
+  if (!isWorkspacePath(value)) throw new Error("path must stay inside /workspace");
+  if (!value.startsWith("/workspace/services/") && !value.startsWith("/workspace/run/")) {
+    throw new Error("editable files must be under /workspace/services or /workspace/run");
+  }
+  if (value.includes("\0") || value.split("/").includes("..")) throw new Error("invalid file path");
+  return value;
+}
+
+function isWorkspacePath(value: string) {
+  return value.startsWith("/workspace/") && !value.includes("\0") && !value.split("/").includes("..");
 }

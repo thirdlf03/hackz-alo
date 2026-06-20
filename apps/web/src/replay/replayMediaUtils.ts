@@ -17,6 +17,7 @@ const timelineEventTypes = new Set([
   "ui_panel_open",
   "runbook_open",
   "file_opened",
+  "file_saved",
   "service_restart",
   "recovery_check",
   "incident_resolved",

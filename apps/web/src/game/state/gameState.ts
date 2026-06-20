@@ -1,4 +1,4 @@
-import type { AlertDefinition, GameRenderState, MetricsSnapshot, ScenarioDefinition, TerminalMirrorState } from "@incident/shared";
+import type { AlertDefinition, EditorPanelState, GameRenderState, MetricsSnapshot, ScenarioDefinition, TerminalMirrorState } from "@incident/shared";
 
 const METRICS_HISTORY_LIMIT = 30;
 const RED_BULL_FLYING_MS = 2800;
@@ -11,13 +11,23 @@ type InitialGameStateOptions = {
   speed?: number;
 };
 
-function defaultDevtools(): NonNullable<GameRenderState["monitors"]["center"]["devtools"]> {
+const DEFAULT_EDITOR_FILES: EditorPanelState["files"] = [
+  { path: "/workspace/services/batch/sales.un" },
+  { path: "/workspace/run/deploy.json" },
+  { path: "/workspace/run/hosts.override" },
+  { path: "/workspace/run/job-queue.jsonl" }
+];
+
+function defaultEditor(): EditorPanelState {
   return {
-    visible: false,
-    tab: "network",
-    networkLines: [],
-    consoleLines: [],
-    storageEntries: []
+    files: DEFAULT_EDITOR_FILES,
+    currentPath: DEFAULT_EDITOR_FILES[0]?.path,
+    content: "",
+    savedContent: "",
+    dirty: false,
+    status: "idle",
+    error: undefined,
+    cursor: { line: 1, column: 1 }
   };
 }
 
@@ -52,8 +62,9 @@ export function createInitialGameState(
         alerts: []
       },
       center: {
+        activeTool: "terminal",
         terminal,
-        devtools: defaultDevtools()
+        editor: defaultEditor()
       },
       right: {
         activePanelTab: "runbook",
@@ -237,29 +248,33 @@ export function setActiveRunbook(state: GameRenderState, scenario: ScenarioDefin
   };
 }
 
-export function toggleDevtools(state: GameRenderState, visible?: boolean): GameRenderState {
-  const devtools = state.monitors.center.devtools ?? defaultDevtools();
+export function setCenterTool(state: GameRenderState, activeTool: GameRenderState["monitors"]["center"]["activeTool"]): GameRenderState {
+  if (state.monitors.center.activeTool === activeTool) return state;
   return {
     ...state,
+    commandInputFocused: activeTool === "terminal" ? state.commandInputFocused : false,
     monitors: {
       ...state.monitors,
       center: {
         ...state.monitors.center,
-        devtools: { ...devtools, visible: visible ?? !devtools.visible }
+        activeTool
       }
     }
   };
 }
 
-export function setDevtoolsTab(state: GameRenderState, tab: NonNullable<GameRenderState["monitors"]["center"]["devtools"]>["tab"]): GameRenderState {
-  const devtools = state.monitors.center.devtools ?? defaultDevtools();
+export function updateEditorPanel(
+  state: GameRenderState,
+  updater: (editor: EditorPanelState) => EditorPanelState
+): GameRenderState {
+  const editor = updater(state.monitors.center.editor);
   return {
     ...state,
     monitors: {
       ...state.monitors,
       center: {
         ...state.monitors.center,
-        devtools: { ...devtools, visible: true, tab }
+        editor
       }
     }
   };

@@ -37,6 +37,9 @@ const RIGHT_PANEL_SECONDARY_TAB_HEIGHT = 40;
 const RIGHT_PANEL_TAB_ROW_GAP = 8;
 const RIGHT_PANEL_COMPOSE_HEIGHT = 44;
 const RIGHT_PANEL_COMPOSE_PADDING = 16;
+const CENTER_TOOL_TAB_WIDTH = 118;
+const CENTER_TOOL_TAB_HEIGHT = 34;
+const CENTER_TOOL_TAB_GAP = 8;
 
 type RightPanelTab = "runbook" | "slack";
 
@@ -106,6 +109,15 @@ export const monitorLayouts = [
 ] as const;
 
 export const expandedMonitorLayout = { x: 260, y: 50, width: 1400, height: 780 } as const;
+
+function monitorContentRegion(monitor: { x: number; y: number; width: number; height: number }) {
+  return {
+    x: monitor.x + 22,
+    y: monitor.y + 64,
+    width: monitor.width - 44,
+    height: monitor.height - 80
+  };
+}
 
 function runbookContentTransform(expandedRunbook: boolean) {
   const monitor = monitorLayouts.find((item) => item.id === "runbook")!;
@@ -181,11 +193,12 @@ export class CanvasRenderer {
         this.withMonitorPose(monitor, () => {
           this.drawMonitor(monitor.x, monitor.y, monitor.width, monitor.height, monitor.title, (content) => {
             if (monitor.id === "metrics") this.drawMetricsPanel(state.monitors.left);
-            else if (monitor.id === "terminal") this.drawTerminal(state, content.width);
+            else if (monitor.id === "terminal") this.drawCenterPanel(state, content.width);
             else this.drawRightPanel(state, scenario);
           });
         });
       }
+      this.drawCenterToolTabs(state);
       this.drawMonitorMagnifyIcons();
       this.drawAlerts(state);
       if (state.warning && state.warning.flashMs > 0) this.drawCommandWarning(state.warning);
@@ -488,7 +501,7 @@ export class CanvasRenderer {
     this.drawMonitorFrame(layout.x, layout.y, layout.width, layout.height, monitor.title, { stand: false });
     this.drawMonitor(layout.x, layout.y, layout.width, layout.height, monitor.title, (content) => {
       if (monitorId === "metrics") this.drawMetricsPanel(state.monitors.left);
-      else if (monitorId === "terminal") this.drawTerminal(state, content.width);
+      else if (monitorId === "terminal") this.drawCenterPanel(state, content.width);
       else this.drawRightPanel(state, scenario);
     });
 
@@ -756,13 +769,15 @@ export class CanvasRenderer {
     this.ctx.fillRect(barX, barY, barWidth * ratio, 6);
   }
 
-  private drawTerminal(state: GameRenderState, contentWidth = terminalContentWidth) {
-    const devtools = state.monitors.center.devtools;
-    if (devtools?.visible) {
-      this.drawDevtoolsPanel(devtools);
+  private drawCenterPanel(state: GameRenderState, contentWidth = terminalContentWidth) {
+    if (state.monitors.center.activeTool === "editor") {
+      this.drawEditorPanel(state.monitors.center.editor, contentWidth);
       return;
     }
+    this.drawTerminal(state, contentWidth);
+  }
 
+  private drawTerminal(state: GameRenderState, contentWidth = terminalContentWidth) {
     const terminal = state.monitors.center.terminal;
     const contentHeight = 540;
     const lineHeight = 22;
@@ -804,6 +819,113 @@ export class CanvasRenderer {
       this.ctx.fillStyle = palette.textTerminal;
       this.ctx.fillRect(cursorX, baseY + cursorLine * lineHeight - 16, Math.max(2, cellWidth * 0.6), 20);
     }
+  }
+
+  private drawEditorPanel(editor: GameRenderState["monitors"]["center"]["editor"], contentWidth = terminalContentWidth) {
+    const headerHeight = 54;
+    this.ctx.fillStyle = palette.bgCardDark;
+    roundRect(this.ctx, 0, 0, contentWidth, headerHeight, 6);
+    this.ctx.fill();
+
+    this.ctx.fillStyle = palette.textMuted;
+    this.ctx.font = monoFont(13);
+    this.ctx.fillText("FILES", 12, 18);
+    this.ctx.fillStyle = editor.dirty ? palette.textWarningFg : editor.status === "error" ? palette.statusCritical : palette.textTerminalMuted;
+    this.ctx.font = uiFont(15, "bold");
+    const status = editor.status === "saving" ? "SAVING" : editor.dirty ? "UNSAVED" : editor.status === "error" ? "ERROR" : "SAVED";
+    this.ctx.fillText(status, contentWidth - 90, 18);
+
+    this.ctx.fillStyle = palette.textPrimary;
+    this.ctx.font = monoFont(16, "bold");
+    const currentPath = editor.currentPath ?? editor.files[0]?.path ?? "/workspace";
+    this.ctx.fillText(shortenPath(currentPath, 54), 12, 42);
+
+    const fileListTop = headerHeight + 12;
+    const fileListWidth = 142;
+    this.ctx.fillStyle = palette.bgPanelDark;
+    roundRect(this.ctx, 0, fileListTop, fileListWidth, 470, 6);
+    this.ctx.fill();
+    this.ctx.font = monoFont(13);
+    let fileY = fileListTop + 24;
+    for (const file of editor.files.slice(0, 14)) {
+      const active = file.path === editor.currentPath;
+      if (active) {
+        this.ctx.fillStyle = palette.bgButtonSecondary;
+        roundRect(this.ctx, 6, fileY - 16, fileListWidth - 12, 24, 4);
+        this.ctx.fill();
+      }
+      this.ctx.fillStyle = active ? palette.textPrimary : palette.textSecondary;
+      this.ctx.fillText(shortenPath(file.path.replace("/workspace/", ""), 18), 12, fileY);
+      fileY += 28;
+    }
+
+    const editorX = fileListWidth + 14;
+    const editorY = fileListTop;
+    const editorWidth = contentWidth - editorX;
+    const editorHeight = 470;
+    this.ctx.fillStyle = palette.bgTerminal;
+    roundRect(this.ctx, editorX, editorY, editorWidth, editorHeight, 6);
+    this.ctx.fill();
+    this.ctx.strokeStyle = editor.status === "error" ? palette.statusCritical : palette.borderDefault;
+    this.ctx.lineWidth = 2;
+    this.ctx.stroke();
+
+    if (editor.status === "loading") {
+      this.ctx.fillStyle = palette.textMuted;
+      this.ctx.font = uiFont(17);
+      this.ctx.fillText("読み込み中...", editorX + 16, editorY + 34);
+      return;
+    }
+    if (editor.status === "error" && editor.error) {
+      this.ctx.fillStyle = palette.statusCritical;
+      this.ctx.font = uiFont(16, "bold");
+      wrapText(this.ctx, editor.error, editorX + 16, editorY + 34, editorWidth - 32, 22, 4);
+    }
+
+    this.ctx.font = monoFont(15);
+    const lineHeight = 21;
+    const lines = editor.content.split("\n");
+    const maxLines = Math.floor((editorHeight - 24) / lineHeight);
+    const cursorLine = Math.max(1, editor.cursor.line);
+    const start = Math.max(0, Math.min(Math.max(0, lines.length - maxLines), cursorLine - maxLines));
+    for (let index = 0; index < Math.min(maxLines, lines.length - start); index += 1) {
+      const lineNumber = start + index + 1;
+      const y = editorY + 24 + index * lineHeight;
+      this.ctx.fillStyle = palette.textMuted;
+      this.ctx.fillText(String(lineNumber).padStart(3, " "), editorX + 10, y);
+      this.ctx.fillStyle = palette.textTerminal;
+      this.ctx.fillText((lines[start + index] ?? "").slice(0, 42), editorX + 52, y);
+    }
+  }
+
+  private drawCenterToolTabs(state: GameRenderState) {
+    const monitor = monitorLayouts.find((item) => item.id === "terminal")!;
+    const tabs = centerToolTabRegions();
+    for (const tab of tabs) {
+      const active = state.monitors.center.activeTool === tab.id;
+      this.ctx.fillStyle = active ? palette.bgButtonPrimary : palette.bgTerminal;
+      roundRect(this.ctx, tab.x, tab.y, tab.width, tab.height, 5);
+      this.ctx.fill();
+      this.ctx.strokeStyle = active ? palette.borderFocus : palette.borderMuted;
+      this.ctx.lineWidth = 2;
+      this.ctx.stroke();
+      this.ctx.fillStyle = active ? palette.textPrimary : palette.textLink;
+      this.ctx.font = monoFont(18);
+      centeredText(this.ctx, tab.label, tab.x, tab.y + 1, tab.width, tab.height);
+    }
+    const editor = state.monitors.center.editor;
+    if (editor.dirty) {
+      const editorTab = tabs.find((item) => item.id === "editor");
+      if (editorTab) {
+        this.ctx.fillStyle = palette.statusCritical;
+        this.ctx.beginPath();
+        this.ctx.arc(editorTab.x + editorTab.width - 10, editorTab.y + 9, 5, 0, Math.PI * 2);
+        this.ctx.fill();
+      }
+    }
+    this.ctx.fillStyle = palette.textMuted;
+    this.ctx.font = uiFont(13);
+    this.ctx.fillText("TAB", monitor.x + 22, monitor.y - 2);
   }
 
   private layoutTerminalLines(lines: string[]): TerminalVisualLine[] {
@@ -997,45 +1119,6 @@ export class CanvasRenderer {
     }
   }
 
-  private drawDevtoolsPanel(devtools: NonNullable<GameRenderState["monitors"]["center"]["devtools"]>) {
-    const tabs: Array<{ id: typeof devtools.tab; label: string }> = [
-      { id: "network", label: "Network" },
-      { id: "console", label: "Console" },
-      { id: "storage", label: "Storage" }
-    ];
-    let tabX = 0;
-    for (const tab of tabs) {
-      const active = tab.id === devtools.tab;
-      this.ctx.fillStyle = active ? palette.bgButtonPrimary : palette.bgButtonSecondary;
-      roundRect(this.ctx, tabX, 0, 108, 28, 4);
-      this.ctx.fill();
-      this.ctx.fillStyle = palette.textPrimary;
-      this.ctx.font = uiFont(15);
-      this.ctx.fillText(tab.label, tabX + 10, 18);
-      tabX += 114;
-    }
-
-    this.ctx.fillStyle = palette.textSecondary;
-    this.ctx.font = monoFont(15);
-    let y = 48;
-    if (devtools.tab === "network") {
-      for (const line of devtools.networkLines.slice(-14)) {
-        this.ctx.fillText(`${line.at} ${line.method} ${line.path} ${line.status}`, 0, y);
-        y += 20;
-      }
-    } else if (devtools.tab === "console") {
-      for (const line of devtools.consoleLines.slice(-14)) {
-        this.ctx.fillText(line.slice(0, 68), 0, y);
-        y += 20;
-      }
-    } else {
-      for (const entry of devtools.storageEntries.slice(-10)) {
-        this.ctx.fillText(`${entry.key}: ${entry.value.slice(0, 48)}`, 0, y);
-        y += 22;
-      }
-    }
-  }
-
   private drawCommandWarning(warning: { message: string; flashMs: number }) {
     const opacity = Math.min(1, warning.flashMs / 800);
     const box = { x: 70, y: 118, width: logicalWidth - 140, height: 52 };
@@ -1204,6 +1287,44 @@ export const inputDockRects = {
 
 export const navigationOverlayRect = { x: 720, y: 860, width: 480, height: 120 } as const;
 
+export function centerToolTabRegions() {
+  const monitor = monitorLayouts.find((item) => item.id === "terminal")!;
+  const y = monitor.y + 10;
+  const firstX = monitor.x + 22;
+  return [
+    { id: "terminal" as const, label: "TERMINAL", x: firstX, y, width: CENTER_TOOL_TAB_WIDTH, height: CENTER_TOOL_TAB_HEIGHT },
+    {
+      id: "editor" as const,
+      label: "EDITOR",
+      x: firstX + CENTER_TOOL_TAB_WIDTH + CENTER_TOOL_TAB_GAP,
+      y,
+      width: CENTER_TOOL_TAB_WIDTH,
+      height: CENTER_TOOL_TAB_HEIGHT
+    }
+  ];
+}
+
+export function centerToolAt(x: number, y: number): "terminal" | "editor" | null {
+  for (const tab of centerToolTabRegions()) {
+    if (containsCanvasPoint(tab, x, y)) return tab.id;
+  }
+  return null;
+}
+
+export function centerEditorOverlayRegion(expanded = false) {
+  const monitor = expanded ? expandedMonitorLayout : monitorLayouts.find((item) => item.id === "terminal")!;
+  const content = monitorContentRegion(monitor);
+  const scale = Math.min(content.width / monitorContentWidth, content.height / monitorContentHeight);
+  const editorX = 156;
+  const editorY = 66;
+  return {
+    x: content.x + editorX * scale,
+    y: content.y + editorY * scale,
+    width: (content.width / scale - editorX) * scale,
+    height: 470 * scale
+  };
+}
+
 export const runbookTabRegion = (difficulty: GameRenderState["session"]["difficulty"]) => {
   const layout = rightPanelLayout(difficulty, "runbook", true);
   return {
@@ -1250,10 +1371,6 @@ export const slackSendButtonRegion = (
     height: 28 * compose.height / RIGHT_PANEL_COMPOSE_HEIGHT
   };
 };
-
-export const devtoolsToggleRegion = { x: 712, y: 204, width: 120, height: 28 } as const;
-
-export const devtoolsTabRegion = { x: 712, y: 236, width: 516, height: 28 } as const;
 
 export function monitorMagnifyAt(x: number, y: number): MonitorId | null {
   for (const region of monitorMagnifyRegions) {
@@ -1337,13 +1454,9 @@ export function runbookTabAt(
   return -1;
 }
 
-export function devtoolsTabAt(x: number, y: number): "network" | "console" | "storage" | null {
-  if (!containsCanvasPoint(devtoolsTabRegion, x, y)) return null;
-  const localX = x - (devtoolsTabRegion.x + 22);
-  if (localX < 108) return "network";
-  if (localX < 222) return "console";
-  if (localX < 336) return "storage";
-  return null;
+function shortenPath(path: string, maxChars: number) {
+  if (path.length <= maxChars) return path;
+  return `...${path.slice(-(maxChars - 3))}`;
 }
 
 function containsCanvasPoint(rect: { x: number; y: number; width: number; height: number }, x: number, y: number) {

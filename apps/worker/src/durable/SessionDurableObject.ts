@@ -19,7 +19,10 @@ import {
   fetchSessionStorage,
   injectFault,
   interruptSessionTerminal,
+  listSessionFiles,
   proxySessionTerminal,
+  readSessionFile,
+  writeSessionFile,
   startScenarioSandbox
 } from "../sandbox/runtime.js";
 
@@ -116,6 +119,9 @@ export class SessionDurableObject implements DurableObject {
       if (request.method === "GET" && action === "metrics") return this.metrics();
       if (request.method === "GET" && action === "logs") return this.logs(request);
       if (request.method === "GET" && action === "storage") return this.storage();
+      if (request.method === "GET" && action === "files") return this.files();
+      if (request.method === "GET" && action === "file") return this.readFile(request);
+      if (request.method === "PUT" && action === "file") return this.writeFile(request);
       if (request.method === "GET" && action === "terminal") return this.terminal(request);
       if (request.method === "POST" && action === "terminal-interrupt") return this.terminalInterrupt();
       if (request.method === "GET") return jsonOk(await this.snapshot());
@@ -352,6 +358,32 @@ export class SessionDurableObject implements DurableObject {
     return jsonOk({ entries });
   }
 
+  private async files() {
+    const session = await this.requireRunningSession("files are only available while the session is running");
+    const files = await listSessionFiles(this.env, session.sessionId);
+    await this.touchClientActivity();
+    return jsonOk({ files });
+  }
+
+  private async readFile(request: Request) {
+    const session = await this.requireRunningSession("files are only available while the session is running");
+    const path = new URL(request.url).searchParams.get("path") ?? "";
+    if (!path) throw new HttpError(400, "bad_request", "path is required");
+    const file = await readSessionFile(this.env, session.sessionId, path);
+    await this.touchClientActivity();
+    return jsonOk(file);
+  }
+
+  private async writeFile(request: Request) {
+    const session = await this.requireRunningSession("files are only available while the session is running");
+    const body = (await request.json().catch(() => ({}))) as { path?: unknown; content?: unknown };
+    if (typeof body.path !== "string") throw new HttpError(400, "bad_request", "path is required");
+    if (typeof body.content !== "string") throw new HttpError(400, "bad_request", "content is required");
+    const file = await writeSessionFile(this.env, session.sessionId, body.path, body.content);
+    await this.touchClientActivity();
+    return jsonOk(file);
+  }
+
   private clearMetricsCache() {
     delete this.metricsCache;
     this.metricsCachedAt = 0;
@@ -417,6 +449,12 @@ export class SessionDurableObject implements DurableObject {
   private async requireSession() {
     const session = await this.state.storage.get<StoredSession>("session");
     if (!session) throw new HttpError(409, "session_not_initialized", "session not initialized");
+    return session;
+  }
+
+  private async requireRunningSession(message: string) {
+    const session = await this.requireSession();
+    if (session.status !== "running") throw new HttpError(409, "invalid_state", message);
     return session;
   }
 

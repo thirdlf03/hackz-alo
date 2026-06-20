@@ -61,6 +61,9 @@ export function replayEventSummary(event: ReplayEvent): string {
   if (event.type === "file_opened" && typeof event.payload.path === "string") {
     return `ファイル: ${event.payload.path}`;
   }
+  if (event.type === "file_saved" && typeof event.payload.path === "string") {
+    return `保存: ${event.payload.path}`;
+  }
   if (event.type === "ui_panel_open" && typeof event.payload.panel === "string") {
     return panelOpenSummary(event.payload.panel);
   }
@@ -74,9 +77,8 @@ export function replayEventSummary(event: ReplayEvent): string {
 }
 
 function panelOpenSummary(panel: string) {
-  if (panel === "devtools") return "DevTools を開いた";
+  if (panel === "editor") return "Editor を開いた";
   if (panel === "notifications") return "通知パネルを開いた";
   if (panel === "slack_compose") return "Slack 返信を開始";
-  if (panel.startsWith("devtools.")) return `DevTools: ${panel.slice("devtools.".length)}`;
   return `パネル: ${panel}`;
 }

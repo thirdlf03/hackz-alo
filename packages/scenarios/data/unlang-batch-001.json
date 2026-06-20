@@ -91,10 +91,10 @@
       "panel": "runbook"
     },
     {
-      "id": "nav-devtools",
+      "id": "nav-editor",
       "atMs": 90000,
-      "hint": "DevTools の Console でエラー行を追う",
-      "panel": "devtools"
+      "hint": "Editor で sales.un を開いて壊れた行を直す",
+      "panel": "editor"
     }
   ]
 }

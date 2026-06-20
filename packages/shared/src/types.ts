@@ -32,6 +32,7 @@ export type ReplayEventType =
   | "runbook_open"
   | "slack_message_read"
   | "file_opened"
+  | "file_saved"
   | "service_restart"
   | "recovery_check"
   | "incident_resolved"
@@ -181,7 +182,7 @@ export type ScenarioTrigger =
   | AlertSpamTrigger
   | RunbookGaslightTrigger;
 
-export type NavigationPanel = "metrics" | "terminal" | "runbook" | "slack" | "devtools";
+export type NavigationPanel = "metrics" | "terminal" | "editor" | "runbook" | "slack";
 
 export type NavigationStep = {
   id: string;
@@ -191,14 +192,15 @@ export type NavigationStep = {
   suggestedCommand?: string;
 };
 
-export type DevToolsTab = "network" | "console" | "storage";
-
-export type DevToolsPanelState = {
-  visible: boolean;
-  tab: DevToolsTab;
-  networkLines: Array<{ at: string; method: string; path: string; status: number }>;
-  consoleLines: string[];
-  storageEntries: Array<{ key: string; value: string }>;
+export type EditorPanelState = {
+  files: Array<{ path: string; size?: number }>;
+  currentPath: string | undefined;
+  content: string;
+  savedContent: string;
+  dirty: boolean;
+  status: "idle" | "loading" | "ready" | "saving" | "error";
+  error: string | undefined;
+  cursor: { line: number; column: number };
 };
 
 export type GameNavigationState = {
@@ -302,8 +304,9 @@ export type GameRenderState = {
       alerts: AlertDefinition[];
     };
     center: {
+      activeTool: "terminal" | "editor";
       terminal: TerminalMirrorState;
-      devtools?: DevToolsPanelState;
+      editor: EditorPanelState;
     };
     right: {
       activePanelTab: "runbook" | "slack";

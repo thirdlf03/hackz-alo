@@ -12,16 +12,18 @@ import {
   focusCommandInput,
   mergedSlackMessages,
   setActiveRunbook,
-  setDevtoolsTab,
+  setCenterTool,
   setRightPanelTab,
   setSlackDraft,
   submitPlayerSlackMessage,
   toggleExpandedMonitor,
-  toggleNotificationPanel
+  toggleNotificationPanel,
+  updateEditorPanel
 } from "../game/state/gameState.js";
 import {
   CanvasRenderer,
-  devtoolsTabAt,
+  centerEditorOverlayRegion,
+  centerToolAt,
   expandedMonitorLayout,
   inputDockRects,
   monitorMagnifyAt,
@@ -78,10 +80,10 @@ function readReplayIdFromSearch() {
 export function App() {
   const initialReplayId = readReplayIdFromSearch();
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const editorTextareaRef = useRef<HTMLTextAreaElement>(null);
   const rendererRef = useRef<CanvasRenderer | null>(null);
   const recorderRef = useRef<CanvasRecorder | null>(null);
   const finalizerRef = useRef<RecordingFinalizer | null>(null);
-  const refreshDevtoolsRef = useRef<(() => void) | null>(null);
   const saveRecordingRef = useRef(true);
   const gameStateRef = useRef<GameRenderState | undefined>(undefined);
   const elapsedMsRef = useRef(0);
@@ -401,43 +403,10 @@ export function App() {
         if (!cancelled) patchGameStateRef((current) => ({ ...current, monitors: { ...current.monitors, left: { ...current.monitors.left, metricsSource: "offline" } } }));
       }
     };
-    const pollDevtools = async () => {
-      if (cancelled || document.visibilityState === "hidden") return;
-      if (gameStateRef.current?.monitors.center.devtools?.visible !== true) return;
-      try {
-        const [access, app, batch, storage] = await Promise.all([
-          api.getSessionLogs(session.sessionId, "access"),
-          api.getSessionLogs(session.sessionId, "app"),
-          api.getSessionLogs(session.sessionId, "batch"),
-          api.getSessionStorage(session.sessionId)
-        ]);
-        if (cancelled) return;
-        patchGameStateRef((current) => ({
-          ...current,
-          monitors: {
-            ...current.monitors,
-            center: {
-              ...current.monitors.center,
-              devtools: {
-                visible: current.monitors.center.devtools?.visible ?? false,
-                tab: current.monitors.center.devtools?.tab ?? "network",
-                networkLines: parseAccessLog(access.lines),
-                consoleLines: [...app.lines, ...batch.lines].slice(-20),
-                storageEntries: storage.entries
-              }
-            }
-          }
-        }));
-      } catch (error) {
-        console.error(error);
-      }
-    };
-    refreshDevtoolsRef.current = () => { void pollDevtools(); };
     void poll();
-    timer = window.setInterval(() => { void poll(); void pollDevtools(); }, 5000);
+    timer = window.setInterval(() => { void poll(); }, 5000);
     return () => {
       cancelled = true;
-      refreshDevtoolsRef.current = null;
       window.clearInterval(timer);
     };
   }, [screen, session?.sessionId]);
@@ -541,6 +510,99 @@ export function App() {
     if (screen !== "play") return;
     syncTerminalViewport();
   }, [screen, gameState?.world.expandedMonitor]);
+
+  useEffect(() => {
+    if (screen !== "play" || gameState?.monitors.center.activeTool !== "editor") return;
+    window.setTimeout(() => editorTextareaRef.current?.focus(), 0);
+  }, [screen, gameState?.monitors.center.activeTool, gameState?.monitors.center.editor.currentPath]);
+
+  async function loadEditorFiles(preferredPath?: string) {
+    const activeSession = sessionRef.current;
+    if (!activeSession) return;
+    patchGameStateRef((current) => updateEditorPanel(current, (editor) => ({ ...editor, status: "loading", error: undefined })));
+    try {
+      const response = await api.listSessionFiles(activeSession.sessionId);
+      const files = response.files.length > 0 ? response.files : gameStateRef.current?.monitors.center.editor.files ?? [];
+      const targetPath = preferredPath ?? gameStateRef.current?.monitors.center.editor.currentPath ?? files[0]?.path;
+      patchGameStateRef((current) => updateEditorPanel(current, (editor) => ({ ...editor, files })));
+      if (targetPath) await openEditorFile(targetPath, { skipListRefresh: true });
+      else patchGameStateRef((current) => updateEditorPanel(current, (editor) => ({ ...editor, status: "ready" })));
+    } catch (error) {
+      patchGameStateRef((current) => updateEditorPanel(current, (editor) => ({
+        ...editor,
+        status: "error",
+        error: toErrorMessage(error)
+      })));
+    }
+  }
+
+  async function openEditorFile(path: string, options: { skipListRefresh?: boolean } = {}) {
+    const activeSession = sessionRef.current;
+    if (!activeSession) return;
+    if (!options.skipListRefresh && gameStateRef.current?.monitors.center.editor.files.length === 0) {
+      await loadEditorFiles(path);
+      return;
+    }
+    patchGameStateRef((current) => updateEditorPanel(current, (editor) => ({
+      ...editor,
+      currentPath: path,
+      status: "loading",
+      error: undefined
+    })));
+    try {
+      const file = await api.readSessionFile(activeSession.sessionId, path);
+      patchGameStateRef((current) => updateEditorPanel(current, (editor) => ({
+        ...editor,
+        currentPath: file.path,
+        content: file.content,
+        savedContent: file.content,
+        dirty: false,
+        status: "ready",
+        error: undefined,
+        cursor: { line: 1, column: 1 }
+      })));
+      const replayId = sessionRef.current?.replayId;
+      const emitter = eventEmitterRef.current;
+      if (replayId && emitter) {
+        void emitter.emit({ replayId, type: "file_opened", at: currentGameTimeMs(), payload: { path: file.path } });
+      }
+    } catch (error) {
+      patchGameStateRef((current) => updateEditorPanel(current, (editor) => ({
+        ...editor,
+        status: "error",
+        error: toErrorMessage(error)
+      })));
+    }
+  }
+
+  async function saveEditorFile() {
+    const activeSession = sessionRef.current;
+    const editor = gameStateRef.current?.monitors.center.editor;
+    if (!activeSession || !editor?.currentPath || editor.status === "saving") return;
+    patchGameStateRef((current) => updateEditorPanel(current, (value) => ({ ...value, status: "saving", error: undefined })));
+    try {
+      const saved = await api.writeSessionFile(activeSession.sessionId, editor.currentPath, editor.content);
+      patchGameStateRef((current) => updateEditorPanel(current, (value) => ({
+        ...value,
+        currentPath: saved.path,
+        savedContent: value.content,
+        dirty: false,
+        status: "ready",
+        error: undefined
+      })));
+      const replayId = sessionRef.current?.replayId;
+      const emitter = eventEmitterRef.current;
+      if (replayId && emitter) {
+        void emitter.emit({ replayId, type: "file_saved", at: currentGameTimeMs(), payload: { path: saved.path, byteLength: saved.byteLength } });
+      }
+    } catch (error) {
+      patchGameStateRef((current) => updateEditorPanel(current, (value) => ({
+        ...value,
+        status: "error",
+        error: toErrorMessage(error)
+      })));
+    }
+  }
 
   async function startPlay() {
     if (!session || !scenario || isStarting || !recordingConsent) return;
@@ -664,6 +726,19 @@ export function App() {
         return;
       }
       patchGameStateRef((current) => blurCommandInput(current));
+      const centerTool = centerToolAt(point.x, point.y);
+      if (centerTool) {
+        patchGameStateRef((current) => setCenterTool(current, centerTool));
+        void emitter.emit({ replayId, type: "ui_panel_open", at, payload: { panel: centerTool } });
+        if (centerTool === "editor") void loadEditorFiles();
+        return;
+      }
+      const editorFilePath = editorFileAt(point.x, point.y, gameStateRef.current);
+      if (editorFilePath) {
+        patchGameStateRef((current) => setCenterTool(current, "editor"));
+        void openEditorFile(editorFilePath);
+        return;
+      }
       const activeScenario = scenarioRef.current;
       if (activeScenario) {
         const difficulty = gameStateRef.current?.session.difficulty ?? "beginner";
@@ -730,13 +805,6 @@ export function App() {
         }
         return;
       }
-      const devtoolsTab = devtoolsTabAt(point.x, point.y);
-      if (devtoolsTab) {
-        patchGameStateRef((current) => setDevtoolsTab(current, devtoolsTab));
-        window.setTimeout(() => refreshDevtoolsRef.current?.(), 0);
-        void emitter.emit({ replayId, type: "ui_panel_open", at, payload: { panel: `devtools.${devtoolsTab}` } });
-        return;
-      }
       if (containsPoint(navigationOverlayRect, point.x, point.y) && gameStateRef.current?.navigation.activeStepId) {
         patchGameStateRef((current) => dismissNavigationStep(current, current.navigation.activeStepId!));
         return;
@@ -787,6 +855,7 @@ export function App() {
 
   function handleTerminalKey(event: KeyboardEvent) {
     if (screen !== "play") return;
+    if (gameStateRef.current?.monitors.center.activeTool === "editor") return;
     if (gameStateRef.current?.slackCompose.active) {
       if (event.key === "Escape") {
         event.preventDefault();
@@ -979,6 +1048,43 @@ export function App() {
 
       {(screen === "play" || screen === "result") && (
         <section class="game-layout">
+          {screen === "play" && gameState?.monitors.center.activeTool === "editor" && (
+            <textarea
+              ref={editorTextareaRef}
+              class="editor-overlay"
+              style={editorOverlayStyle(canvasRef.current, gameState.world.expandedMonitor === "terminal")}
+              value={gameState.monitors.center.editor.content}
+              aria-label={`${gameState.monitors.center.editor.currentPath ?? "ファイル"} を編集`}
+              spellcheck={false}
+              disabled={gameState.monitors.center.editor.status === "loading" || gameState.monitors.center.editor.status === "saving"}
+              onInput={(event) => {
+                const target = event.currentTarget as HTMLTextAreaElement;
+                const cursor = editorCursorFromTextarea(target);
+                patchGameStateRef((current) => updateEditorPanel(current, (editor) => ({
+                  ...editor,
+                  content: target.value,
+                  dirty: target.value !== editor.savedContent,
+                  status: editor.status === "error" ? "ready" : editor.status,
+                  cursor
+                })));
+              }}
+              onSelect={(event) => {
+                const target = event.currentTarget as HTMLTextAreaElement;
+                const cursor = editorCursorFromTextarea(target);
+                patchGameStateRef((current) => updateEditorPanel(current, (editor) => ({ ...editor, cursor })), { collectTransitions: false });
+              }}
+              onKeyDown={(event) => {
+                if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
+                  event.preventDefault();
+                  void saveEditorFile();
+                }
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  patchGameStateRef((current) => setCenterTool(current, "terminal"));
+                }
+              }}
+            />
+          )}
           <canvas
             ref={canvasRef}
             width="1920"
@@ -1032,15 +1138,46 @@ function toLogicalCanvasPoint(event: MouseEvent, canvas: HTMLCanvasElement) {
 function containsPoint(rect: { x: number; y: number; width: number; height: number }, x: number, y: number) {
   return x >= rect.x && x <= rect.x + rect.width && y >= rect.y && y <= rect.y + rect.height;
 }
+function editorOverlayStyle(canvas: HTMLCanvasElement | null, expanded: boolean) {
+  if (!canvas) return { display: "none" };
+  const rect = canvas.getBoundingClientRect();
+  const region = centerEditorOverlayRegion(expanded);
+  const scaleX = rect.width / 1920;
+  const scaleY = rect.height / 1080;
+  return {
+    left: `${rect.left + region.x * scaleX}px`,
+    top: `${rect.top + region.y * scaleY}px`,
+    width: `${region.width * scaleX}px`,
+    height: `${region.height * scaleY}px`
+  };
+}
+function editorCursorFromTextarea(textarea: HTMLTextAreaElement) {
+  const before = textarea.value.slice(0, textarea.selectionStart ?? 0);
+  const lines = before.split("\n");
+  return {
+    line: lines.length,
+    column: (lines[lines.length - 1]?.length ?? 0) + 1
+  };
+}
+function editorFileAt(x: number, y: number, state: GameRenderState | undefined) {
+  if (!state || state.monitors.center.activeTool !== "editor") return undefined;
+  if (state.world.expandedMonitor && state.world.expandedMonitor !== "terminal") return undefined;
+  const expanded = state.world.expandedMonitor === "terminal";
+  const monitor = expanded ? expandedMonitorLayout : { x: 690, y: 140, width: 540, height: 620 };
+  const contentX = monitor.x + 22;
+  const contentY = monitor.y + 64;
+  const contentWidth = monitor.width - 44;
+  const contentHeight = monitor.height - 80;
+  const scale = Math.min(contentWidth / 496, contentHeight / 540);
+  const localX = (x - contentX) / scale;
+  const localY = (y - contentY) / scale;
+  const fileListTop = 66;
+  if (localX < 0 || localX > 142 || localY < fileListTop || localY > fileListTop + 470) return undefined;
+  const index = Math.floor((localY - fileListTop - 8) / 28);
+  return state.monitors.center.editor.files[index]?.path;
+}
 function formatDifficulty(difficulty: Difficulty) {
   if (difficulty === "beginner") return "初級";
   if (difficulty === "intermediate") return "中級";
   return "上級";
-}
-function parseAccessLog(lines: string[]) {
-  return lines.slice(-20).map((line) => {
-    const match = line.match(/^(\S+)\s+(\S+)\s+(\S+)\s+(\d{3})$/);
-    if (!match) return { at: "", method: "?", path: line.slice(0, 24), status: 0 };
-    return { at: match[1] ?? "", method: match[2] ?? "", path: match[3] ?? "", status: Number(match[4] ?? 0) };
-  });
 }
