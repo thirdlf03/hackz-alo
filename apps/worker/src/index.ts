@@ -54,7 +54,7 @@ app.post("/api/sessions", async (c) => {
   const user = c.get("user");
   const body = (await c.req.json().catch(() => ({}))) as { scenarioId?: string; difficulty?: string };
   const scenario = resolveRequestedScenario(body);
-  if (!scenario) return c.json(err("bad_request", "difficulty is required"), 400);
+  if (!scenario) return c.json(err("bad_request", "scenarioId or difficulty is required"), 400);
 
   const sessionId = `sess_${crypto.randomUUID().replaceAll("-", "")}`;
   const replayId = `repl_${crypto.randomUUID().replaceAll("-", "")}`;
@@ -119,6 +119,8 @@ app.post("/api/sessions/:sessionId/resolve", async (c) => proxySession(c, "resol
 app.post("/api/sessions/:sessionId/retire", async (c) => proxySession(c, "retire"));
 app.get("/api/sessions/:sessionId/events", async (c) => proxySession(c, "events"));
 app.get("/api/sessions/:sessionId/metrics", async (c) => proxySession(c, "metrics"));
+app.get("/api/sessions/:sessionId/logs", async (c) => proxySession(c, "logs"));
+app.get("/api/sessions/:sessionId/storage", async (c) => proxySession(c, "storage"));
 app.get("/api/sessions/:sessionId/ws/terminal", async (c) => proxySession(c, "terminal"));
 app.post("/api/sessions/:sessionId/terminal/interrupt", async (c) => proxySession(c, "terminal-interrupt"));
 

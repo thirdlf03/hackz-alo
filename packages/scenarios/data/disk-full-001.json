@@ -2,7 +2,7 @@
   "id": "disk-full-001",
   "version": 1,
   "title": "ログが世界を埋め尽くす夜",
-  "difficulty": "intermediate",
+  "difficulty": "beginner",
   "timeLimitMinutes": 10,
   "service": {
     "name": "うん用 API",
@@ -82,5 +82,10 @@
       "from": "先輩",
       "body": "昔は /var/log を見てたけど、今は /workspace/logs かも。"
     }
+  ],
+  "navigationSteps": [
+    { "id": "nav-disk", "atMs": 0, "hint": "Disk メトリクスが上昇していないか見る", "panel": "metrics" },
+    { "id": "nav-df", "atMs": 45000, "hint": "df -h でマウント使用率を確認する", "panel": "terminal", "suggestedCommand": "df -h" },
+    { "id": "nav-runbook-disk", "atMs": 75000, "hint": "Disk Full Runbook を開いて手順を追う", "panel": "runbook" }
   ]
 }

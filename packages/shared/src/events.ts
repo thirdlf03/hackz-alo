@@ -37,5 +37,20 @@ export function replayEventSummary(event: ReplayEvent): string {
   if (event.type === "runbook_open" && typeof event.payload.runbookId === "string") {
     return `runbook: ${event.payload.runbookId}`;
   }
+  if (event.type === "command_detected" && typeof event.payload.command === "string") {
+    return `command: ${event.payload.command}`;
+  }
+  if (event.type === "player_note" && typeof event.payload.body === "string") {
+    return `Slack報告: ${event.payload.body}`;
+  }
+  if (event.type === "recovery_check" && typeof event.payload.command === "string") {
+    return `復旧確認: ${event.payload.command}`;
+  }
+  if (event.type === "service_restart" && typeof event.payload.command === "string") {
+    return `再起動: ${event.payload.command}`;
+  }
+  if (event.type === "incident_resolved") {
+    return "復旧宣言";
+  }
   return event.type;
 }

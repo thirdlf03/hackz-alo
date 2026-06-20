@@ -22,3 +22,12 @@ export function pickSupportedMimeType(
 
 export const recordingChunkMs = 5000;
 export const recordingMultipartPartSize = 8 * 1024 * 1024;
+
+export function splitBufferIntoParts(buffer: Uint8Array, partSize: number): Uint8Array[] {
+  if (partSize <= 0) throw new Error("partSize must be positive");
+  const parts: Uint8Array[] = [];
+  for (let offset = 0; offset < buffer.length; offset += partSize) {
+    parts.push(buffer.slice(offset, Math.min(offset + partSize, buffer.length)));
+  }
+  return parts;
+}

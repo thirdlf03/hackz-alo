@@ -4,8 +4,10 @@ import {
   defaultRecordingMimeTypes,
   pickSupportedMimeType,
   recordingChunkMs,
-  recordingMultipartPartSize
+  recordingMultipartPartSize,
+  splitBufferIntoParts
 } from "../../packages/shared/src/recording.ts";
+import { replayEventSummary, createReplayEvent } from "../../packages/shared/src/events.ts";
 
 test("recording defaults keep chunk cadence and multipart part size separate", () => {
   assert.equal(recordingChunkMs, 5000);
@@ -41,4 +43,25 @@ test("recording MIME selection falls back past unsupported and throwing candidat
 
 test("recording MIME selection returns undefined when no candidate is supported", () => {
   assert.equal(pickSupportedMimeType(() => false, defaultRecordingMimeTypes), undefined);
+});
+
+test("splitBufferIntoParts creates fixed-size parts with a smaller tail", () => {
+  const buffer = new Uint8Array(8 * 1024 * 1024 + 123);
+  const parts = splitBufferIntoParts(buffer, 8 * 1024 * 1024);
+  assert.equal(parts.length, 2);
+  assert.equal(parts[0]?.length, 8 * 1024 * 1024);
+  assert.equal(parts[1]?.length, 123);
+});
+
+test("replayEventSummary formats player slack reports", () => {
+  const summary = replayEventSummary(
+    createReplayEvent({
+      replayId: "repl_test",
+      type: "player_note",
+      at: 1000,
+      actor: "player",
+      payload: { body: "API が落ちています", channel: "slack" }
+    })
+  );
+  assert.equal(summary, "Slack報告: API が落ちています");
 });

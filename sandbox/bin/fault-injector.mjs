@@ -59,6 +59,52 @@ export async function injectFault(fault, args = [], options = {}) {
     return "unlang_batch_failure injected";
   }
 
+  if (fault === "bad_deploy") {
+    const configPath = normalizeWorkspacePath(args[0] ?? path.join(workspace, "run", "deploy.json"), workspace);
+    await writeFile(configPath, JSON.stringify({ healthPath: "/broken-health", deployedAt: new Date().toISOString() }));
+    await writeFile(path.join(workspace, "run", "api.down"), `bad deploy ${new Date().toISOString()}`);
+    await appendFile(path.join(workspace, "logs", "app.log"), "bad deploy marker written\n");
+    return "bad_deploy injected";
+  }
+
+  if (fault === "db_pool_exhaust") {
+    const maxConnections = parseByteCount(args[0] ?? 40);
+    await writeFile(path.join(workspace, "run", "db.pool.exhausted"), String(maxConnections));
+    await appendFile(path.join(workspace, "logs", "app.log"), `db pool exhausted (${maxConnections})\n`);
+    return "db_pool_exhaust injected";
+  }
+
+  if (fault === "memory_leak") {
+    const targetPercent = parseByteCount(args[0] ?? 92);
+    await writeFile(path.join(workspace, "run", "memory.leak"), String(targetPercent));
+    await appendFile(path.join(workspace, "logs", "app.log"), `memory leak simulated at ${targetPercent}%\n`);
+    return "memory_leak injected";
+  }
+
+  if (fault === "dns_misconfig") {
+    const hostsPath = normalizeWorkspacePath(args[0] ?? path.join(workspace, "run", "hosts.override"), workspace);
+    await writeFile(hostsPath, "127.0.0.1 localhost-broken\n");
+    await appendFile(path.join(workspace, "logs", "app.log"), "dns misconfig marker written\n");
+    return "dns_misconfig injected";
+  }
+
+  if (fault === "monitor_blind") {
+    const blindMetrics = JSON.parse(args[0] ?? '["cpu","memory"]');
+    await writeFile(path.join(workspace, "run", "monitor.blind.json"), JSON.stringify({ blindMetrics }));
+    await appendFile(path.join(workspace, "logs", "app.log"), `monitor blind: ${blindMetrics.join(",")}\n`);
+    return "monitor_blind injected";
+  }
+
+  if (fault === "composite_restart_loop") {
+    const diskPath = args[0] ?? path.join(workspace, "logs", "debug.log");
+    const bytes = parseByteCount(args[1] ?? 64 * 1024 * 1024);
+    const processId = args[2] ?? "api";
+    await injectFault("disk_full", [diskPath, String(bytes)], { workspace });
+    await injectFault("process_stop", [processId], { workspace });
+    await appendFile(path.join(workspace, "logs", "app.log"), "composite restart loop injected\n");
+    return "composite_restart_loop injected";
+  }
+
   throw usageError();
 }
 

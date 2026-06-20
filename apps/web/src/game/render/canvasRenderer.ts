@@ -1,4 +1,5 @@
 import type { GameRenderState, MetricsSnapshot, MetricsSource } from "@incident/shared";
+import { mergedSlackMessages } from "../state/gameState.js";
 
 const logicalWidth = 1920;
 const logicalHeight = 1080;
@@ -14,7 +15,7 @@ export class CanvasRenderer {
     this.canvas.height = logicalHeight;
   }
 
-  draw(state: GameRenderState) {
+  draw(state: GameRenderState, scenario?: import("@incident/shared").ScenarioDefinition) {
     const ctx = this.ctx;
     ctx.save();
     try {
@@ -22,10 +23,13 @@ export class CanvasRenderer {
       ctx.clearRect(0, 0, logicalWidth, logicalHeight);
       this.drawRoom();
       this.drawHeader(state);
+      this.drawNotifications(state);
       this.drawMonitor(70, 140, 540, 620, "METRICS", () => this.drawMetricsPanel(state.monitors.left));
       this.drawMonitor(690, 140, 540, 620, "TERMINAL", () => this.drawTerminal(state));
-      this.drawMonitor(1310, 140, 540, 620, "RUNBOOK / SLACK", () => this.drawRightPanel(state));
+      this.drawMonitor(1310, 140, 540, 620, "RUNBOOK / SLACK", () => this.drawRightPanel(state, scenario));
       this.drawAlerts(state);
+      if (state.alertFlashMs > 0) this.drawAlertFlash(state.alertFlashMs);
+      this.drawNavigationOverlay(state, scenario);
       this.drawInputDock(state);
       this.drawClickEffects(state);
       this.drawCursor(state);
@@ -55,13 +59,128 @@ export class CanvasRenderer {
       70,
       108
     );
-    this.ctx.fillStyle = state.recording.status === "recording" ? "#ff3b30" : "#64748b";
+    this.ctx.fillStyle = state.recording.saveEnabled
+      ? state.recording.status === "recording"
+        ? "#ff3b30"
+        : "#64748b"
+      : "#64748b";
     this.ctx.beginPath();
     this.ctx.arc(1770, 70, 12, 0, Math.PI * 2);
     this.ctx.fill();
     this.ctx.fillStyle = "#e6edf3";
     this.ctx.font = "24px system-ui, sans-serif";
-    this.ctx.fillText(formatRecordingStatus(state.recording.status), 1792, 78);
+    this.ctx.fillText(formatRecordingStatus(state.recording.status, state.recording.saveEnabled), 1792, 78);
+  }
+
+  private drawNotifications(state: GameRenderState) {
+    const unread = state.monitors.left.alerts.filter(
+      (alert) => !state.notifications.readAlertIds.includes(alert.id)
+    ).length;
+    const bell = notificationBellRegion;
+    const pulsing = state.notifications.pulseMs > 0;
+
+    if (pulsing) {
+      const ringOpacity = Math.min(0.55, state.notifications.pulseMs / 2400);
+      this.ctx.strokeStyle = `rgba(248, 113, 113, ${ringOpacity})`;
+      this.ctx.lineWidth = 3;
+      this.ctx.beginPath();
+      this.ctx.arc(bell.x + bell.width / 2, bell.y + bell.height / 2, bell.width * 0.62, 0, Math.PI * 2);
+      this.ctx.stroke();
+    }
+
+    this.ctx.fillStyle = pulsing ? "#7f1d1d" : "#1e293b";
+    roundRect(this.ctx, bell.x, bell.y, bell.width, bell.height, 10);
+    this.ctx.fill();
+    this.ctx.strokeStyle = unread > 0 ? "#f87171" : "#475569";
+    this.ctx.lineWidth = 2;
+    this.ctx.stroke();
+
+    this.drawBellGlyph(bell.x + bell.width / 2, bell.y + bell.height / 2 - 2, unread > 0 || pulsing);
+
+    if (unread > 0) {
+      const badge = String(Math.min(unread, 9));
+      const badgeWidth = badge.length > 1 ? 28 : 22;
+      this.ctx.fillStyle = "#ef4444";
+      roundRect(this.ctx, bell.x + bell.width - badgeWidth + 4, bell.y - 4, badgeWidth, 22, 11);
+      this.ctx.fill();
+      this.ctx.fillStyle = "#fff";
+      this.ctx.font = "bold 13px system-ui, sans-serif";
+      this.ctx.fillText(badge, bell.x + bell.width - badgeWidth + 11, bell.y + 12);
+    }
+
+    if (state.notifications.panelOpen) {
+      this.drawNotificationPanel(state);
+    }
+  }
+
+  private drawBellGlyph(cx: number, cy: number, active: boolean) {
+    this.ctx.save();
+    this.ctx.translate(cx, cy);
+    this.ctx.fillStyle = active ? "#fecaca" : "#cbd5e1";
+    this.ctx.strokeStyle = active ? "#fecaca" : "#cbd5e1";
+    this.ctx.lineWidth = 2;
+    this.ctx.beginPath();
+    this.ctx.moveTo(-14, 4);
+    this.ctx.quadraticCurveTo(-14, -16, 0, -18);
+    this.ctx.quadraticCurveTo(14, -16, 14, 4);
+    this.ctx.lineTo(16, 8);
+    this.ctx.lineTo(-16, 8);
+    this.ctx.closePath();
+    this.ctx.fill();
+    this.ctx.beginPath();
+    this.ctx.arc(0, 12, 4, 0, Math.PI * 2);
+    this.ctx.fill();
+    this.ctx.restore();
+  }
+
+  private drawNotificationPanel(state: GameRenderState) {
+    const panel = notificationPanelRegion;
+    this.ctx.fillStyle = "rgba(15, 23, 42, 0.97)";
+    roundRect(this.ctx, panel.x, panel.y, panel.width, panel.height, 12);
+    this.ctx.fill();
+    this.ctx.strokeStyle = "#334155";
+    this.ctx.lineWidth = 2;
+    this.ctx.stroke();
+
+    this.ctx.fillStyle = "#e2e8f0";
+    this.ctx.font = "18px system-ui, sans-serif";
+    this.ctx.fillText("通知", panel.x + 18, panel.y + 30);
+    this.ctx.fillStyle = "#94a3b8";
+    this.ctx.font = "13px system-ui, sans-serif";
+    this.ctx.fillText("障害アラート", panel.x + 18, panel.y + 50);
+
+    const alerts = [...state.monitors.left.alerts].reverse();
+    if (alerts.length === 0) {
+      this.ctx.fillStyle = "#64748b";
+      this.ctx.font = "15px system-ui, sans-serif";
+      this.ctx.fillText("通知はまだありません", panel.x + 18, panel.y + 90);
+      return;
+    }
+
+    let y = panel.y + 72;
+    for (const alert of alerts.slice(0, 6)) {
+      const unread = !state.notifications.readAlertIds.includes(alert.id);
+      const color = severityColor(alert.severity);
+      this.ctx.fillStyle = unread ? "#1e293b" : "#111827";
+      roundRect(this.ctx, panel.x + 12, y, panel.width - 24, 54, 8);
+      this.ctx.fill();
+      if (unread) {
+        this.ctx.strokeStyle = color;
+        this.ctx.lineWidth = 2;
+        this.ctx.stroke();
+      }
+      this.ctx.fillStyle = color;
+      this.ctx.beginPath();
+      this.ctx.arc(panel.x + 26, y + 27, 5, 0, Math.PI * 2);
+      this.ctx.fill();
+      this.ctx.fillStyle = "#f8fafc";
+      this.ctx.font = "bold 12px ui-monospace, SFMono-Regular, Menlo, monospace";
+      this.ctx.fillText(alert.severity.toUpperCase(), panel.x + 40, y + 22);
+      this.ctx.fillStyle = "#cbd5e1";
+      this.ctx.font = "14px system-ui, sans-serif";
+      wrapText(this.ctx, alert.message, panel.x + 40, y + 40, panel.width - 56, 18, 2);
+      y += 62;
+    }
   }
 
   private drawMonitor(x: number, y: number, width: number, height: number, title: string, drawContent: () => void) {
@@ -101,6 +220,10 @@ export class CanvasRenderer {
     const rowStride = cardHeight + cardGap;
 
     this.drawMetricsHealthBanner(health, metricsSource, panelWidth);
+
+    if (left.metricsHistory.length > 1) {
+      this.drawSparkline(0, 44, panelWidth, 28, left.metricsHistory.map((item) => item.http5xxRate * 100), "#f87171");
+    }
 
     const sections: Array<{
       title: string;
@@ -285,7 +408,16 @@ export class CanvasRenderer {
   }
 
   private drawTerminal(state: GameRenderState) {
+    const devtools = state.monitors.center.devtools;
+    if (devtools?.visible) {
+      this.drawDevtoolsPanel(devtools);
+      return;
+    }
+
     const terminal = state.monitors.center.terminal;
+    this.ctx.fillStyle = "#64748b";
+    this.ctx.font = "12px system-ui, sans-serif";
+    this.ctx.fillText("DevTools", 400, 18);
     const contentHeight = 540;
     const lineHeight = 22;
     const maxLines = Math.floor(contentHeight / lineHeight);
@@ -314,21 +446,153 @@ export class CanvasRenderer {
     }
   }
 
-  private drawRightPanel(state: GameRenderState) {
+  private drawRightPanel(state: GameRenderState, scenario?: import("@incident/shared").ScenarioDefinition) {
+    const runbooks = scenario?.runbooks ?? (state.monitors.right.activeRunbook ? [state.monitors.right.activeRunbook] : []);
+    let tabX = 0;
+    for (let index = 0; index < runbooks.length; index += 1) {
+      const runbook = runbooks[index];
+      if (!runbook) continue;
+      const active = index === state.monitors.right.activeRunbookIndex;
+      this.ctx.fillStyle = active ? "#1e293b" : "#0f172a";
+      const width = Math.min(150, this.ctx.measureText(runbook.title).width + 24);
+      roundRect(this.ctx, tabX, 0, width, 28, 4);
+      this.ctx.fill();
+      this.ctx.fillStyle = active ? "#e2e8f0" : "#64748b";
+      this.ctx.font = "13px system-ui, sans-serif";
+      this.ctx.fillText(runbook.title.slice(0, 14), tabX + 8, 18);
+      tabX += width + 6;
+    }
+
     this.ctx.fillStyle = "#e2e8f0";
     this.ctx.font = "22px system-ui, sans-serif";
-    this.ctx.fillText(state.monitors.right.activeRunbook?.title ?? "Runbook", 0, 24);
+    this.ctx.fillText(state.monitors.right.activeRunbook?.title ?? "Runbook", 0, 54);
     this.ctx.font = "17px system-ui, sans-serif";
     const body = state.monitors.right.activeRunbook?.body ?? "";
-    wrapText(this.ctx, body, 0, 58, 470, 24, 13);
+    wrapText(this.ctx, body, 0, 88, 470, 24, 11);
     this.ctx.fillStyle = "#f8fafc";
     this.ctx.font = "20px system-ui, sans-serif";
     this.ctx.fillText("Slack", 0, 390);
     this.ctx.font = "16px system-ui, sans-serif";
     let y = 420;
-    for (const message of state.monitors.right.slackMessages.slice(-4)) {
-      y = wrapText(this.ctx, `${message.from}: ${message.body}`, 0, y, 470, 22, 2) + 8;
+    for (const message of mergedSlackMessages(state).slice(-4)) {
+      const prefix = message.from === "あなた" ? "▸ " : "";
+      const color = message.from === "あなた" ? "#93c5fd" : "#e2e8f0";
+      this.ctx.fillStyle = color;
+      y = wrapText(this.ctx, `${prefix}${message.from}: ${message.body}`, 0, y, 470, 22, 2) + 8;
     }
+
+    this.drawSlackCompose(state);
+  }
+
+  private drawSlackCompose(state: GameRenderState) {
+    const boxY = 484;
+    const active = state.slackCompose.active;
+    this.ctx.fillStyle = active ? "#1e3a5f" : "#0f172a";
+    roundRect(this.ctx, 0, boxY, 470, 44, 6);
+    this.ctx.fill();
+    this.ctx.strokeStyle = active ? "#3b82f6" : "#334155";
+    this.ctx.lineWidth = 2;
+    this.ctx.stroke();
+
+    this.ctx.fillStyle = active ? "#dbeafe" : "#64748b";
+    this.ctx.font = "15px system-ui, sans-serif";
+    const draft = state.slackCompose.draft;
+    const placeholder = "状況を報告... (クリックして入力)";
+    const text = draft.length > 0 ? draft : placeholder;
+    this.ctx.fillText(text.slice(0, 42), 12, boxY + 28);
+
+    if (active && draft.length > 0) {
+      this.ctx.fillStyle = "#22c55e";
+      roundRect(this.ctx, 404, boxY + 8, 56, 28, 4);
+      this.ctx.fill();
+      this.ctx.fillStyle = "#052e16";
+      this.ctx.font = "bold 13px system-ui, sans-serif";
+      this.ctx.fillText("送信", 416, boxY + 27);
+    }
+  }
+
+  private drawDevtoolsPanel(devtools: NonNullable<GameRenderState["monitors"]["center"]["devtools"]>) {
+    const tabs: Array<{ id: typeof devtools.tab; label: string }> = [
+      { id: "network", label: "Network" },
+      { id: "console", label: "Console" },
+      { id: "storage", label: "Storage" }
+    ];
+    let tabX = 0;
+    for (const tab of tabs) {
+      const active = tab.id === devtools.tab;
+      this.ctx.fillStyle = active ? "#1d4ed8" : "#1e293b";
+      roundRect(this.ctx, tabX, 0, 108, 28, 4);
+      this.ctx.fill();
+      this.ctx.fillStyle = "#e2e8f0";
+      this.ctx.font = "13px system-ui, sans-serif";
+      this.ctx.fillText(tab.label, tabX + 10, 18);
+      tabX += 114;
+    }
+
+    this.ctx.fillStyle = "#cbd5e1";
+    this.ctx.font = "15px ui-monospace, SFMono-Regular, Menlo, monospace";
+    let y = 48;
+    if (devtools.tab === "network") {
+      for (const line of devtools.networkLines.slice(-14)) {
+        this.ctx.fillText(`${line.at} ${line.method} ${line.path} ${line.status}`, 0, y);
+        y += 20;
+      }
+    } else if (devtools.tab === "console") {
+      for (const line of devtools.consoleLines.slice(-14)) {
+        this.ctx.fillText(line.slice(0, 68), 0, y);
+        y += 20;
+      }
+    } else {
+      for (const entry of devtools.storageEntries.slice(-10)) {
+        this.ctx.fillText(`${entry.key}: ${entry.value.slice(0, 48)}`, 0, y);
+        y += 22;
+      }
+    }
+  }
+
+  private drawAlertFlash(remainingMs: number) {
+    const opacity = Math.min(0.35, remainingMs / 1200);
+    this.ctx.fillStyle = `rgba(239, 68, 68, ${opacity})`;
+    this.ctx.fillRect(0, 0, logicalWidth, logicalHeight);
+  }
+
+  private drawNavigationOverlay(state: GameRenderState, scenario?: import("@incident/shared").ScenarioDefinition) {
+    const step = scenario?.navigationSteps?.find((item) => item.id === state.navigation.activeStepId);
+    if (!step || state.session.difficulty !== "beginner") return;
+
+    const box = navigationOverlayRect;
+    this.ctx.fillStyle = "rgba(15, 23, 42, 0.94)";
+    roundRect(this.ctx, box.x, box.y, box.width, box.height, 10);
+    this.ctx.fill();
+    this.ctx.strokeStyle = "#38bdf8";
+    this.ctx.lineWidth = 2;
+    this.ctx.stroke();
+    this.ctx.fillStyle = "#38bdf8";
+    this.ctx.font = "14px system-ui, sans-serif";
+    this.ctx.fillText("NAV", box.x + 16, box.y + 28);
+    this.ctx.fillStyle = "#e2e8f0";
+    this.ctx.font = "18px system-ui, sans-serif";
+    wrapText(this.ctx, step.hint, box.x + 16, box.y + 52, box.width - 32, 24, 3);
+    if (step.suggestedCommand) {
+      this.ctx.fillStyle = "#94a3b8";
+      this.ctx.font = "14px ui-monospace, SFMono-Regular, Menlo, monospace";
+      this.ctx.fillText(`例: ${step.suggestedCommand}`, box.x + 16, box.y + box.height - 24);
+    }
+  }
+
+  private drawSparkline(x: number, y: number, width: number, height: number, values: number[], color: string) {
+    if (values.length < 2) return;
+    const max = Math.max(...values, 1);
+    this.ctx.strokeStyle = color;
+    this.ctx.lineWidth = 2;
+    this.ctx.beginPath();
+    values.forEach((value, index) => {
+      const px = x + (index / (values.length - 1)) * width;
+      const py = y + height - (value / max) * height;
+      if (index === 0) this.ctx.moveTo(px, py);
+      else this.ctx.lineTo(px, py);
+    });
+    this.ctx.stroke();
   }
 
   private drawAlerts(state: GameRenderState) {
@@ -383,8 +647,19 @@ export class CanvasRenderer {
     this.ctx.lineWidth = 2;
     this.ctx.stroke();
     this.ctx.fillStyle = enabled ? "#f8fafc" : "#94a3b8";
-    this.ctx.font = "28px system-ui, sans-serif";
+    this.ctx.font = "24px system-ui, sans-serif";
     centeredText(this.ctx, "復旧完了", button.x, button.y + 2, button.width, button.height);
+
+    const retire = inputDockRects.retire;
+    this.ctx.fillStyle = enabled ? "#3f1d1d" : "#1f1313";
+    roundRect(this.ctx, retire.x, retire.y, retire.width, retire.height, 8);
+    this.ctx.fill();
+    this.ctx.strokeStyle = "#7f1d1d";
+    this.ctx.lineWidth = 2;
+    this.ctx.stroke();
+    this.ctx.fillStyle = enabled ? "#fecaca" : "#94a3b8";
+    this.ctx.font = "22px system-ui, sans-serif";
+    centeredText(this.ctx, "リタイア", retire.x, retire.y + 2, retire.width, retire.height);
   }
 
   private drawClickEffects(state: GameRenderState) {
@@ -410,10 +685,60 @@ export class CanvasRenderer {
   }
 }
 
+export const notificationBellRegion = { x: 1508, y: 34, width: 52, height: 52 } as const;
+
+export const notificationPanelRegion = { x: 1188, y: 92, width: 372, height: 420 } as const;
+
 export const inputDockRects = {
-  input: { x: 70, y: 878, width: 1580, height: 96 },
-  button: { x: 1670, y: 878, width: 180, height: 96 }
+  input: { x: 70, y: 878, width: 1280, height: 96 },
+  retire: { x: 1370, y: 878, width: 140, height: 96 },
+  button: { x: 1530, y: 878, width: 160, height: 96 }
 } as const;
+
+export const navigationOverlayRect = { x: 720, y: 860, width: 480, height: 120 } as const;
+
+export const runbookTabRegion = { x: 1332, y: 204, width: 516, height: 36 } as const;
+
+export const devtoolsToggleRegion = { x: 712, y: 204, width: 120, height: 28 } as const;
+
+export const slackComposeRegion = { x: 1332, y: 688, width: 496, height: 48 } as const;
+
+export const slackSendButtonRegion = { x: 1736, y: 696, width: 56, height: 28 } as const;
+
+export const devtoolsTabRegion = { x: 712, y: 236, width: 516, height: 28 } as const;
+
+export function slackComposeAt(x: number, y: number) {
+  if (!containsCanvasPoint(slackComposeRegion, x, y)) return null;
+  if (containsCanvasPoint(slackSendButtonRegion, x, y)) return "send" as const;
+  return "compose" as const;
+}
+
+export function runbookTabAt(x: number, y: number, runbookCount: number, titles: string[]) {
+  if (!containsCanvasPoint(runbookTabRegion, x, y) || runbookCount === 0) return -1;
+  let tabX = runbookTabRegion.x;
+  const localY = y - runbookTabRegion.y;
+  if (localY < 0 || localY > 28) return -1;
+  for (let index = 0; index < runbookCount; index += 1) {
+    const title = titles[index] ?? "";
+    const width = Math.min(150, title.length * 9 + 24);
+    if (x >= tabX && x <= tabX + width) return index;
+    tabX += width + 6;
+  }
+  return -1;
+}
+
+export function devtoolsTabAt(x: number, y: number): "network" | "console" | "storage" | null {
+  if (!containsCanvasPoint(devtoolsTabRegion, x, y)) return null;
+  const localX = x - (devtoolsTabRegion.x + 22);
+  if (localX < 108) return "network";
+  if (localX < 222) return "console";
+  if (localX < 336) return "storage";
+  return null;
+}
+
+function containsCanvasPoint(rect: { x: number; y: number; width: number; height: number }, x: number, y: number) {
+  return x >= rect.x && x <= rect.x + rect.width && y >= rect.y && y <= rect.y + rect.height;
+}
 
 function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, radius: number) {
   const right = x + width;
@@ -489,7 +814,8 @@ function formatTime(ms: number) {
   return `${minutes}:${seconds}`;
 }
 
-function formatRecordingStatus(status: GameRenderState["recording"]["status"]) {
+function formatRecordingStatus(status: GameRenderState["recording"]["status"], saveEnabled: boolean) {
+  if (!saveEnabled) return "LOG ONLY";
   switch (status) {
     case "recording":
       return "REC";
@@ -594,4 +920,10 @@ function summarizeMetricsHealth(metrics: MetricsSnapshot): MetricsHealthSummary 
     detail: issues.slice(0, 2).join(" · "),
     color: "#ef4444"
   };
+}
+
+function severityColor(severity: "info" | "warning" | "critical") {
+  if (severity === "critical") return "#ef4444";
+  if (severity === "warning") return "#f59e0b";
+  return "#38bdf8";
 }

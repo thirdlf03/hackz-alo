@@ -1,0 +1,21 @@
+{
+  "id": "db-pool-001",
+  "version": 1,
+  "title": "DB プールが呼吸できない夜",
+  "difficulty": "intermediate",
+  "timeLimitMinutes": 10,
+  "service": { "name": "うん用 API", "healthUrl": "http://localhost:8080/health" },
+  "briefing": ["DB 接続プール枯渇は API レイテンシと 5xx の両方を悪化させる。", "メトリクスと fake-db の状態を突き合わせる。"],
+  "startup": [
+    { "id": "api", "command": "PORT=8080 node /workspace/services/unyoh-api/server.mjs", "waitForPort": 8080 },
+    { "id": "fake-db", "command": "node /workspace/services/fake-db/server.mjs", "waitForPort": 15432 }
+  ],
+  "triggers": [{ "id": "pool-exhaust", "atMs": 60000, "type": "db_pool_exhaust", "params": { "maxConnections": 40 } }],
+  "alerts": [{ "id": "db-pool", "atMs": 90000, "severity": "critical", "message": "DB connection pool exhausted", "source": "monitor" }],
+  "successConditions": [
+    { "type": "http_status", "url": "http://localhost:8080/health", "status": 200 },
+    { "type": "process_running", "processId": "api" }
+  ],
+  "runbooks": [{ "id": "runbook.db-pool", "title": "DB pool 枯渇", "body": "1. メトリクスの DB Conn を確認\\n2. cat /workspace/run/fake-db-stats.json\\n3. rm /workspace/run/db.pool.exhausted\\n4. unctl restart api" }],
+  "slackMessages": [{ "id": "dba", "atMs": 100000, "from": "DBA", "body": "プールサイズいじった？" }]
+}

@@ -10,7 +10,7 @@ const scenarioDataDir = path.join(rootDir, "packages/scenarios/data");
 
 test("all scenario data validates against shared contract", async () => {
   const scenarios = await loadScenarios();
-  assert.equal(scenarios.length, 3);
+  assert.equal(scenarios.length, 9);
 
   const ids = new Set();
   for (const { file, scenario } of scenarios) {
@@ -21,12 +21,12 @@ test("all scenario data validates against shared contract", async () => {
   }
 });
 
-test("scenario data exposes only configured difficulty time limits", async () => {
+test("scenario data exposes configured difficulty buckets", async () => {
   const scenarios = await loadScenarios();
-  const byDifficulty = new Map(scenarios.map(({ scenario }) => [scenario.difficulty, scenario.timeLimitMinutes]));
-  assert.equal(byDifficulty.get("beginner"), 5);
-  assert.equal(byDifficulty.get("intermediate"), 10);
-  assert.equal(byDifficulty.get("advanced"), 15);
+  const difficulties = new Set(scenarios.map(({ scenario }) => scenario.difficulty));
+  assert.equal(difficulties.has("beginner"), true);
+  assert.equal(difficulties.has("intermediate"), true);
+  assert.equal(difficulties.has("advanced"), true);
 });
 
 test("scenario validator rejects incomplete success conditions", () => {

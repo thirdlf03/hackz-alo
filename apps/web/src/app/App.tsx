@@ -1,47 +1,79 @@
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
-import { createReplayEvent, type Difficulty, type GameRenderState, type ScenarioDefinition } from "@incident/shared";
-import { createInitialGameState, advanceGameState } from "../game/state/gameState.js";
-import { CanvasRenderer } from "../game/render/canvasRenderer.js";
-import { inputDockRects } from "../game/render/canvasRenderer.js";
+import type { Difficulty, GameRenderState, ScenarioDefinition } from "@incident/shared";
+import {
+  addClickEffect,
+  advanceGameState,
+  applyLiveMetrics,
+  activateSlackCompose,
+  createInitialGameState,
+  deactivateSlackCompose,
+  dismissNavigationStep,
+  setActiveRunbook,
+  setDevtoolsTab,
+  setSlackDraft,
+  submitPlayerSlackMessage,
+  toggleDevtools,
+  toggleNotificationPanel
+} from "../game/state/gameState.js";
+import {
+  CanvasRenderer,
+  devtoolsTabAt,
+  devtoolsToggleRegion,
+  inputDockRects,
+  navigationOverlayRect,
+  notificationBellRegion,
+  runbookTabAt,
+  slackComposeAt
+} from "../game/render/canvasRenderer.js";
 import { createEmptyTerminalMirror } from "../game/terminal/mirror.js";
 import { TerminalSession } from "../game/terminal/session.js";
 import { terminalDebug } from "../game/terminal/debug.js";
 import { keyboardEventToTerminalInput } from "../game/terminal/input.js";
 import { CanvasRecorder } from "../game/recording/recorder.js";
+import { RecordingFinalizer } from "../game/recording/finalizer.js";
+import { installOfflineFlush, OfflineUploadQueue } from "../game/recording/offlineQueue.js";
+import { classifyCommandEvent, ReplayEventEmitter } from "../game/events/emitReplayEvent.js";
+import { collectStateTransitions } from "../game/events/sessionEvents.js";
 import { ApiClient } from "../api/client.js";
 import { ReplayPage } from "../pages/ReplayPage.js";
+import { ResultPage } from "../pages/ResultPage.js";
 import "@xterm/xterm/css/xterm.css";
 
-type Screen = "select" | "briefing" | "play" | "result" | "replay";
+type Screen = "select" | "scenario-list" | "briefing" | "play" | "result" | "replay";
 type ScenarioSummary = Pick<ScenarioDefinition, "id" | "title" | "difficulty" | "timeLimitMinutes">;
+type FinishMode = "resolve" | "retire" | "timeout";
 
-const difficultyOptions: Array<{
-  difficulty: Difficulty;
-  label: string;
-  minutes: number;
-  tone: string;
-  summary: string;
-}> = [
-  { difficulty: "beginner", label: "初級", minutes: 5, tone: "green", summary: "監視とログを順番に追う短い初動訓練" },
-  { difficulty: "intermediate", label: "中級", minutes: 10, tone: "amber", summary: "原因候補を絞り込みながら復旧まで進める訓練" },
-  { difficulty: "advanced", label: "上級", minutes: 15, tone: "red", summary: "少ない手掛かりから仮説を立てて完走する訓練" }
+const CONSENT_KEY = "incident-recording-consent";
+const SAVE_RECORDING_KEY = "incident-recording-save";
+const difficultyOptions: Array<{ difficulty: Difficulty; label: string; tone: string; summary: string }> = [
+  { difficulty: "beginner", label: "初級", tone: "green", summary: "監視とログを順番に追う短い初動訓練" },
+  { difficulty: "intermediate", label: "中級", tone: "amber", summary: "原因候補を絞り込みながら復旧まで進める訓練" },
+  { difficulty: "advanced", label: "上級", tone: "red", summary: "少ない手掛かりから仮説を立てて完走する訓練" }
 ];
-
 const speedOptions = [0.5, 1, 1.5, 2] as const;
 
 const api = new ApiClient();
+const offlineQueue = new OfflineUploadQueue(api);
+installOfflineFlush(offlineQueue);
 
 export function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rendererRef = useRef<CanvasRenderer | null>(null);
   const recorderRef = useRef<CanvasRecorder | null>(null);
+  const finalizerRef = useRef<RecordingFinalizer | null>(null);
+  const saveRecordingRef = useRef(true);
   const gameStateRef = useRef<GameRenderState | undefined>(undefined);
   const elapsedMsRef = useRef(0);
   const lastTickAtRef = useRef(0);
   const gameSpeedRef = useRef(1);
   const terminalRef = useRef<TerminalSession | null>(null);
   const sessionRef = useRef<{ sessionId: string; replayId: string } | undefined>(undefined);
+  const scenarioRef = useRef<ScenarioDefinition | undefined>(undefined);
+  const eventEmitterRef = useRef<ReplayEventEmitter | null>(null);
+  const finishingRef = useRef(false);
+
   const [screen, setScreen] = useState<Screen>("select");
+  const [selectedDifficulty, setSelectedDifficulty] = useState<Difficulty>();
   const [scenarios, setScenarios] = useState<ScenarioSummary[]>([]);
   const [scenario, setScenario] = useState<ScenarioDefinition>();
   const [session, setSession] = useState<{ sessionId: string; replayId: string }>();
@@ -50,44 +82,39 @@ export function App() {
   const [isStarting, setIsStarting] = useState(false);
   const [gameSpeed, setGameSpeed] = useState(1);
   const [appError, setAppError] = useState<string>();
-  const scenarioRef = useRef<ScenarioDefinition | undefined>(undefined);
+  const [recordingConsent, setRecordingConsent] = useState(() => localStorage.getItem(CONSENT_KEY) === "1");
+  const [hasRecordingConsent, setHasRecordingConsent] = useState(() => localStorage.getItem(CONSENT_KEY) === "1");
+  const [saveRecording, setSaveRecording] = useState(() => localStorage.getItem(SAVE_RECORDING_KEY) !== "0");
 
-  function patchGameStateRef(updater: (state: GameRenderState) => GameRenderState) {
+  const patchGameStateRef = (updater: (state: GameRenderState) => GameRenderState) => {
     const current = gameStateRef.current;
     if (!current) return;
-    gameStateRef.current = updater(current);
-  }
+    const next = updater(current);
+    const replayId = sessionRef.current?.replayId;
+    if (replayId && eventEmitterRef.current) {
+      collectStateTransitions(current, next, scenarioRef.current, Math.round(elapsedMsRef.current), eventEmitterRef.current, replayId);
+    }
+    gameStateRef.current = next;
+    setGameState(next);
+  };
 
   useEffect(() => {
-    api.listScenarios().then(setScenarios).catch((error) => {
-      console.error(error);
-      setAppError(toErrorMessage(error));
+    api.listScenarios().then(setScenarios).catch((error) => setAppError(toErrorMessage(error)));
+    eventEmitterRef.current = new ReplayEventEmitter(api, (at, label) => {
+      setTimeline((items) => [...items, { at, label }]);
     });
   }, []);
 
-  useEffect(() => {
-    sessionRef.current = session;
-  }, [session]);
-
-  useEffect(() => {
-    return () => {
-      terminalRef.current?.destroy();
-      terminalRef.current = null;
-    };
-  }, []);
-
-  useEffect(() => {
-    gameStateRef.current = gameState;
-  }, [gameState]);
-
-  useEffect(() => {
-    scenarioRef.current = scenario;
-  }, [scenario]);
-
+  useEffect(() => { sessionRef.current = session; }, [session]);
+  useEffect(() => { scenarioRef.current = scenario; }, [scenario]);
+  useEffect(() => { gameStateRef.current = gameState; }, [gameState]);
+  useEffect(() => { saveRecordingRef.current = saveRecording; }, [saveRecording]);
   useEffect(() => {
     gameSpeedRef.current = gameSpeed;
     patchGameStateRef((current) => ({ ...current, clock: { ...current.clock, speed: gameSpeed } }));
   }, [gameSpeed]);
+
+  useEffect(() => () => { terminalRef.current?.destroy(); }, []);
 
   useEffect(() => {
     if ((screen !== "play" && screen !== "result") || !canvasRef.current) return;
@@ -95,65 +122,73 @@ export function App() {
     rendererRef.current = renderer;
     let frame = 0;
     const draw = () => {
-      const latestState = gameStateRef.current;
-      if (latestState) renderer.draw(latestState);
+      const latest = gameStateRef.current;
+      if (latest) renderer.draw(latest, scenarioRef.current);
       frame = requestAnimationFrame(draw);
     };
     draw();
-    return () => {
-      cancelAnimationFrame(frame);
-      if (rendererRef.current === renderer) rendererRef.current = null;
-    };
+    return () => { cancelAnimationFrame(frame); rendererRef.current = null; };
   }, [screen]);
 
   useEffect(() => {
-    if (screen !== "play" || !session || !canvasRef.current || recorderRef.current) return;
-
+    if (screen !== "play" || !session || !canvasRef.current || recorderRef.current || !hasRecordingConsent || !saveRecording) return;
     let cancelled = false;
+    const finalizer = new RecordingFinalizer();
+    finalizerRef.current = finalizer;
     const recorder = new CanvasRecorder(canvasRef.current, {
       replayId: session.replayId,
-      onChunk: (chunk) => api.uploadChunk(session.replayId, chunk),
-      onEvent: (event) => api.uploadEvents(session.replayId, [event])
+      onChunk: async (chunk) => {
+        await finalizer.append(chunk.blob);
+        try { await api.uploadChunk(session.replayId, chunk); }
+        catch { await offlineQueue.enqueueChunk({ replayId: session.replayId, ...chunk }); }
+      },
+      onEvent: async (event) => {
+        try { await api.uploadEvents(session.replayId, [event]); }
+        catch { await offlineQueue.enqueueEvents(session.replayId, [event]); }
+      }
     });
     recorderRef.current = recorder;
     setGameState((current) => updateRecordingStatus(current, "initializing"));
-
     recorder.start().then(
-      () => {
-        if (!cancelled) setGameState((current) => updateRecordingStatus(current, "recording"));
-      },
+      () => { if (!cancelled) setGameState((current) => updateRecordingStatus(current, "recording")); },
       (error) => {
-        console.error(error);
-        if (!cancelled) {
-          recorderRef.current = null;
-          setAppError(toErrorMessage(error));
-          setGameState((current) => updateRecordingStatus(current, classifyRecordingError(error)));
-        }
+        if (cancelled) return;
+        recorderRef.current = null;
+        setAppError(toErrorMessage(error));
+        setGameState((current) => updateRecordingStatus(current, classifyRecordingError(error)));
       }
     );
-
     return () => {
       cancelled = true;
       if (recorderRef.current === recorder) {
         recorderRef.current = null;
         void recorder.stop().catch(console.error);
       }
+      if (finalizerRef.current === finalizer) finalizerRef.current = null;
     };
-  }, [screen, session?.replayId]);
+  }, [screen, session?.replayId, hasRecordingConsent, saveRecording]);
 
   useEffect(() => {
     if (screen !== "play" || !scenario) return;
     if (lastTickAtRef.current === 0) lastTickAtRef.current = performance.now();
     const tick = () => {
       const activeScenario = scenarioRef.current;
-      if (!activeScenario) return;
+      if (!activeScenario || finishingRef.current) return;
       const now = performance.now();
       const deltaMs = now - lastTickAtRef.current;
       lastTickAtRef.current = now;
       elapsedMsRef.current += deltaMs * gameSpeedRef.current;
-      patchGameStateRef((current) =>
-        advanceGameState(current, elapsedMsRef.current, activeScenario, gameSpeedRef.current)
-      );
+      const previous = gameStateRef.current;
+      if (previous) {
+        const next = advanceGameState(previous, elapsedMsRef.current, activeScenario, gameSpeedRef.current, deltaMs);
+        const replayId = sessionRef.current?.replayId;
+        if (replayId && eventEmitterRef.current) {
+          collectStateTransitions(previous, next, activeScenario, Math.round(elapsedMsRef.current), eventEmitterRef.current, replayId);
+        }
+        gameStateRef.current = next;
+        setGameState(next);
+        if (elapsedMsRef.current >= next.clock.timeLimitMs) void endSession("timeout");
+      }
     };
     tick();
     const timer = window.setInterval(tick, 500);
@@ -163,97 +198,82 @@ export function App() {
   useEffect(() => {
     if (screen !== "play" || !session) return;
     let cancelled = false;
-    let inFlight = false;
     let timer = 0;
-
     const poll = async () => {
-      if (cancelled || inFlight || document.visibilityState === "hidden") return;
-      inFlight = true;
+      if (cancelled || document.visibilityState === "hidden") return;
       try {
         const metrics = await api.getSessionMetrics(session.sessionId);
+        if (cancelled) return;
+        patchGameStateRef((current) => applyLiveMetrics(current, metrics));
+      } catch {
+        if (!cancelled) patchGameStateRef((current) => ({ ...current, monitors: { ...current.monitors, left: { ...current.monitors.left, metricsSource: "offline" } } }));
+      }
+    };
+    const pollDevtools = async () => {
+      if (cancelled || document.visibilityState === "hidden") return;
+      try {
+        const [access, app, batch, storage] = await Promise.all([
+          api.getSessionLogs(session.sessionId, "access"),
+          api.getSessionLogs(session.sessionId, "app"),
+          api.getSessionLogs(session.sessionId, "batch"),
+          api.getSessionStorage(session.sessionId)
+        ]);
         if (cancelled) return;
         patchGameStateRef((current) => ({
           ...current,
           monitors: {
             ...current.monitors,
-            left: {
-              ...current.monitors.left,
-              metrics,
-              metricsSource: "live"
+            center: {
+              ...current.monitors.center,
+              devtools: {
+                visible: current.monitors.center.devtools?.visible ?? false,
+                tab: current.monitors.center.devtools?.tab ?? "network",
+                networkLines: parseAccessLog(access.lines),
+                consoleLines: [...app.lines, ...batch.lines].slice(-20),
+                storageEntries: storage.entries
+              }
             }
           }
         }));
       } catch (error) {
         console.error(error);
-        if (cancelled) return;
-        patchGameStateRef((current) => ({
-          ...current,
-          monitors: {
-            ...current.monitors,
-            left: {
-              ...current.monitors.left,
-              metricsSource: "offline"
-            }
-          }
-        }));
-      } finally {
-        inFlight = false;
       }
     };
-
-    const schedule = () => {
-      window.clearInterval(timer);
-      if (document.visibilityState === "hidden") return;
-      void poll();
-      timer = window.setInterval(() => void poll(), 5000);
-    };
-
-    const onVisibilityChange = () => {
-      if (document.visibilityState === "hidden") {
-        window.clearInterval(timer);
-        return;
-      }
-      schedule();
-    };
-
-    schedule();
-    document.addEventListener("visibilitychange", onVisibilityChange);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-      document.removeEventListener("visibilitychange", onVisibilityChange);
-    };
+    void poll();
+    void pollDevtools();
+    timer = window.setInterval(() => { void poll(); void pollDevtools(); }, 5000);
+    return () => { cancelled = true; window.clearInterval(timer); };
   }, [screen, session?.sessionId]);
 
-  const selectedScenarioTitle = useMemo(() => scenario?.title ?? "未選択", [scenario]);
-  const canOpenReplay = Boolean(session && gameState?.recording.status === "ready");
-  const availableDifficulties = useMemo(() => {
-    const values = new Set<Difficulty>();
-    scenarios.forEach((item) => values.add(item.difficulty));
-    return values;
-  }, [scenarios]);
+  const filteredScenarios = useMemo(
+    () => (selectedDifficulty ? scenarios.filter((item) => item.difficulty === selectedDifficulty) : []),
+    [scenarios, selectedDifficulty]
+  );
+  const canPlayVideo = Boolean(
+    saveRecording &&
+    session &&
+    (gameState?.recording.status === "ready" || gameState?.recording.status === "upload_degraded")
+  );
+  const canOpenReplay = Boolean(session && (canPlayVideo || timeline.length > 0));
 
-  async function assignRandomScenario(difficulty: Difficulty) {
+  async function createSessionForScenario(scenarioId: string) {
     setAppError(undefined);
     setIsStarting(true);
     try {
       terminalRef.current?.destroy();
       terminalRef.current = null;
-      const created = await api.createSession(difficulty);
+      const created = await api.createSession({ scenarioId });
       api.resetEventSequence();
+      eventEmitterRef.current?.reset();
       elapsedMsRef.current = 0;
       lastTickAtRef.current = 0;
+      finishingRef.current = false;
       setScenario(created.scenario);
       setSession(created);
       setTimeline([]);
-      setGameState(
-        createInitialGameState(created.scenario, created.sessionId, created.replayId, createEmptyTerminalMirror(), {
-          speed: gameSpeed
-        })
-      );
+      setGameState(createInitialGameState(created.scenario, created.sessionId, created.replayId, createEmptyTerminalMirror(), { speed: gameSpeed }));
       setScreen("briefing");
     } catch (error) {
-      console.error(error);
       setAppError(toErrorMessage(error));
     } finally {
       setIsStarting(false);
@@ -264,40 +284,16 @@ export function App() {
     terminalRef.current?.destroy();
     const terminal = new TerminalSession({
       sessionId: activeSession.sessionId,
-      onSnapshot: (snapshot) => {
-        patchGameStateRef((current) => ({
-          ...current,
-          monitors: {
-            ...current.monitors,
-            center: { terminal: snapshot }
-          }
-        }));
-      },
+      onSnapshot: (snapshot) => patchGameStateRef((current) => ({ ...current, monitors: { ...current.monitors, center: { ...current.monitors.center, terminal: snapshot } } })),
       onCommand: (command) => {
         const replayId = sessionRef.current?.replayId;
-        if (!replayId) return;
+        const emitter = eventEmitterRef.current;
+        if (!replayId || !emitter) return;
         const at = Math.round(elapsedMsRef.current);
-        const inputEvent = createReplayEvent({
-          replayId,
-          type: "terminal_input",
-          at,
-          actor: "player",
-          payload: { data: `${command}\n` }
-        });
-        const commandEvent = createReplayEvent({
-          replayId,
-          type: "command_detected",
-          at,
-          actor: "player",
-          payload: { command }
-        });
-        void api.uploadEvents(replayId, [inputEvent, commandEvent]).catch(console.error);
-        setTimeline((items) => [...items, { at: at / 1000, label: `command: ${command}` }]);
-      },
-      onConnectionChange: (state, error) => {
-        if (state === "connected") return;
-        if (state === "connecting") return;
-        if (error) setAppError(`Sandbox ターミナル接続エラー: ${error.message}`);
+        void emitter.emit({ replayId, type: "terminal_input", at, payload: { data: `${command}\n` }, visibility: "sensitive" });
+        void emitter.emit({ replayId, type: "command_detected", at, payload: { command } });
+        const special = classifyCommandEvent(command);
+        if (special) void emitter.emit({ replayId, type: special, at, payload: { command } });
       }
     });
     terminalRef.current = terminal;
@@ -305,214 +301,286 @@ export function App() {
   }
 
   async function startPlay() {
-    if (!session || !scenario || isStarting) return;
+    if (!session || !scenario || isStarting || !recordingConsent) return;
+    localStorage.setItem(CONSENT_KEY, "1");
+    localStorage.setItem(SAVE_RECORDING_KEY, saveRecording ? "1" : "0");
+    setHasRecordingConsent(true);
     setIsStarting(true);
-    setAppError(undefined);
     try {
       await api.startSession(session.sessionId);
       attachTerminalSession(session);
       elapsedMsRef.current = 0;
       lastTickAtRef.current = performance.now();
       setTimeline([{ at: 0, label: "シナリオ開始" }]);
-      setGameState(
-        createInitialGameState(scenario, session.sessionId, session.replayId, createEmptyTerminalMirror(), {
-          sessionStatus: "running",
-          recordingStatus: "initializing",
-          speed: gameSpeed
-        })
-      );
+      setGameState(createInitialGameState(scenario, session.sessionId, session.replayId, createEmptyTerminalMirror(), {
+        sessionStatus: "running",
+        recordingStatus: saveRecording ? "initializing" : "idle",
+        recordingSaveEnabled: saveRecording,
+        speed: gameSpeed
+      }));
       setScreen("play");
     } catch (error) {
-      console.error(error);
       setAppError(toErrorMessage(error));
     } finally {
       setIsStarting(false);
     }
   }
 
-  async function finishPlay() {
-    if (!session) return;
+  function submitSlackMessage() {
+    const state = gameStateRef.current;
+    const replayId = sessionRef.current?.replayId;
+    const emitter = eventEmitterRef.current;
+    if (!state || !replayId || !emitter) return;
+    const body = state.slackCompose.draft.trim();
+    if (!body) return;
+    const at = Math.round(elapsedMsRef.current);
+    patchGameStateRef((current) => submitPlayerSlackMessage(current, body, at));
+    void emitter.emit({ replayId, type: "player_note", at, payload: { body, channel: "slack" } });
+  }
+
+  async function endSession(mode: FinishMode) {
+    if (!session || finishingRef.current) return;
+    finishingRef.current = true;
     terminalRef.current?.destroy();
     terminalRef.current = null;
-    setGameState((current) => updateRecordingStatus(current, "stopping"));
-    await recorderRef.current?.stop().catch((error) => {
-      console.error(error);
-      setAppError(toErrorMessage(error));
-    });
-    recorderRef.current = null;
-    setGameState((current) => updateRecordingStatus(current, "finalizing"));
-    const finalizationOk = await api.finishReplay(session.replayId).then(() => true, (error) => {
-      console.error(error);
-      setAppError(toErrorMessage(error));
-      return false;
-    });
-    const result = await api.resolveSession(session.sessionId).catch((error) => {
-      console.error(error);
-      setAppError(toErrorMessage(error));
-      return undefined;
-    });
-    const resolved = Boolean(result?.ok);
-    setGameState((current) =>
-      current
-        ? {
-            ...current,
-            session: { ...current.session, status: resolved ? "resolved" : "failed" },
-            recording: { ...current.recording, status: finalizationOk ? "ready" : "finalization_failed" }
-          }
-        : current
-    );
-    const elapsedSeconds = Math.round((gameStateRef.current?.clock.elapsedMs ?? 0) / 1000);
-    setTimeline((items) => [...items, { at: elapsedSeconds, label: resolved ? "復旧宣言" : "復旧確認失敗" }]);
-    setScreen("result");
-  }
-
-  function handleTerminalKey(event: KeyboardEvent) {
-    if (screen !== "play" || !terminalRef.current) return;
-    const input = keyboardEventToTerminalInput(event);
-    if (!input) return;
-    if (event.ctrlKey && event.key.toLowerCase() === "c") {
-      terminalDebug("keydown.ctrl-c", {
-        inputBytes: [...input].map((char) => char.charCodeAt(0))
-      });
-      const activeSession = sessionRef.current;
-      if (activeSession) {
-        void api.interruptTerminal(activeSession.sessionId).catch(() => {});
+    const shouldSaveVideo = saveRecordingRef.current && hasRecordingConsent;
+    setGameState((current) => updateRecordingStatus(current, shouldSaveVideo ? "stopping" : "idle"));
+    if (shouldSaveVideo) {
+      await recorderRef.current?.stop().catch((error) => setAppError(toErrorMessage(error)));
+      recorderRef.current = null;
+      await offlineQueue.flush();
+      setGameState((current) => updateRecordingStatus(current, "finalizing"));
+      const finalized = await finalizerRef.current?.finalize(session.replayId, api).catch(() => false) ?? false;
+      finalizerRef.current = null;
+      if (canvasRef.current) {
+        const blob = await new Promise<Blob | null>((resolve) => canvasRef.current!.toBlob(resolve, "image/webp", 0.85));
+        if (blob) await api.uploadThumbnail(session.replayId, blob).catch(console.error);
       }
+      if (!finalized) await api.warmReplayVideo(session.replayId).catch(() => undefined);
+      await api.finishReplay(session.replayId).catch(console.error);
+    } else {
+      recorderRef.current = null;
+      finalizerRef.current = null;
+      await offlineQueue.flush();
+      await api.finishReplay(session.replayId).catch(console.error);
     }
-    event.preventDefault();
-    terminalRef.current.input(input);
-  }
-
-  function handleTerminalPaste(event: ClipboardEvent) {
-    if (screen !== "play" || !terminalRef.current) return;
-    const text = event.clipboardData?.getData("text/plain");
-    if (!text) return;
-    event.preventDefault();
-    terminalRef.current.input(text);
+    let resolved = false;
+    if (mode === "resolve") {
+      const result = await api.resolveSession(session.sessionId).catch(() => undefined);
+      resolved = Boolean(result?.ok);
+    } else if (mode === "retire") {
+      await api.retireSession(session.sessionId).catch(console.error);
+    }
+    const status = mode === "retire" ? "retired" : resolved ? "resolved" : "failed";
+    let recordingStatus: GameRenderState["recording"]["status"] = "idle";
+    if (shouldSaveVideo) {
+      const videoOk = await fetch(`/api/replays/${encodeURIComponent(session.replayId)}/video`, { method: "HEAD" })
+        .then((response) => response.ok)
+        .catch(() => false);
+      recordingStatus = videoOk ? "ready" : "upload_degraded";
+    }
+    setGameState((current) => current ? {
+      ...current,
+      session: { ...current.session, status },
+      recording: { ...current.recording, status: recordingStatus, saveEnabled: shouldSaveVideo }
+    } : current);
+    const elapsedSeconds = Math.round((gameStateRef.current?.clock.elapsedMs ?? 0) / 1000);
+    const label = mode === "timeout" ? "タイムアップ" : mode === "retire" ? "リタイア" : resolved ? "復旧宣言" : "復旧確認失敗";
+    setTimeline((items) => [...items, { at: elapsedSeconds, label }]);
+    setScreen("result");
   }
 
   function handleCanvasClick(event: MouseEvent) {
     if (!canvasRef.current) return;
     canvasRef.current.focus();
-    if (screen !== "play") return;
     const point = toLogicalCanvasPoint(event, canvasRef.current);
-    if (containsPoint(inputDockRects.button, point.x, point.y)) {
-      void finishPlay();
+    patchGameStateRef((current) => addClickEffect(current, point.x, point.y));
+    const replayId = sessionRef.current?.replayId;
+    const emitter = eventEmitterRef.current;
+    if (screen === "play" && replayId && emitter) {
+      void emitter.emit({ replayId, type: "ui_click", at: Math.round(elapsedMsRef.current), payload: { x: point.x, y: point.y } });
+      if (containsPoint(inputDockRects.button, point.x, point.y)) return void endSession("resolve");
+      if (containsPoint(inputDockRects.retire, point.x, point.y)) return void endSession("retire");
+      const activeScenario = scenarioRef.current;
+      if (activeScenario) {
+        const tabIndex = runbookTabAt(point.x, point.y, activeScenario.runbooks.length, activeScenario.runbooks.map((item) => item.title));
+        if (tabIndex >= 0) {
+          patchGameStateRef((current) => setActiveRunbook(current, activeScenario, tabIndex));
+          const runbook = activeScenario.runbooks[tabIndex];
+          if (runbook) void emitter.emitOnce(`runbook:${runbook.id}`, { replayId, type: "runbook_open", at: Math.round(elapsedMsRef.current), payload: { runbookId: runbook.id } });
+          return;
+        }
+      }
+      if (containsPoint(notificationBellRegion, point.x, point.y)) {
+        patchGameStateRef((current) => toggleNotificationPanel(current));
+        void emitter.emit({
+          replayId,
+          type: "ui_panel_open",
+          at: Math.round(elapsedMsRef.current),
+          payload: { panel: "notifications" }
+        });
+        return;
+      }
+      if (containsPoint(devtoolsToggleRegion, point.x, point.y)) {
+        patchGameStateRef((current) => toggleDevtools(current));
+        void emitter.emit({ replayId, type: "ui_panel_open", at: Math.round(elapsedMsRef.current), payload: { panel: "devtools" } });
+        return;
+      }
+      const devtoolsTab = devtoolsTabAt(point.x, point.y);
+      if (devtoolsTab) {
+        patchGameStateRef((current) => setDevtoolsTab(current, devtoolsTab));
+        void emitter.emit({ replayId, type: "ui_panel_open", at: Math.round(elapsedMsRef.current), payload: { panel: `devtools.${devtoolsTab}` } });
+        return;
+      }
+      if (containsPoint(navigationOverlayRect, point.x, point.y) && gameStateRef.current?.navigation.activeStepId) {
+        patchGameStateRef((current) => dismissNavigationStep(current, current.navigation.activeStepId!));
+        return;
+      }
+      const slackTarget = slackComposeAt(point.x, point.y);
+      if (slackTarget === "send") {
+        submitSlackMessage();
+        return;
+      }
+      if (slackTarget === "compose") {
+        patchGameStateRef((current) => activateSlackCompose(current));
+        void emitter.emit({ replayId, type: "ui_panel_open", at: Math.round(elapsedMsRef.current), payload: { panel: "slack_compose" } });
+        return;
+      }
+      if (gameStateRef.current?.slackCompose.active) {
+        patchGameStateRef((current) => deactivateSlackCompose(current));
+      }
     }
+  }
+
+  function handleCanvasMove(event: MouseEvent) {
+    if (!canvasRef.current || screen !== "play") return;
+    const point = toLogicalCanvasPoint(event, canvasRef.current);
+    patchGameStateRef((current) => ({ ...current, cursor: { x: point.x, y: point.y, visible: true } }));
+  }
+
+  function handleTerminalKey(event: KeyboardEvent) {
+    if (screen !== "play") return;
+    if (gameStateRef.current?.slackCompose.active) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        patchGameStateRef((current) => deactivateSlackCompose(current));
+        return;
+      }
+      if (event.key === "Enter") {
+        event.preventDefault();
+        submitSlackMessage();
+        return;
+      }
+      if (event.key === "Backspace") {
+        event.preventDefault();
+        patchGameStateRef((current) => setSlackDraft(current, current.slackCompose.draft.slice(0, -1)));
+        return;
+      }
+      if (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
+        event.preventDefault();
+        patchGameStateRef((current) => setSlackDraft(current, `${current.slackCompose.draft}${event.key}`));
+      }
+      return;
+    }
+    if (!terminalRef.current) return;
+    const input = keyboardEventToTerminalInput(event);
+    if (!input) return;
+    if (event.ctrlKey && event.key.toLowerCase() === "c") {
+      terminalDebug("keydown.ctrl-c", { inputBytes: [...input].map((char) => char.charCodeAt(0)) });
+      const activeSession = sessionRef.current;
+      if (activeSession) void api.interruptTerminal(activeSession.sessionId).catch(() => {});
+    }
+    event.preventDefault();
+    terminalRef.current.input(input);
   }
 
   return (
     <main class="app-shell">
       <header class="topbar">
         <strong>障害対応訓練</strong>
-        <span>{selectedScenarioTitle}</span>
+        <span>{scenario?.title ?? "未選択"}</span>
         <div class="speed-control compact" aria-label="ゲーム速度">
           {speedOptions.map((speed) => (
-            <button
-              type="button"
-              class={speed === gameSpeed ? "active" : ""}
-              aria-pressed={speed === gameSpeed}
-              onClick={() => setGameSpeed(speed)}
-              key={speed}
-            >
-              {speed}x
-            </button>
+            <button key={speed} type="button" class={speed === gameSpeed ? "active" : ""} onClick={() => setGameSpeed(speed)}>{speed}x</button>
           ))}
         </div>
         <button type="button" onClick={() => setScreen("select")} disabled={screen === "play" || isStarting}>Scenario</button>
         {canOpenReplay && <button type="button" onClick={() => setScreen("replay")}>Replay</button>}
       </header>
-
       {appError && <p class="app-error" role="alert">{appError}</p>}
 
       {screen === "select" && (
         <section class="select-screen">
           <div class="select-header">
             <p class="eyebrow">Incident Drill</p>
-            <h1>難易度だけを選ぶ</h1>
-            <p>具体的な障害シナリオは開始準備時にランダムで割り当てます。</p>
+            <h1>難易度を選ぶ</h1>
+            <p>難易度ごとにシナリオを選んで訓練を開始します。</p>
           </div>
-
           <div class="difficulty-grid">
             {difficultyOptions.map((option) => {
-              const enabled = availableDifficulties.has(option.difficulty);
+              const count = scenarios.filter((item) => item.difficulty === option.difficulty).length;
               return (
-                <button
-                  class={`difficulty-card ${option.tone}`}
-                  type="button"
-                  onClick={() => assignRandomScenario(option.difficulty)}
-                  disabled={!enabled || isStarting}
-                  key={option.difficulty}
-                >
+                <button key={option.difficulty} class={`difficulty-card ${option.tone}`} type="button" disabled={count === 0 || isStarting}
+                  onClick={() => { setSelectedDifficulty(option.difficulty); setScreen("scenario-list"); }}>
                   <span class="difficulty-label">{option.label}</span>
-                  <strong>{option.minutes}分</strong>
+                  <strong>{count} シナリオ</strong>
                   <small>{option.summary}</small>
-                  <span class="difficulty-status">{enabled ? "ランダム割り当て" : "準備中"}</span>
                 </button>
               );
             })}
           </div>
+        </section>
+      )}
 
-          <div class="settings-row">
-            <div>
-              <p class="eyebrow">Speed</p>
-              <h2>ゲーム速度</h2>
-            </div>
-            <div class="speed-control" aria-label="ゲーム速度">
-              {speedOptions.map((speed) => (
-                <button
-                  type="button"
-                  class={speed === gameSpeed ? "active" : ""}
-                  aria-pressed={speed === gameSpeed}
-                  onClick={() => setGameSpeed(speed)}
-                  key={speed}
-                >
-                  {speed}x
-                </button>
-              ))}
-            </div>
+      {screen === "scenario-list" && selectedDifficulty && (
+        <section class="panel scenario-list-panel">
+          <button type="button" onClick={() => setScreen("select")}>戻る</button>
+          <h1>{formatDifficulty(selectedDifficulty)}シナリオ</h1>
+          <div class="scenario-list">
+            {filteredScenarios.map((item) => (
+              <button key={item.id} type="button" class="scenario-card" disabled={isStarting} onClick={() => createSessionForScenario(item.id)}>
+                <strong>{item.title}</strong>
+                <span>{item.timeLimitMinutes}分</span>
+              </button>
+            ))}
           </div>
         </section>
       )}
 
       {screen === "briefing" && scenario && (
         <section class="panel briefing-panel">
-          <p class="eyebrow">Assigned Scenario</p>
           <h1>{scenario.title}</h1>
-          <div class="briefing-meta">
-            <span>{formatDifficulty(scenario.difficulty)}</span>
-            <span>{scenario.timeLimitMinutes}分</span>
-            <span>{gameSpeed}x</span>
-          </div>
-          <ul>
-            {scenario.briefing.map((line) => <li key={line}>{line}</li>)}
-          </ul>
-          <p>開始後、canvas 内のゲーム画面だけを自動録画します。ブラウザ全体や別タブは録画されません。</p>
-          <button type="button" onClick={startPlay} disabled={isStarting}>{isStarting ? "開始中" : "開始"}</button>
+          <ul>{scenario.briefing.map((line) => <li key={line}>{line}</li>)}</ul>
+          <label class="consent-row">
+            <input type="checkbox" checked={recordingConsent} onChange={(event) => setRecordingConsent((event.currentTarget as HTMLInputElement).checked)} />
+            ゲーム画面（canvas 内のみ）を録画し、振り返りに使うことに同意する
+          </label>
+          <label class="consent-row">
+            <input
+              type="checkbox"
+              checked={saveRecording}
+              disabled={!recordingConsent}
+              onChange={(event) => setSaveRecording((event.currentTarget as HTMLInputElement).checked)}
+            />
+            録画データをサーバーに保存する（オフにするとイベントログのみ残ります）
+          </label>
+          <p>ブラウザ全体や別タブは録画されません。公開するかどうかは後から選べます。</p>
+          <button type="button" onClick={startPlay} disabled={isStarting || !recordingConsent}>{isStarting ? "開始中" : "開始"}</button>
         </section>
       )}
 
       {(screen === "play" || screen === "result") && (
         <section class="game-layout">
-          <canvas
-            ref={canvasRef}
-            width="1920"
-            height="1080"
-            aria-label="録画対象のゲーム画面"
-            tabIndex={0}
-            onClick={handleCanvasClick}
-            onKeyDown={handleTerminalKey}
-            onPaste={handleTerminalPaste}
-          />
+          <canvas ref={canvasRef} width="1920" height="1080" aria-label="録画対象のゲーム画面" tabIndex={0}
+            onClick={handleCanvasClick} onMouseMove={handleCanvasMove} onKeyDown={handleTerminalKey}
+            onPaste={(event) => { if (screen === "play" && terminalRef.current) { const text = event.clipboardData?.getData("text/plain"); if (text) { event.preventDefault(); terminalRef.current.input(text); } } }} />
         </section>
       )}
 
-      {screen === "result" && session && (
-        <section class="panel">
-          <h1>結果</h1>
-          <p>録画とイベントログを保存しました。Replay で動画とタイムラインを確認できます。</p>
-          <button type="button" onClick={() => setScreen("replay")} disabled={!canOpenReplay}>Replay を見る</button>
-        </section>
+      {screen === "result" && session && scenario && (
+        <ResultPage replayId={session.replayId} sessionId={session.sessionId} scenarioTitle={scenario.title}
+          timeline={timeline} canPlayVideo={canPlayVideo} canOpenReplay={canOpenReplay}
+          onRetry={() => setScreen("select")} onOpenReplay={() => setScreen("replay")} />
       )}
 
       {screen === "replay" && session && <ReplayPage replayId={session.replayId} timeline={timeline} />}
@@ -520,37 +588,30 @@ export function App() {
   );
 }
 
-function updateRecordingStatus(
-  state: GameRenderState | undefined,
-  status: GameRenderState["recording"]["status"]
-): GameRenderState | undefined {
+function updateRecordingStatus(state: GameRenderState | undefined, status: GameRenderState["recording"]["status"]) {
   return state ? { ...state, recording: { ...state.recording, status } } : state;
 }
-
 function classifyRecordingError(error: unknown): GameRenderState["recording"]["status"] {
   const message = toErrorMessage(error);
-  if (message.includes("MediaRecorder") || message.includes("captureStream")) return "unsupported_browser";
-  return "recording_error";
+  return message.includes("MediaRecorder") || message.includes("captureStream") ? "unsupported_browser" : "recording_error";
 }
-
-function toErrorMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
-}
-
+function toErrorMessage(error: unknown) { return error instanceof Error ? error.message : String(error); }
 function toLogicalCanvasPoint(event: MouseEvent, canvas: HTMLCanvasElement) {
   const rect = canvas.getBoundingClientRect();
-  return {
-    x: ((event.clientX - rect.left) / rect.width) * 1920,
-    y: ((event.clientY - rect.top) / rect.height) * 1080
-  };
+  return { x: ((event.clientX - rect.left) / rect.width) * 1920, y: ((event.clientY - rect.top) / rect.height) * 1080 };
 }
-
 function containsPoint(rect: { x: number; y: number; width: number; height: number }, x: number, y: number) {
   return x >= rect.x && x <= rect.x + rect.width && y >= rect.y && y <= rect.y + rect.height;
 }
-
 function formatDifficulty(difficulty: Difficulty) {
   if (difficulty === "beginner") return "初級";
   if (difficulty === "intermediate") return "中級";
   return "上級";
+}
+function parseAccessLog(lines: string[]) {
+  return lines.slice(-20).map((line) => {
+    const match = line.match(/^(\S+)\s+(\S+)\s+(\S+)\s+(\d{3})$/);
+    if (!match) return { at: "", method: "?", path: line.slice(0, 24), status: 0 };
+    return { at: match[1] ?? "", method: match[2] ?? "", path: match[3] ?? "", status: Number(match[4] ?? 0) };
+  });
 }

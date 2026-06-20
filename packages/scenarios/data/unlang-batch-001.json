@@ -2,7 +2,7 @@
   "id": "unlang-batch-001",
   "version": 1,
   "title": "うんともすんとも言わないバッチ",
-  "difficulty": "advanced",
+  "difficulty": "beginner",
   "timeLimitMinutes": 15,
   "service": {
     "name": "うん用 batch",
@@ -75,5 +75,10 @@
       "from": "経理",
       "body": "売上集計が止まってるんですが、うんともすんとも言いません。"
     }
+  ],
+  "navigationSteps": [
+    { "id": "nav-batch-log", "atMs": 0, "hint": "batch.log に不親切なエラーが出ていないか確認する", "panel": "terminal", "suggestedCommand": "tail -n 20 /workspace/logs/batch.log" },
+    { "id": "nav-spec", "atMs": 60000, "hint": "うん言語仕様表 Runbook を開く", "panel": "runbook" },
+    { "id": "nav-devtools", "atMs": 90000, "hint": "DevTools の Console でエラー行を追う", "panel": "devtools" }
   ]
 }

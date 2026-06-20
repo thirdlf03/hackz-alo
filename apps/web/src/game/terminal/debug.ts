@@ -22,7 +22,9 @@ export function installTerminalWebSocketDebug() {
       let bytes: number[] | undefined;
       if (data instanceof ArrayBuffer) bytes = [...new Uint8Array(data)];
       else if (ArrayBuffer.isView(data)) bytes = [...new Uint8Array(data.buffer, data.byteOffset, data.byteLength)];
-      else if (typeof data === "string") {
+      else if (data instanceof Blob) {
+        terminalDebug("ws.send.blob", { size: data.size });
+      } else if (typeof data === "string") {
         try {
           const parsed = JSON.parse(data) as { type?: string };
           terminalDebug("ws.send.json", { type: parsed.type ?? "unknown" });
@@ -38,6 +40,9 @@ export function installTerminalWebSocketDebug() {
         });
       }
     }
-    return originalSend.call(this, data);
+    if (data instanceof Blob) {
+      return (originalSend as (data: ArrayBuffer | ArrayBufferView | Blob | string) => void).call(this, data);
+    }
+    return originalSend.call(this, data as ArrayBuffer | ArrayBufferView | string);
   };
 }

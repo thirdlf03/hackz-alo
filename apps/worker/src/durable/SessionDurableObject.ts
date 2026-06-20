@@ -12,6 +12,8 @@ import type { Bindings } from "../types.js";
 import {
   evaluateSuccessCondition,
   fetchSessionMetrics,
+  fetchSessionLogs,
+  fetchSessionStorage,
   injectFault,
   interruptSessionTerminal,
   proxySessionTerminal,
@@ -58,6 +60,8 @@ export class SessionDurableObject implements DurableObject {
       if (request.method === "POST" && action === "retire") return this.retire();
       if (request.method === "GET" && action === "events") return this.events();
       if (request.method === "GET" && action === "metrics") return this.metrics();
+      if (request.method === "GET" && action === "logs") return this.logs(request);
+      if (request.method === "GET" && action === "storage") return this.storage();
       if (request.method === "GET" && action === "terminal") return this.terminal(request);
       if (request.method === "POST" && action === "terminal-interrupt") return this.terminalInterrupt();
       if (request.method === "GET") return jsonOk(await this.snapshot());
@@ -214,6 +218,27 @@ export class SessionDurableObject implements DurableObject {
     this.metricsCache = metrics;
     this.metricsCachedAt = now;
     return jsonOk(metrics);
+  }
+
+  private async logs(request: Request) {
+    const session = await this.requireSession();
+    if (session.status !== "running") {
+      throw new HttpError(409, "invalid_state", "logs are only available while the session is running");
+    }
+    const url = new URL(request.url);
+    const file = url.searchParams.get("file") ?? "access";
+    const tail = Number(url.searchParams.get("tail") ?? "50");
+    const lines = await fetchSessionLogs(this.env, session.sessionId, file, tail);
+    return jsonOk({ file, lines });
+  }
+
+  private async storage() {
+    const session = await this.requireSession();
+    if (session.status !== "running") {
+      throw new HttpError(409, "invalid_state", "storage is only available while the session is running");
+    }
+    const entries = await fetchSessionStorage(this.env, session.sessionId);
+    return jsonOk({ entries });
   }
 
   private clearMetricsCache() {

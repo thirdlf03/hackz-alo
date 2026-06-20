@@ -3,11 +3,23 @@ import { validateScenarioDefinition } from "@incident/shared";
 import processStop from "../data/process-stop-001.json" with { type: "json" };
 import diskFull from "../data/disk-full-001.json" with { type: "json" };
 import unlangBatch from "../data/unlang-batch-001.json" with { type: "json" };
+import dbPool from "../data/db-pool-001.json" with { type: "json" };
+import badDeploy from "../data/bad-deploy-001.json" with { type: "json" };
+import logBloat from "../data/log-bloat-001.json" with { type: "json" };
+import diskRestartLoop from "../data/disk-restart-loop-001.json" with { type: "json" };
+import monitorBlind from "../data/monitor-blind-001.json" with { type: "json" };
+import unlangMystery from "../data/unlang-mystery-001.json" with { type: "json" };
 
 export const scenarios = [
   processStop,
   diskFull,
-  unlangBatch
+  unlangBatch,
+  dbPool,
+  badDeploy,
+  logBloat,
+  diskRestartLoop,
+  monitorBlind,
+  unlangMystery
 ] as ScenarioDefinition[];
 
 export function listScenarios() {

@@ -91,6 +91,44 @@ export async function fetchSessionMetrics(env: Bindings, sessionId: string): Pro
   }
 }
 
+export async function fetchSessionLogs(
+  env: Bindings,
+  sessionId: string,
+  file: string,
+  tail: number
+): Promise<string[]> {
+  const allowed = new Set(["access", "app", "batch"]);
+  if (!allowed.has(file)) return [];
+  const path = `/workspace/logs/${file}.log`;
+  const lines = Math.max(1, Math.min(200, Number.isFinite(tail) ? tail : 50));
+  const sandbox = getSessionSandbox(env, sessionId);
+  const result = await sandbox.exec(`tail -n ${lines} ${shellArg(path)}`);
+  if (!result.success || !result.stdout) return [];
+  return result.stdout.split("\n").filter(Boolean);
+}
+
+export async function fetchSessionStorage(env: Bindings, sessionId: string) {
+  const sandbox = getSessionSandbox(env, sessionId);
+  const script = [
+    "const fs=require('fs');const path=require('path');",
+    "const run='/workspace/run';",
+    "const entries=[];",
+    "if(fs.existsSync(path.join(run,'api.down'))) entries.push({key:'api.down',value:fs.readFileSync(path.join(run,'api.down'),'utf8')});",
+    "if(fs.existsSync(path.join(run,'db.pool.exhausted'))) entries.push({key:'db.pool.exhausted',value:'true'});",
+    "if(fs.existsSync(path.join(run,'monitor.blind.json'))) entries.push({key:'monitor.blind',value:fs.readFileSync(path.join(run,'monitor.blind.json'),'utf8')});",
+    "if(fs.existsSync(path.join(run,'job-queue.jsonl'))) entries.push({key:'job-queue',value:fs.readFileSync(path.join(run,'job-queue.jsonl'),'utf8').split('\\n').slice(-5).join('\\n')});",
+    "if(fs.existsSync(path.join(run,'fake-db-stats.json'))) entries.push({key:'fake-db-stats',value:fs.readFileSync(path.join(run,'fake-db-stats.json'),'utf8').trim()});",
+    "process.stdout.write(JSON.stringify(entries));"
+  ].join("");
+  const result = await sandbox.exec(`node -e ${shellArg(script)}`);
+  if (!result.success || !result.stdout?.trim()) return [];
+  try {
+    return JSON.parse(result.stdout) as Array<{ key: string; value: string }>;
+  } catch {
+    return [];
+  }
+}
+
 export async function injectFault(
   env: Bindings,
   sessionId: string,
@@ -109,6 +147,30 @@ export async function injectFault(
   } else if (type === "queue_backlog") {
     await sandbox.exec(
       `node /workspace/bin/fault-injector.mjs queue_backlog ${Number(params.count ?? 32)}`
+    );
+  } else if (type === "bad_deploy") {
+    await sandbox.exec(
+      `node /workspace/bin/fault-injector.mjs bad_deploy ${shellArg(String(params.configPath ?? "/workspace/run/deploy.json"))}`
+    );
+  } else if (type === "db_pool_exhaust") {
+    await sandbox.exec(
+      `node /workspace/bin/fault-injector.mjs db_pool_exhaust ${Number(params.maxConnections ?? 40)}`
+    );
+  } else if (type === "memory_leak") {
+    await sandbox.exec(
+      `node /workspace/bin/fault-injector.mjs memory_leak ${Number(params.targetPercent ?? 92)}`
+    );
+  } else if (type === "dns_misconfig") {
+    await sandbox.exec(
+      `node /workspace/bin/fault-injector.mjs dns_misconfig ${shellArg(String(params.hostsPath ?? "/workspace/run/hosts.override"))}`
+    );
+  } else if (type === "monitor_blind") {
+    await sandbox.exec(
+      `node /workspace/bin/fault-injector.mjs monitor_blind ${shellArg(JSON.stringify(params.blindMetrics ?? ["cpu", "memory"]))}`
+    );
+  } else if (type === "composite_restart_loop") {
+    await sandbox.exec(
+      `node /workspace/bin/fault-injector.mjs composite_restart_loop ${shellArg(String(params.diskPath ?? "/workspace/logs/debug.log"))} ${Number(params.bytes ?? 67108864)} ${shellArg(String(params.processId ?? "api"))}`
     );
   } else {
     throw new Error(`unknown fault type: ${type}`);

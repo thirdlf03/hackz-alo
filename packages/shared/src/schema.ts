@@ -5,7 +5,19 @@ export type ValidationResult<T> =
   | { ok: false; errors: string[] };
 
 const difficulties = new Set(["beginner", "intermediate", "advanced"]);
-const triggerTypes = new Set(["process_stop", "disk_full", "unlang_batch_failure"]);
+const triggerTypes = new Set([
+  "process_stop",
+  "disk_full",
+  "unlang_batch_failure",
+  "queue_backlog",
+  "bad_deploy",
+  "db_pool_exhaust",
+  "memory_leak",
+  "dns_misconfig",
+  "monitor_blind",
+  "composite_restart_loop"
+]);
+const navigationPanels = new Set(["metrics", "terminal", "runbook", "slack", "devtools"]);
 const alertSeverities = new Set(["info", "warning", "critical"]);
 const alertSources = new Set(["scenario", "monitor"]);
 const successTypes = new Set([
@@ -131,6 +143,26 @@ export function validateScenarioDefinition(input: unknown): ValidationResult<Sce
     requireString(item, "from", errors, path);
     requireString(item, "body", errors, path);
   });
+
+  const navigationStepIds = new Set<string>();
+  if (value.navigationSteps !== undefined) {
+    validateArray(value, "navigationSteps", errors, (item, path) => {
+      if (!isObject(item)) {
+        errors.push(`${path} must be an object`);
+        return;
+      }
+      requireId(item, "id", errors, path);
+      rememberUnique(navigationStepIds, item.id, `${path}.id`, errors);
+      requireNonNegativeInteger(item, "atMs", errors, path);
+      requireString(item, "hint", errors, path);
+      if (item.panel !== undefined && (typeof item.panel !== "string" || !navigationPanels.has(item.panel))) {
+        errors.push(`${path}.panel must be metrics, terminal, runbook, slack, or devtools`);
+      }
+      if (item.suggestedCommand !== undefined && typeof item.suggestedCommand !== "string") {
+        errors.push(`${path}.suggestedCommand must be a string`);
+      }
+    });
+  }
 
   validateTimelineBounds(value, errors);
 
@@ -299,6 +331,24 @@ function validateTriggerParams(trigger: Record<string, unknown>, path: string, e
   } else if (trigger.type === "unlang_batch_failure") {
     requireString(trigger.params, "jobId", errors, `${path}.params`);
     requireAbsolutePath(trigger.params, "path", errors, `${path}.params`);
+  } else if (trigger.type === "queue_backlog") {
+    requirePositiveInteger(trigger.params, "count", errors, `${path}.params`);
+  } else if (trigger.type === "bad_deploy") {
+    requireAbsolutePath(trigger.params, "configPath", errors, `${path}.params`);
+  } else if (trigger.type === "db_pool_exhaust") {
+    requirePositiveInteger(trigger.params, "maxConnections", errors, `${path}.params`);
+  } else if (trigger.type === "memory_leak") {
+    requirePercent(trigger.params, "targetPercent", errors, `${path}.params`);
+  } else if (trigger.type === "dns_misconfig") {
+    requireAbsolutePath(trigger.params, "hostsPath", errors, `${path}.params`);
+  } else if (trigger.type === "monitor_blind") {
+    if (!Array.isArray(trigger.params.blindMetrics) || trigger.params.blindMetrics.length === 0) {
+      errors.push(`${path}.params.blindMetrics must be a non-empty array`);
+    }
+  } else if (trigger.type === "composite_restart_loop") {
+    requireAbsolutePath(trigger.params, "diskPath", errors, `${path}.params`);
+    requirePositiveInteger(trigger.params, "bytes", errors, `${path}.params`);
+    requireString(trigger.params, "processId", errors, `${path}.params`);
   }
 }
 
@@ -333,7 +383,8 @@ function validateTimelineBounds(value: Record<string, unknown>, errors: string[]
   for (const [key, label] of [
     ["triggers", "triggers"],
     ["alerts", "alerts"],
-    ["slackMessages", "slackMessages"]
+    ["slackMessages", "slackMessages"],
+    ["navigationSteps", "navigationSteps"]
   ] as const) {
     const items = value[key];
     if (!Array.isArray(items)) continue;

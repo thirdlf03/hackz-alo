@@ -80,7 +80,97 @@ export type UnlangBatchFailureTrigger = {
   params: { jobId: string; path: string };
 };
 
-export type ScenarioTrigger = ProcessStopTrigger | DiskFullTrigger | UnlangBatchFailureTrigger;
+export type QueueBacklogTrigger = {
+  id: string;
+  atMs: number;
+  type: "queue_backlog";
+  params: { count: number };
+};
+
+export type BadDeployTrigger = {
+  id: string;
+  atMs: number;
+  type: "bad_deploy";
+  params: { configPath: string };
+};
+
+export type DbPoolExhaustTrigger = {
+  id: string;
+  atMs: number;
+  type: "db_pool_exhaust";
+  params: { maxConnections: number };
+};
+
+export type MemoryLeakTrigger = {
+  id: string;
+  atMs: number;
+  type: "memory_leak";
+  params: { targetPercent: number };
+};
+
+export type DnsMisconfigTrigger = {
+  id: string;
+  atMs: number;
+  type: "dns_misconfig";
+  params: { hostsPath: string };
+};
+
+export type MonitorBlindTrigger = {
+  id: string;
+  atMs: number;
+  type: "monitor_blind";
+  params: { blindMetrics: string[] };
+};
+
+export type CompositeRestartLoopTrigger = {
+  id: string;
+  atMs: number;
+  type: "composite_restart_loop";
+  params: { diskPath: string; bytes: number; processId: string };
+};
+
+export type ScenarioTrigger =
+  | ProcessStopTrigger
+  | DiskFullTrigger
+  | UnlangBatchFailureTrigger
+  | QueueBacklogTrigger
+  | BadDeployTrigger
+  | DbPoolExhaustTrigger
+  | MemoryLeakTrigger
+  | DnsMisconfigTrigger
+  | MonitorBlindTrigger
+  | CompositeRestartLoopTrigger;
+
+export type NavigationPanel = "metrics" | "terminal" | "runbook" | "slack" | "devtools";
+
+export type NavigationStep = {
+  id: string;
+  atMs: number;
+  hint: string;
+  panel?: NavigationPanel;
+  suggestedCommand?: string;
+};
+
+export type DevToolsTab = "network" | "console" | "storage";
+
+export type DevToolsPanelState = {
+  visible: boolean;
+  tab: DevToolsTab;
+  networkLines: Array<{ at: string; method: string; path: string; status: number }>;
+  consoleLines: string[];
+  storageEntries: Array<{ key: string; value: string }>;
+};
+
+export type GameNavigationState = {
+  dismissedStepIds: string[];
+  activeStepId?: string;
+};
+
+export type NotificationState = {
+  panelOpen: boolean;
+  readAlertIds: string[];
+  pulseMs: number;
+};
 
 export type SuccessCondition =
   | { type: "http_status"; url: string; status: number }
@@ -123,6 +213,7 @@ export type ScenarioDefinition = {
   successConditions: SuccessCondition[];
   runbooks: RunbookDefinition[];
   slackMessages: SlackMessageDefinition[];
+  navigationSteps?: NavigationStep[];
 };
 
 export type MetricsSnapshot = {
@@ -172,12 +263,24 @@ export type GameRenderState = {
     };
     center: {
       terminal: TerminalMirrorState;
+      devtools?: DevToolsPanelState;
     };
     right: {
       activeRunbook?: RunbookDefinition | undefined;
+      activeRunbookIndex: number;
       slackMessages: SlackMessageDefinition[];
     };
   };
+  navigation: GameNavigationState;
+  notifications: NotificationState;
+  seenSlackIds: string[];
+  playerSlackMessages: SlackMessageDefinition[];
+  slackCompose: {
+    active: boolean;
+    draft: string;
+  };
+  openedRunbookIds: string[];
+  alertFlashMs: number;
   cursor: { x: number; y: number; visible: boolean };
   clickEffects: Array<{ id: string; x: number; y: number; ageMs: number }>;
   recording: {
@@ -195,6 +298,7 @@ export type GameRenderState = {
       | "unsupported_browser";
     mimeType?: string;
     chunkCount: number;
+    saveEnabled: boolean;
   };
 };
 

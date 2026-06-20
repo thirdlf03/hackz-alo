@@ -46,13 +46,18 @@ export class RequestMetricsTracker {
 }
 
 export async function readSystemMetrics(workspace = "/workspace") {
-  const [cpu, memory, disk] = await Promise.all([
+  const [cpu, memory, disk, overrides] = await Promise.all([
     readCpuPercent(),
-    readMemoryPercent(),
-    readDiskPercent(workspace)
+    readMemoryPercent(workspace),
+    readDiskPercent(workspace),
+    readMonitorOverrides(workspace)
   ]);
 
-  return { cpu, memory, disk };
+  return {
+    cpu: overrides.cpu ?? cpu,
+    memory: overrides.memory ?? memory,
+    disk
+  };
 }
 
 export async function readServiceMetrics(workspace = "/workspace") {
@@ -110,7 +115,17 @@ async function readCpuQuotaRatio() {
   }
 }
 
-async function readMemoryPercent() {
+async function readMemoryPercent(workspace) {
+  const leakPath = path.join(workspace, "run", "memory.leak");
+  if (existsSync(leakPath)) {
+    try {
+      const value = Number((await readFile(leakPath, "utf8")).trim());
+      if (Number.isFinite(value)) return Math.min(100, Math.max(0, value));
+    } catch {
+      // fall through
+    }
+  }
+
   try {
     const [currentRaw, maxRaw] = await Promise.all([
       readFile("/sys/fs/cgroup/memory.current", "utf8"),
@@ -158,6 +173,15 @@ async function readDiskPercent(workspace) {
 }
 
 async function readDbConnections(workspace) {
+  if (existsSync(path.join(workspace, "run", "db.pool.exhausted"))) {
+    try {
+      const max = Number((await readFile(path.join(workspace, "run", "db.pool.exhausted"), "utf8")).trim());
+      if (Number.isFinite(max)) return max;
+    } catch {
+      return 40;
+    }
+  }
+
   const statsPath = path.join(workspace, "run", "fake-db-stats.json");
   if (!existsSync(statsPath)) return 0;
   try {
@@ -176,5 +200,20 @@ async function readQueueDepth(workspace) {
     return content.split("\n").filter((line) => line.trim()).length;
   } catch {
     return 0;
+  }
+}
+
+async function readMonitorOverrides(workspace) {
+  const blindPath = path.join(workspace, "run", "monitor.blind.json");
+  if (!existsSync(blindPath)) return {};
+  try {
+    const payload = JSON.parse(await readFile(blindPath, "utf8"));
+    const blind = Array.isArray(payload.blindMetrics) ? payload.blindMetrics : [];
+    const overrides = {};
+    if (blind.includes("cpu")) overrides.cpu = 0;
+    if (blind.includes("memory")) overrides.memory = 0;
+    return overrides;
+  } catch {
+    return {};
   }
 }
