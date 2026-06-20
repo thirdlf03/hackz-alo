@@ -1,6 +1,7 @@
 import { SandboxAddon } from "@cloudflare/sandbox/xterm";
 import { Terminal } from "@xterm/xterm";
 import type { TerminalMirrorState } from "@incident/shared";
+import { gamePalette } from "../render/gamePalette.js";
 import { installTerminalWebSocketDebug, terminalDebug } from "./debug.js";
 import { terminalToMirrorState } from "./mirror.js";
 
@@ -46,9 +47,9 @@ export class TerminalSession {
       fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
       fontSize: 14,
       theme: {
-        background: "#05070a",
-        foreground: "#d1fae5",
-        cursor: "#d1fae5"
+        background: gamePalette.bgTerminal,
+        foreground: gamePalette.textTerminal,
+        cursor: gamePalette.textTerminal
       }
     });
 

@@ -78,9 +78,9 @@ export function ResultPage({
     : formatDuration(knownVideoDurationMs ?? meta?.duration_ms ?? 0);
 
   return (
-    <section class="panel result-panel">
+    <section class="panel result-panel" aria-labelledby="result-heading">
       <p class="eyebrow">Mission Report</p>
-      <h1>{scenarioTitle}</h1>
+      <h1 id="result-heading">{scenarioTitle}</h1>
       {error && <p class="app-error" role="alert">{error}</p>}
       <div class="result-grid">
         <div>
@@ -145,7 +145,9 @@ export function ResultPage({
 
       <div class="result-actions">
         <button type="button" onClick={onRetry}>再挑戦</button>
-        <button type="button" onClick={onOpenReplay} disabled={!canOpenReplay}>Replay 詳細を見る</button>
+        <button type="button" onClick={onOpenReplay} disabled={!canOpenReplay} aria-label="リプレイ詳細を見る">
+          Replay 詳細を見る
+        </button>
       </div>
     </section>
   );

@@ -8,24 +8,25 @@ import {
   decayWorldOverlays,
   deactivateSlackCompose,
   dismissNavigationStep,
+  mergedSlackMessages,
   setActiveRunbook,
   setDevtoolsTab,
+  setRightPanelTab,
   setSlackDraft,
   submitPlayerSlackMessage,
-  toggleDevtools,
   toggleExpandedMonitor,
   toggleNotificationPanel
 } from "../game/state/gameState.js";
 import {
   CanvasRenderer,
   devtoolsTabAt,
-  devtoolsToggleRegion,
   expandedMonitorLayout,
   inputDockRects,
   monitorMagnifyAt,
   navigationOverlayRect,
   notificationBellRegion,
   runbookTabAt,
+  rightPanelPrimaryTabAt,
   slackComposeAt
 } from "../game/render/canvasRenderer.js";
 import { createEmptyTerminalMirror } from "../game/terminal/mirror.js";
@@ -602,12 +603,27 @@ export function App() {
       const activeScenario = scenarioRef.current;
       if (activeScenario) {
         const difficulty = gameStateRef.current?.session.difficulty ?? "beginner";
+        const expandedMonitor = gameStateRef.current?.world.expandedMonitor ?? null;
+        const activePanelTab = gameStateRef.current?.monitors.right.activePanelTab ?? "runbook";
+        const primaryTab = rightPanelPrimaryTabAt(point.x, point.y, difficulty, expandedMonitor);
+        if (primaryTab) {
+          patchGameStateRef((current) => setRightPanelTab(current, primaryTab));
+          void emitter.emit({
+            replayId,
+            type: "ui_panel_open",
+            at,
+            payload: { panel: primaryTab === "slack" ? "slack" : "runbook" }
+          });
+          return;
+        }
         const tabIndex = runbookTabAt(
           point.x,
           point.y,
           difficulty,
           activeScenario.runbooks.length,
-          activeScenario.runbooks.map((item) => item.title)
+          activeScenario.runbooks.map((item) => item.title),
+          expandedMonitor,
+          activePanelTab
         );
         if (tabIndex >= 0) {
           patchGameStateRef((current) => setActiveRunbook(current, activeScenario, tabIndex));
@@ -617,9 +633,14 @@ export function App() {
         }
       }
       if (containsPoint(notificationBellRegion, point.x, point.y)) {
-        const unread = gameStateRef.current?.monitors.left.alerts.filter(
+        const unreadAlerts = gameStateRef.current?.monitors.left.alerts.filter(
           (alert) => !gameStateRef.current?.notifications.readAlertIds.includes(alert.id)
         ) ?? [];
+        const unreadSlack = gameStateRef.current
+          ? mergedSlackMessages(gameStateRef.current).filter(
+            (message) => !gameStateRef.current!.seenSlackIds.includes(message.id)
+          )
+          : [];
         patchGameStateRef((current) => toggleNotificationPanel(current));
         void emitter.emit({
           replayId,
@@ -627,7 +648,7 @@ export function App() {
           at,
           payload: { panel: "notifications" }
         });
-        for (const alert of unread) {
+        for (const alert of unreadAlerts) {
           void emitter.emitOnce(`slack-read:${alert.id}`, {
             replayId,
             type: "slack_message_read",
@@ -635,12 +656,14 @@ export function App() {
             payload: { alertId: alert.id, message: alert.message }
           });
         }
-        return;
-      }
-      if (containsPoint(devtoolsToggleRegion, point.x, point.y)) {
-        patchGameStateRef((current) => toggleDevtools(current));
-        window.setTimeout(() => refreshDevtoolsRef.current?.(), 0);
-        void emitter.emit({ replayId, type: "ui_panel_open", at, payload: { panel: "devtools" } });
+        for (const message of unreadSlack) {
+          void emitter.emitOnce(`slack-read:${message.id}`, {
+            replayId,
+            type: "slack_message_read",
+            at,
+            payload: { messageId: message.id, from: message.from, body: message.body }
+          });
+        }
         return;
       }
       const devtoolsTab = devtoolsTabAt(point.x, point.y);
@@ -666,7 +689,13 @@ export function App() {
         void emitter.emit({ replayId, type: "ui_panel_open", at, payload: { panel: `monitor.${monitorMagnify}` } });
         return;
       }
-      const slackTarget = slackComposeAt(point.x, point.y, gameStateRef.current?.session.difficulty ?? "beginner");
+      const slackTarget = slackComposeAt(
+        point.x,
+        point.y,
+        gameStateRef.current?.session.difficulty ?? "beginner",
+        gameStateRef.current?.monitors.right.activePanelTab ?? "slack",
+        gameStateRef.current?.world.expandedMonitor ?? null
+      );
       if (slackTarget === "send") {
         submitSlackMessage();
         return;
@@ -734,17 +763,56 @@ export function App() {
   }
 
   return (
-    <main class="app-shell">
+    <main class="app-shell" id="main-content">
+      <a href="#main-content" class="skip-link">メインコンテンツへスキップ</a>
       <header class="topbar">
-        <strong>障害対応訓練</strong>
+        <strong
+          class="topbar-brand"
+          role="link"
+          tabIndex={screen === "play" || isStarting ? -1 : 0}
+          aria-label="ホーム（難易度選択）に戻る"
+          aria-disabled={screen === "play" || isStarting}
+          onClick={() => {
+            if (screen === "play" || isStarting) return;
+            setScreen("select");
+          }}
+          onKeyDown={(event) => {
+            if (screen === "play" || isStarting) return;
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              setScreen("select");
+            }
+          }}
+        >
+          障害対応訓練
+        </strong>
         <span>{scenario?.title ?? "未選択"}</span>
-        <div class="speed-control compact" aria-label="ゲーム速度">
+        <div class="speed-control" role="group" aria-label="ゲーム速度">
           {speedOptions.map((speed) => (
-            <button key={speed} type="button" class={speed === gameSpeed ? "active" : ""} onClick={() => setGameSpeed(speed)}>{speed}x</button>
+            <button
+              key={speed}
+              type="button"
+              class={speed === gameSpeed ? "active" : ""}
+              aria-pressed={speed === gameSpeed}
+              onClick={() => setGameSpeed(speed)}
+            >
+              {speed}x
+            </button>
           ))}
         </div>
-        <button type="button" onClick={() => setScreen("select")} disabled={screen === "play" || isStarting}>Scenario</button>
-        {canNavigateToReplay && <button type="button" onClick={openReplay}>Replay</button>}
+        <button
+          type="button"
+          aria-label="シナリオ選択に戻る"
+          onClick={() => setScreen("select")}
+          disabled={screen === "play" || isStarting}
+        >
+          Scenario
+        </button>
+        {canNavigateToReplay && (
+          <button type="button" aria-label="リプレイ詳細を開く" onClick={openReplay}>
+            Replay
+          </button>
+        )}
       </header>
       {appError && <p class="app-error" role="alert">{appError}</p>}
 
@@ -758,9 +826,17 @@ export function App() {
           <div class="difficulty-grid">
             {difficultyOptions.map((option) => {
               const count = scenarios.filter((item) => item.difficulty === option.difficulty).length;
+              const disabled = count === 0 || isStarting;
               return (
-                <button key={option.difficulty} class={`difficulty-card ${option.tone}`} type="button" disabled={count === 0 || isStarting}
-                  onClick={() => { setSelectedDifficulty(option.difficulty); setScreen("scenario-list"); }}>
+                <button
+                  key={option.difficulty}
+                  class={`difficulty-card ${option.tone}`}
+                  type="button"
+                  disabled={disabled}
+                  aria-label={`${option.label}、${count} シナリオ。${option.summary}${disabled ? "（シナリオなし）" : ""}`}
+                  title={disabled ? "この難易度にはシナリオがありません" : undefined}
+                  onClick={() => { setSelectedDifficulty(option.difficulty); setScreen("scenario-list"); }}
+                >
                   <span class="difficulty-label">{option.label}</span>
                   <strong>{count} シナリオ</strong>
                   <small>{option.summary}</small>
@@ -772,9 +848,9 @@ export function App() {
       )}
 
       {screen === "scenario-list" && selectedDifficulty && (
-        <section class="panel scenario-list-panel">
-          <button type="button" onClick={() => setScreen("select")}>戻る</button>
-          <h1>{formatDifficulty(selectedDifficulty)}シナリオ</h1>
+        <section class="panel scenario-list-panel" aria-labelledby="scenario-list-heading">
+          <button type="button" aria-label="難易度選択に戻る" onClick={() => setScreen("select")}>戻る</button>
+          <h1 id="scenario-list-heading">{formatDifficulty(selectedDifficulty)}シナリオ</h1>
           <div class="scenario-list">
             {filteredScenarios.map((item) => (
               <button key={item.id} type="button" class="scenario-card" disabled={isStarting} onClick={() => createSessionForScenario(item.id)}>
@@ -790,32 +866,56 @@ export function App() {
       )}
 
       {screen === "briefing" && scenario && (
-        <section class="panel briefing-panel">
-          <h1>{scenario.title}</h1>
+        <section class="panel briefing-panel" aria-labelledby="briefing-heading">
+          <h1 id="briefing-heading">{scenario.title}</h1>
           <ul>{scenario.briefing.map((line) => <li key={line}>{line}</li>)}</ul>
-          <label class="consent-row">
-            <input type="checkbox" checked={recordingConsent} onChange={(event) => setRecordingConsent((event.currentTarget as HTMLInputElement).checked)} />
-            ゲーム画面（canvas 内のみ）を録画し、振り返りに使うことに同意する
-          </label>
-          <label class="consent-row">
-            <input
-              type="checkbox"
-              checked={saveRecording}
-              disabled={!recordingConsent}
-              onChange={(event) => setSaveRecording((event.currentTarget as HTMLInputElement).checked)}
-            />
-            録画データをサーバーに保存する（オフにするとイベントログのみ残ります）
-          </label>
-          <p>ブラウザ全体や別タブは録画されません。公開するかどうかは後から選べます。</p>
-          <button type="button" onClick={startPlay} disabled={isStarting || !recordingConsent}>{isStarting ? "開始中" : "開始"}</button>
+          <fieldset>
+            <legend>録画設定</legend>
+            <label class="consent-row">
+              <input type="checkbox" checked={recordingConsent} onChange={(event) => setRecordingConsent((event.currentTarget as HTMLInputElement).checked)} />
+              ゲーム画面（canvas 内のみ）を録画し、振り返りに使うことに同意する
+            </label>
+            <label class="consent-row">
+              <input
+                type="checkbox"
+                checked={saveRecording}
+                disabled={!recordingConsent}
+                onChange={(event) => setSaveRecording((event.currentTarget as HTMLInputElement).checked)}
+              />
+              録画データをサーバーに保存する（オフにするとイベントログのみ残ります）
+            </label>
+          </fieldset>
+          <p id="briefing-consent-note">ブラウザ全体や別タブは録画されません。公開するかどうかは後から選べます。</p>
+          <button
+            type="button"
+            onClick={startPlay}
+            disabled={isStarting || !recordingConsent}
+            aria-describedby="briefing-consent-note"
+          >
+            {isStarting ? "開始中…" : "開始"}
+          </button>
         </section>
       )}
 
       {(screen === "play" || screen === "result") && (
         <section class="game-layout">
-          <canvas ref={canvasRef} width="1920" height="1080" aria-label="録画対象のゲーム画面" tabIndex={0}
-            onClick={handleCanvasClick} onMouseMove={handleCanvasMove} onKeyDown={handleTerminalKey}
-            onPaste={(event) => { if (screen === "play" && terminalRef.current) { const text = event.clipboardData?.getData("text/plain"); if (text) { event.preventDefault(); terminalRef.current.input(text); } } }} />
+          <canvas
+            ref={canvasRef}
+            width="1920"
+            height="1080"
+            aria-label="録画対象のゲーム画面。ターミナル入力はキーボードで操作できます。"
+            aria-describedby="canvas-play-hint"
+            tabIndex={0}
+            onClick={handleCanvasClick}
+            onMouseMove={handleCanvasMove}
+            onKeyDown={handleTerminalKey}
+            onPaste={(event) => { if (screen === "play" && terminalRef.current) { const text = event.clipboardData?.getData("text/plain"); if (text) { event.preventDefault(); terminalRef.current.input(text); } } }}
+          />
+          {screen === "play" && (
+            <p id="canvas-play-hint" class="visually-hidden">
+              ターミナルにフォーカスしてキーボードでコマンドを入力できます。画面上のボタンはマウスで操作します。
+            </p>
+          )}
         </section>
       )}
 
@@ -826,7 +926,9 @@ export function App() {
       )}
 
       {screen === "replay" && activeReplayId && !deepLinkValidated && (
-        <section class="panel"><p>リプレイを読み込み中…</p></section>
+        <section class="panel" aria-busy="true">
+          <p role="status">リプレイを読み込み中…</p>
+        </section>
       )}
       {screen === "replay" && activeReplayId && deepLinkValidated && (
         <ReplayPage replayId={activeReplayId} timeline={session ? timeline : []} />

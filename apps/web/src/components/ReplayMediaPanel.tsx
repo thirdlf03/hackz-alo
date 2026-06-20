@@ -133,8 +133,8 @@ export function ReplayMediaPanel({
   const isVideoTimingReady = videoLoadState === "unavailable" || effectiveVideoDuration > 0;
 
   return (
-    <section class="result-replay-panel">
-      <h2>{title}</h2>
+    <section class="result-replay-panel" aria-labelledby="replay-media-heading">
+      <h2 id="replay-media-heading">{title}</h2>
       {showVideo && videoSrc ? (
         <video
           ref={videoRef}
@@ -142,6 +142,7 @@ export function ReplayMediaPanel({
           preload="metadata"
           class="result-replay-video"
           src={videoSrc}
+          aria-label="リプレイ動画"
           onLoadedMetadata={(event: Event) => {
             const video = event.currentTarget as HTMLVideoElement;
             rememberVideoDuration(video);
@@ -150,7 +151,7 @@ export function ReplayMediaPanel({
           onTimeUpdate={(event: Event) => rememberVideoDuration(event.currentTarget as HTMLVideoElement)}
         />
       ) : videoLoadState === "loading" ? (
-        <p class="result-replay-note">動画を読み込み中です…</p>
+        <p class="result-replay-note" role="status">動画を読み込み中です…</p>
       ) : (
         <p class="result-replay-note">録画は保存されていません。イベントログのタイムラインのみ表示しています。</p>
       )}

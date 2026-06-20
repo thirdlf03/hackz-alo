@@ -1,0 +1,63 @@
+:root {
+  color-scheme: dark;
+
+  /* Surfaces */
+  --surface-base: #0a0e14;
+  --surface-raised: #101821;
+  --surface-overlay: rgba(12, 18, 25, 0.9);
+  --surface-topbar: rgba(9, 13, 18, 0.94);
+  --surface-button: #182230;
+  --surface-input: #0f172a;
+  --surface-speed: #0b1119;
+  --surface-error: #450a0a;
+  --surface-success-badge: #123226;
+  --surface-tutorial-badge: #14532d;
+
+  /* Text — AAA 7:1 on --surface-base */
+  --text-primary: #f0f4f8;
+  --text-secondary: #c5d0dc;
+  --text-muted: #b0bcc8;
+  --text-accent: #7dffc8;
+  --text-warning: #ffe08a;
+  --text-link: #9ecbff;
+  --text-error: #fecaca;
+  --text-on-accent: #041410;
+  --text-success-badge: #d8f3e7;
+  --text-tutorial-badge: #a8f5c4;
+
+  /* Borders */
+  --border-default: #3a4758;
+  --border-subtle: #334155;
+  --border-muted: #344154;
+  --border-error: #7f1d1d;
+  --border-success: #23694e;
+  --border-focus: #5ec8ff;
+  --border-active-tab: #3b82f6;
+
+  /* Accent / state */
+  --accent-primary: #5eecc0;
+  --accent-tab: #1d4ed8;
+  --tone-green: #4ade80;
+  --tone-amber: #fbbf24;
+  --tone-red: #f87171;
+
+  /* Focus */
+  --focus-ring-color: #5ec8ff;
+  --focus-ring-width: 2px;
+  --focus-ring-offset: 2px;
+
+  /* Typography */
+  --font-body: 16px;
+  --font-caption: 14px;
+  --font-topbar-title: 26px;
+  --font-topbar-meta: 16px;
+  --touch-speed: 60px;
+  --line-height-body: 1.5;
+
+  /* Touch targets — WCAG 2.5.5 AAA */
+  --touch-min: 44px;
+
+  /* Canvas */
+  --canvas-bg: #050609;
+  --canvas-border: #263244;
+}

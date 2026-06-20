@@ -147,8 +147,23 @@ export function ReplayPage({ replayId, timeline }: Props) {
     void navigator.clipboard.writeText(url);
   }
 
+  const tabIds = {
+    timeline: "replay-tab-timeline",
+    commands: "replay-tab-commands",
+    alerts: "replay-tab-alerts",
+    runbooks: "replay-tab-runbooks",
+    comments: "replay-tab-comments"
+  } as const;
+  const panelIds = {
+    timeline: "replay-panel-timeline",
+    commands: "replay-panel-commands",
+    alerts: "replay-panel-alerts",
+    runbooks: "replay-panel-runbooks",
+    comments: "replay-panel-comments"
+  } as const;
+
   return (
-    <section class="replay-layout expanded">
+    <section class="replay-layout expanded" aria-label="リプレイ詳細">
       <div class="replay-main">
         {videoSrc ? (
           <video
@@ -177,22 +192,38 @@ export function ReplayPage({ replayId, timeline }: Props) {
           <span>難易度: {meta?.difficulty ?? "-"}</span>
           <span>対応時間: {durationLabel}</span>
         </div>
-        <button type="button" onClick={copyShareLink}>共有リンクをコピー</button>
+        <button type="button" aria-label="共有リンクをコピー" onClick={copyShareLink}>共有リンクをコピー</button>
         {shareWarning && (
-          <p class="visibility-warning">ターミナル入力や Slack の内容が含まれる可能性があります。共有前に内容を確認してください。</p>
+          <p class="visibility-warning" role="alert">
+            ターミナル入力や Slack の内容が含まれる可能性があります。共有前に内容を確認してください。
+          </p>
         )}
       </div>
       <aside class="replay-side">
-        <div class="replay-tabs">
+        <div class="replay-tabs" role="tablist" aria-label="リプレイ情報">
           {(["timeline", "commands", "alerts", "runbooks", "comments"] as const).map((item) => (
-            <button key={item} type="button" class={tab === item ? "active" : ""} onClick={() => setTab(item)}>
+            <button
+              key={item}
+              id={tabIds[item]}
+              type="button"
+              role="tab"
+              class={tab === item ? "active" : ""}
+              aria-selected={tab === item}
+              aria-controls={panelIds[item]}
+              onClick={() => setTab(item)}
+            >
               {tabLabel(item)}
             </button>
           ))}
         </div>
         {tab === "timeline" && (
           isVideoTimingReady ? (
-            <ol class="timeline">
+            <ol
+              id={panelIds.timeline}
+              class="timeline"
+              role="tabpanel"
+              aria-labelledby={tabIds.timeline}
+            >
               {visibleTimeline.map((event) => (
                 <li key={event.id}>
                   {videoSrc ? (
@@ -210,14 +241,33 @@ export function ReplayPage({ replayId, timeline }: Props) {
               ))}
             </ol>
           ) : (
-            <p class="result-replay-note">タイムラインの時間を計算中です…</p>
+            <p class="result-replay-note" id={panelIds.timeline} role="tabpanel" aria-labelledby={tabIds.timeline}>
+              タイムラインの時間を計算中です…
+            </p>
           )
         )}
-        {tab === "commands" && <ul class="replay-list">{commands.map((event) => <li key={event.event_id}>{event.summary}</li>)}</ul>}
-        {tab === "alerts" && <ul class="replay-list">{alerts.map((event) => <li key={event.event_id}>{event.summary}</li>)}</ul>}
-        {tab === "runbooks" && <ul class="replay-list">{runbooks.map((event) => <li key={event.event_id}>{event.summary}</li>)}</ul>}
+        {tab === "commands" && (
+          <ul id={panelIds.commands} class="replay-list" role="tabpanel" aria-labelledby={tabIds.commands}>
+            {commands.map((event) => <li key={event.event_id}>{event.summary}</li>)}
+          </ul>
+        )}
+        {tab === "alerts" && (
+          <ul id={panelIds.alerts} class="replay-list" role="tabpanel" aria-labelledby={tabIds.alerts}>
+            {alerts.map((event) => <li key={event.event_id}>{event.summary}</li>)}
+          </ul>
+        )}
+        {tab === "runbooks" && (
+          <ul id={panelIds.runbooks} class="replay-list" role="tabpanel" aria-labelledby={tabIds.runbooks}>
+            {runbooks.map((event) => <li key={event.event_id}>{event.summary}</li>)}
+          </ul>
+        )}
         {tab === "comments" && (
-          <section class="replay-comments">
+          <section
+            id={panelIds.comments}
+            class="replay-comments"
+            role="tabpanel"
+            aria-labelledby={tabIds.comments}
+          >
             <ul class="replay-list">
               {comments.map((comment) => (
                 <li key={comment.id}>
@@ -231,11 +281,18 @@ export function ReplayPage({ replayId, timeline }: Props) {
                 </li>
               ))}
             </ul>
-            <textarea value={commentDraft} onInput={(event) => setCommentDraft((event.currentTarget as HTMLTextAreaElement).value)} rows={3} placeholder="この時刻へのコメント" />
+            <label for="replay-comment-draft">この時刻へのコメント</label>
+            <textarea
+              id="replay-comment-draft"
+              value={commentDraft}
+              onInput={(event) => setCommentDraft((event.currentTarget as HTMLTextAreaElement).value)}
+              rows={3}
+              placeholder="この時刻へのコメント…"
+            />
             <button type="button" onClick={() => void submitComment()}>コメント追加</button>
           </section>
         )}
-        {loadError && <p class="app-error">{loadError}</p>}
+        {loadError && <p class="app-error" role="alert">{loadError}</p>}
       </aside>
     </section>
   );

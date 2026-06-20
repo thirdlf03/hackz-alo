@@ -56,6 +56,7 @@ export function createInitialGameState(
         devtools: defaultDevtools()
       },
       right: {
+        activePanelTab: "runbook",
         ...(activeRunbook ? { activeRunbook } : {}),
         activeRunbookIndex: 0,
         slackMessages: []
@@ -97,7 +98,13 @@ export function advanceGameState(
 
   const activeStep = resolveNavigationStep(scenario, elapsedMs, state.navigation.dismissedStepIds);
   const newAlertArrived = alerts.length > state.monitors.left.alerts.length;
-  const notificationPulseMs = newAlertArrived ? 2400 : Math.max(0, state.notifications.pulseMs - deltaMs);
+  const previousSlackIds = new Set([
+    ...state.monitors.right.slackMessages.map((message) => message.id),
+    ...state.playerSlackMessages.map((message) => message.id)
+  ]);
+  const newSlackArrived = slackMessages.some((message) => !previousSlackIds.has(message.id));
+  const notificationPulseMs =
+    newAlertArrived || newSlackArrived ? 2400 : Math.max(0, state.notifications.pulseMs - deltaMs);
 
   const world = computeWorld(state, elapsedMs);
 
@@ -188,6 +195,26 @@ export function dismissNavigationStep(state: GameRenderState, stepId: string): G
   };
 }
 
+export function setRightPanelTab(state: GameRenderState, tab: "runbook" | "slack"): GameRenderState {
+  if (state.monitors.right.activePanelTab === tab) return state;
+  const seenSlackIds =
+    tab === "slack"
+      ? [...new Set([...state.seenSlackIds, ...mergedSlackMessages(state).map((message) => message.id)])]
+      : state.seenSlackIds;
+  return {
+    ...state,
+    monitors: {
+      ...state.monitors,
+      right: {
+        ...state.monitors.right,
+        activePanelTab: tab
+      }
+    },
+    seenSlackIds,
+    slackCompose: tab === "slack" ? state.slackCompose : { ...state.slackCompose, active: false }
+  };
+}
+
 export function setActiveRunbook(state: GameRenderState, scenario: ScenarioDefinition, index: number): GameRenderState {
   const runbook = scenario.runbooks[index];
   if (!runbook) return state;
@@ -200,6 +227,7 @@ export function setActiveRunbook(state: GameRenderState, scenario: ScenarioDefin
       ...state.monitors,
       right: {
         ...state.monitors.right,
+        activePanelTab: "runbook",
         activeRunbook: runbook,
         activeRunbookIndex: index
       }
@@ -241,9 +269,13 @@ export function toggleNotificationPanel(state: GameRenderState): GameRenderState
   const readAlertIds = panelOpen
     ? [...new Set([...state.notifications.readAlertIds, ...state.monitors.left.alerts.map((alert) => alert.id)])]
     : state.notifications.readAlertIds;
+  const seenSlackIds = panelOpen
+    ? [...new Set([...state.seenSlackIds, ...mergedSlackMessages(state).map((message) => message.id)])]
+    : state.seenSlackIds;
   return {
     ...state,
     notifications: { ...state.notifications, panelOpen, readAlertIds, pulseMs: panelOpen ? 0 : state.notifications.pulseMs },
+    seenSlackIds,
     slackCompose: panelOpen ? state.slackCompose : { ...state.slackCompose, active: false }
   };
 }
@@ -288,6 +320,16 @@ export function submitPlayerSlackMessage(state: GameRenderState, body: string, a
 
 export function mergedSlackMessages(state: GameRenderState) {
   return [...state.monitors.right.slackMessages, ...state.playerSlackMessages].sort((a, b) => a.atMs - b.atMs);
+}
+
+export function unreadNotificationCount(state: GameRenderState) {
+  const unreadAlerts = state.monitors.left.alerts.filter(
+    (alert) => !state.notifications.readAlertIds.includes(alert.id)
+  ).length;
+  const unreadSlack = mergedSlackMessages(state).filter(
+    (message) => !state.seenSlackIds.includes(message.id)
+  ).length;
+  return unreadAlerts + unreadSlack;
 }
 
 export function unreadAlertCount(state: GameRenderState) {

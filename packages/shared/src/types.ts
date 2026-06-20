@@ -306,6 +306,7 @@ export type GameRenderState = {
       devtools?: DevToolsPanelState;
     };
     right: {
+      activePanelTab: "runbook" | "slack";
       activeRunbook?: RunbookDefinition | undefined;
       activeRunbookIndex: number;
       slackMessages: SlackMessageDefinition[];

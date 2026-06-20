@@ -60,12 +60,12 @@
     {
       "id": "runbook.unlang",
       "title": "うん言語バッチ調査",
-      "body": "1. tail -n 50 /workspace/logs/batch.log を確認する\\n2. cat /workspace/services/batch/sales.un でコードを見る\\n3. うん言語仕様表で演算子を確認する\\n4. 値と演算子の組み合わせを直す、または対象ジョブを一時停止する\\n5. unlang run /workspace/services/batch/sales.un で確認する\\n6. 復旧後に /workspace/logs/batch.log から古い失敗行を退避する"
+      "body": "sales-nightly 復旧手順（この Runbook だけで完結）\n\n1. ログ確認\ntail -n 50 /workspace/logs/batch.log\n→ sales-nightly: うんともすんとも が出ていたら うん言語 runtime error\n\n2. ソース確認\ncat /workspace/services/batch/sales.un\n→ うんわり の右辺が うんなし（0）だと 0 除算で失敗する\n\n3. 仕様確認\n右タブ「うん言語仕様表」を開く（拡大表示推奨）\n\n4. 修正\nsed -i 's/うん y = うんなし/うん y = うんあり/' /workspace/services/batch/sales.un\n\n5. 動作確認\nunlang run /workspace/services/batch/sales.un\n→ 数値が表示されれば OK。うんともすんとも なら未修正\n\n6. ログ片付け\ngrep -v うんともすんとも /workspace/logs/batch.log > /tmp/b.log && mv /tmp/b.log /workspace/logs/batch.log"
     },
     {
       "id": "runbook.unlang-spec",
       "title": "うん言語仕様表",
-      "body": "うんちく: コメント\\nうん <name> = <expr>: 変数定義\\nうんたす: 足し算\\nうんひく: 引き算\\nうんかけ: 掛け算\\nうんわり: 割り算\\nうんなし: 0 / false\\nうんあり: 1 / true\\nうんともすんとも: runtime error"
+      "body": "文\nうんちく: コメント（無視）\nうん <name> = <expr>: 変数定義\nうーん <expr>: 式を評価\nうん！ [<expr>]: 終了（省略時は直前の値）\n\n演算子（優先: かけ/わり → たす/ひく）\nうんたす: +  うんひく: -\nうんかけ: *  うんわり: /（右辺 0 で error）\n\nリテラル: 数値 / うんなし(0) / うんあり(1) / 変数名 / ( )\n\nエラーはすべて「うんともすんとも」のみ表示\nunlang run <file> … 実行  unlang check <file> … 構文チェック\n\n例: うん y = うんなし  のまま x うんわり y → 0 除算で失敗"
     }
   ],
   "slackMessages": [

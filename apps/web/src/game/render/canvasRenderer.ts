@@ -1,6 +1,14 @@
 import type { GameRenderState, MetricsSnapshot, MetricsSource } from "@incident/shared";
-import { mergedSlackMessages } from "../state/gameState.js";
+import { mergedSlackMessages, unreadNotificationCount } from "../state/gameState.js";
 import { parseAnsiLine, stripAnsi, type AnsiSpan } from "../terminal/ansi.js";
+import {
+  gamePalette as palette,
+  toneColor,
+  severityColor,
+  uiFont,
+  monoFont,
+  type MetricTone
+} from "./gamePalette.js";
 
 const logicalWidth = 1920;
 const logicalHeight = 1080;
@@ -10,7 +18,75 @@ const terminalContentWidth = 496;
 const worldPanelHeight = 148;
 const runbookContentX = 1332;
 const runbookContentY = 204;
-const runbookSlackComposeOffset = 394;
+
+const RUNBOOK_TAB_HEIGHT = 40;
+const RUNBOOK_TAB_MIN_WIDTH = 132;
+const RUNBOOK_TAB_MAX_WIDTH = 240;
+const RUNBOOK_TAB_GAP = 8;
+const RUNBOOK_TAB_PAD_X = 16;
+const RUNBOOK_TAB_HIT_PAD = 8;
+const RUNBOOK_CONTENT_GAP = 28;
+
+const RIGHT_PANEL_PRIMARY_TABS = [
+  { id: "runbook" as const, label: "Runbook", width: 108 },
+  { id: "slack" as const, label: "Slack", width: 88 }
+];
+const RIGHT_PANEL_PRIMARY_TAB_HEIGHT = 40;
+const RIGHT_PANEL_SECONDARY_TAB_HEIGHT = 40;
+const RIGHT_PANEL_TAB_ROW_GAP = 8;
+const RIGHT_PANEL_COMPOSE_HEIGHT = 44;
+const RIGHT_PANEL_COMPOSE_PADDING = 16;
+
+type RightPanelTab = "runbook" | "slack";
+
+function rightPanelLayout(
+  difficulty: GameRenderState["session"]["difficulty"],
+  activeTab: RightPanelTab,
+  hasRunbooks: boolean
+) {
+  const worldHeight = runbookWorldOffset(difficulty);
+  const primaryTop = worldHeight;
+  const secondaryTop = primaryTop + RIGHT_PANEL_PRIMARY_TAB_HEIGHT + RIGHT_PANEL_TAB_ROW_GAP;
+  const runbookContentTop = hasRunbooks
+    ? secondaryTop + RIGHT_PANEL_SECONDARY_TAB_HEIGHT + RUNBOOK_CONTENT_GAP
+    : primaryTop + RIGHT_PANEL_PRIMARY_TAB_HEIGHT + RUNBOOK_CONTENT_GAP;
+  const slackMessagesTop = primaryTop + RIGHT_PANEL_PRIMARY_TAB_HEIGHT + RUNBOOK_CONTENT_GAP;
+  const composeTop = monitorContentHeight - RIGHT_PANEL_COMPOSE_HEIGHT - RIGHT_PANEL_COMPOSE_PADDING;
+
+  return {
+    worldHeight,
+    primaryTop,
+    secondaryTop,
+    contentTop: activeTab === "runbook" ? runbookContentTop : slackMessagesTop,
+    composeTop,
+    slackMessagesTop,
+    slackMessagesBottom: composeTop - 12
+  };
+}
+
+let runbookTabMeasureCtx: CanvasRenderingContext2D | null | undefined;
+
+function runbookTabMeasureTextWidth(text: string) {
+  if (typeof document !== "undefined") {
+    if (runbookTabMeasureCtx === undefined) {
+      const canvas = document.createElement("canvas");
+      runbookTabMeasureCtx = canvas.getContext("2d");
+    }
+    if (runbookTabMeasureCtx) {
+      runbookTabMeasureCtx.font = uiFont(16);
+      return runbookTabMeasureCtx.measureText(text).width;
+    }
+  }
+  return text.length * 16;
+}
+
+export function measureRunbookTabWidth(title: string, measure?: (text: string) => number) {
+  const width = (measure ?? runbookTabMeasureTextWidth)(title);
+  return Math.max(
+    RUNBOOK_TAB_MIN_WIDTH,
+    Math.min(RUNBOOK_TAB_MAX_WIDTH, width + RUNBOOK_TAB_PAD_X * 2)
+  );
+}
 
 function showWorldPanel(difficulty: GameRenderState["session"]["difficulty"]) {
   return difficulty === "advanced";
@@ -30,12 +106,28 @@ export const monitorLayouts = [
 
 export const expandedMonitorLayout = { x: 260, y: 50, width: 1400, height: 780 } as const;
 
+function runbookContentTransform(expandedRunbook: boolean) {
+  const monitor = monitorLayouts.find((item) => item.id === "runbook")!;
+  const frameX = expandedRunbook ? expandedMonitorLayout.x : monitor.x;
+  const frameY = expandedRunbook ? expandedMonitorLayout.y : monitor.y;
+  const frameWidth = expandedRunbook ? expandedMonitorLayout.width : monitor.width;
+  const frameHeight = expandedRunbook ? expandedMonitorLayout.height : monitor.height;
+  const contentWidth = frameWidth - 44;
+  const contentHeight = frameHeight - 80;
+  const scale = Math.min(contentWidth / monitorContentWidth, contentHeight / monitorContentHeight);
+  return {
+    x: frameX + 22,
+    y: frameY + 64,
+    scale
+  };
+}
+
 export const monitorMagnifyRegions = monitorLayouts.map((monitor) => ({
   id: monitor.id,
-  x: monitor.x + monitor.width - 44,
-  y: monitor.y + 10,
-  width: 32,
-  height: 32
+  x: monitor.x + monitor.width - 50,
+  y: monitor.y + 4,
+  width: 44,
+  height: 44
 }));
 
 export class CanvasRenderer {
@@ -106,45 +198,43 @@ export class CanvasRenderer {
 
   private drawRoom() {
     const gradient = this.ctx.createLinearGradient(0, 0, 0, logicalHeight);
-    gradient.addColorStop(0, "#111318");
-    gradient.addColorStop(1, "#050609");
+    gradient.addColorStop(0, palette.bgRoomTop);
+    gradient.addColorStop(1, palette.bgRoomBottom);
     this.ctx.fillStyle = gradient;
     this.ctx.fillRect(0, 0, logicalWidth, logicalHeight);
-    this.ctx.fillStyle = "#171b21";
+    this.ctx.fillStyle = palette.bgDesk;
     this.ctx.fillRect(0, 840, logicalWidth, 240);
   }
 
   private drawHeader(state: GameRenderState) {
-    this.ctx.fillStyle = "#e6edf3";
-    this.ctx.font = "32px system-ui, sans-serif";
+    this.ctx.fillStyle = palette.textPrimary;
+    this.ctx.font = uiFont(32);
     this.ctx.fillText(state.session.scenarioTitle, 70, 70);
-    this.ctx.font = "22px system-ui, sans-serif";
-    this.ctx.fillStyle = "#9fb0c0";
+    this.ctx.font = uiFont(24);
+    this.ctx.fillStyle = palette.textSecondary;
     this.ctx.fillText(
       `${formatDifficulty(state.session.difficulty)} / ${formatTime(state.clock.elapsedMs)} / ${formatTime(state.clock.timeLimitMs)} / ${state.clock.speed}x`,
       70,
       108
     );
-    this.ctx.fillStyle = "#fbbf24";
-    this.ctx.font = "bold 26px ui-monospace, SFMono-Regular, Menlo, monospace";
+    this.ctx.fillStyle = palette.textClock;
+    this.ctx.font = monoFont(26, "bold");
     this.ctx.fillText(formatNarrativeClock(state.world.narrativeHour), 1280, 70);
     this.ctx.fillStyle = state.recording.saveEnabled
       ? state.recording.status === "recording"
-        ? "#ff3b30"
-        : "#64748b"
-      : "#64748b";
+        ? palette.statusRecording
+        : palette.textMuted
+      : palette.textMuted;
     this.ctx.beginPath();
     this.ctx.arc(1770, 70, 12, 0, Math.PI * 2);
     this.ctx.fill();
-    this.ctx.fillStyle = "#e6edf3";
-    this.ctx.font = "24px system-ui, sans-serif";
+    this.ctx.fillStyle = palette.textPrimary;
+    this.ctx.font = uiFont(24);
     this.ctx.fillText(formatRecordingStatus(state.recording.status, state.recording.saveEnabled), 1792, 78);
   }
 
   private drawNotifications(state: GameRenderState) {
-    const unread = state.monitors.left.alerts.filter(
-      (alert) => !state.notifications.readAlertIds.includes(alert.id)
-    ).length;
+    const unread = unreadNotificationCount(state);
     const bell = notificationBellRegion;
     const pulsing = state.notifications.pulseMs > 0;
 
@@ -157,10 +247,10 @@ export class CanvasRenderer {
       this.ctx.stroke();
     }
 
-    this.ctx.fillStyle = pulsing ? "#7f1d1d" : "#1e293b";
+    this.ctx.fillStyle = pulsing ? palette.bgButtonDanger : palette.bgCard;
     roundRect(this.ctx, bell.x, bell.y, bell.width, bell.height, 10);
     this.ctx.fill();
-    this.ctx.strokeStyle = unread > 0 ? "#f87171" : "#475569";
+    this.ctx.strokeStyle = unread > 0 ? palette.borderUnread : palette.textMuted;
     this.ctx.lineWidth = 2;
     this.ctx.stroke();
 
@@ -169,11 +259,11 @@ export class CanvasRenderer {
     if (unread > 0) {
       const badge = String(Math.min(unread, 9));
       const badgeWidth = badge.length > 1 ? 28 : 22;
-      this.ctx.fillStyle = "#ef4444";
+      this.ctx.fillStyle = palette.statusCritical;
       roundRect(this.ctx, bell.x + bell.width - badgeWidth + 4, bell.y - 4, badgeWidth, 22, 11);
       this.ctx.fill();
-      this.ctx.fillStyle = "#fff";
-      this.ctx.font = "bold 13px system-ui, sans-serif";
+      this.ctx.fillStyle = palette.textBadge;
+      this.ctx.font = uiFont(14, "bold");
       this.ctx.fillText(badge, bell.x + bell.width - badgeWidth + 11, bell.y + 12);
     }
 
@@ -185,8 +275,8 @@ export class CanvasRenderer {
   private drawBellGlyph(cx: number, cy: number, active: boolean) {
     this.ctx.save();
     this.ctx.translate(cx, cy);
-    this.ctx.fillStyle = active ? "#fecaca" : "#cbd5e1";
-    this.ctx.strokeStyle = active ? "#fecaca" : "#cbd5e1";
+    this.ctx.fillStyle = active ? palette.textWarningFg : palette.textSecondary;
+    this.ctx.strokeStyle = active ? palette.textWarningFg : palette.textSecondary;
     this.ctx.lineWidth = 2;
     this.ctx.beginPath();
     this.ctx.moveTo(-14, 4);
@@ -204,50 +294,94 @@ export class CanvasRenderer {
 
   private drawNotificationPanel(state: GameRenderState) {
     const panel = notificationPanelRegion;
-    this.ctx.fillStyle = "rgba(15, 23, 42, 0.97)";
+    this.ctx.fillStyle = palette.bgOverlay;
     roundRect(this.ctx, panel.x, panel.y, panel.width, panel.height, 12);
     this.ctx.fill();
-    this.ctx.strokeStyle = "#334155";
+    this.ctx.strokeStyle = palette.borderDefault;
     this.ctx.lineWidth = 2;
     this.ctx.stroke();
 
-    this.ctx.fillStyle = "#e2e8f0";
-    this.ctx.font = "18px system-ui, sans-serif";
+    this.ctx.fillStyle = palette.textPrimary;
+    this.ctx.font = uiFont(18);
     this.ctx.fillText("通知", panel.x + 18, panel.y + 30);
-    this.ctx.fillStyle = "#94a3b8";
-    this.ctx.font = "13px system-ui, sans-serif";
-    this.ctx.fillText("障害アラート", panel.x + 18, panel.y + 50);
+    this.ctx.fillStyle = palette.textSecondary;
+    this.ctx.font = uiFont(14);
+    this.ctx.fillText("障害アラート / Slack", panel.x + 18, panel.y + 50);
 
-    const alerts = [...state.monitors.left.alerts].reverse();
-    if (alerts.length === 0) {
-      this.ctx.fillStyle = "#64748b";
-      this.ctx.font = "15px system-ui, sans-serif";
+    const items = [
+      ...state.monitors.left.alerts.map((alert) => ({
+        kind: "alert" as const,
+        atMs: alert.atMs,
+        alert
+      })),
+      ...mergedSlackMessages(state).map((message) => ({
+        kind: "slack" as const,
+        atMs: message.atMs,
+        message
+      }))
+    ].sort((left, right) => right.atMs - left.atMs);
+
+    if (items.length === 0) {
+      this.ctx.fillStyle = palette.textMuted;
+      this.ctx.font = uiFont(16);
       this.ctx.fillText("通知はまだありません", panel.x + 18, panel.y + 90);
       return;
     }
 
     let y = panel.y + 72;
-    for (const alert of alerts.slice(0, 6)) {
-      const unread = !state.notifications.readAlertIds.includes(alert.id);
-      const color = severityColor(alert.severity);
-      this.ctx.fillStyle = unread ? "#1e293b" : "#111827";
+    for (const item of items.slice(0, 7)) {
+      if (item.kind === "alert") {
+        const unread = !state.notifications.readAlertIds.includes(item.alert.id);
+        const color = severityColor(item.alert.severity);
+        this.ctx.fillStyle = unread ? palette.bgCard : palette.bgCardDark;
+        roundRect(this.ctx, panel.x + 12, y, panel.width - 24, 54, 8);
+        this.ctx.fill();
+        if (unread) {
+          this.ctx.strokeStyle = color;
+          this.ctx.lineWidth = 2;
+          this.ctx.stroke();
+        }
+        this.ctx.fillStyle = color;
+        this.ctx.beginPath();
+        this.ctx.arc(panel.x + 26, y + 27, 5, 0, Math.PI * 2);
+        this.ctx.fill();
+        this.ctx.fillStyle = palette.textPrimary;
+        this.ctx.font = monoFont(14, "bold");
+        this.ctx.fillText(item.alert.severity.toUpperCase(), panel.x + 40, y + 22);
+        this.ctx.fillStyle = palette.textSecondary;
+        this.ctx.font = uiFont(14);
+        wrapText(this.ctx, item.alert.message, panel.x + 40, y + 40, panel.width - 56, 18, 2);
+        y += 62;
+        continue;
+      }
+
+      const unread = !state.seenSlackIds.includes(item.message.id);
+      this.ctx.fillStyle = unread ? palette.bgCard : palette.bgCardDark;
       roundRect(this.ctx, panel.x + 12, y, panel.width - 24, 54, 8);
       this.ctx.fill();
       if (unread) {
-        this.ctx.strokeStyle = color;
+        this.ctx.strokeStyle = palette.textLink;
         this.ctx.lineWidth = 2;
         this.ctx.stroke();
       }
-      this.ctx.fillStyle = color;
+      this.ctx.fillStyle = palette.textLink;
       this.ctx.beginPath();
       this.ctx.arc(panel.x + 26, y + 27, 5, 0, Math.PI * 2);
       this.ctx.fill();
-      this.ctx.fillStyle = "#f8fafc";
-      this.ctx.font = "bold 12px ui-monospace, SFMono-Regular, Menlo, monospace";
-      this.ctx.fillText(alert.severity.toUpperCase(), panel.x + 40, y + 22);
-      this.ctx.fillStyle = "#cbd5e1";
-      this.ctx.font = "14px system-ui, sans-serif";
-      wrapText(this.ctx, alert.message, panel.x + 40, y + 40, panel.width - 56, 18, 2);
+      this.ctx.fillStyle = palette.textPrimary;
+      this.ctx.font = monoFont(14, "bold");
+      this.ctx.fillText("SLACK", panel.x + 40, y + 22);
+      this.ctx.fillStyle = palette.textSecondary;
+      this.ctx.font = uiFont(14);
+      wrapText(
+        this.ctx,
+        `${item.message.from}: ${item.message.body}`,
+        panel.x + 40,
+        y + 40,
+        panel.width - 56,
+        18,
+        2
+      );
       y += 62;
     }
   }
@@ -281,7 +415,7 @@ export class CanvasRenderer {
 
   private drawMonitorMagnifyIcons() {
     for (const region of monitorMagnifyRegions) {
-      drawMagnifyIcon(this.ctx, region.x + 4, region.y + 4, 22);
+      drawMagnifyIcon(this.ctx, region.x + 10, region.y + 10, 24);
     }
   }
 
@@ -306,23 +440,23 @@ export class CanvasRenderer {
       else this.drawRightPanel(state, scenario);
     });
 
-    this.ctx.fillStyle = "#64748b";
-    this.ctx.font = "14px system-ui, sans-serif";
+    this.ctx.fillStyle = palette.textMuted;
+    this.ctx.font = uiFont(14);
     this.ctx.fillText("背景をクリックで閉じる", layout.x + layout.width - 168, layout.y + 28);
   }
 
   private drawMonitorFrame(x: number, y: number, width: number, height: number, title: string) {
-    this.ctx.fillStyle = "#252b35";
+    this.ctx.fillStyle = palette.bgMonitor;
     roundRect(this.ctx, x - 16, y - 16, width + 32, height + 32, 8);
     this.ctx.fill();
-    this.ctx.fillStyle = "#05070a";
+    this.ctx.fillStyle = palette.bgTerminal;
     roundRect(this.ctx, x, y, width, height, 6);
     this.ctx.fill();
-    this.ctx.strokeStyle = "#3d4654";
+    this.ctx.strokeStyle = palette.borderMuted;
     this.ctx.lineWidth = 2;
     this.ctx.stroke();
-    this.ctx.fillStyle = "#89a4c7";
-    this.ctx.font = "18px ui-monospace, SFMono-Regular, Menlo, monospace";
+    this.ctx.fillStyle = palette.textLink;
+    this.ctx.font = monoFont(18);
     this.ctx.fillText(title, x + 22, y + 36);
   }
 
@@ -394,7 +528,7 @@ export class CanvasRenderer {
             value: metrics.rps,
             suffix: "",
             max: 80,
-            color: "#a78bfa"
+            color: palette.accentPurple
           }
         ]
       },
@@ -406,7 +540,7 @@ export class CanvasRenderer {
             value: metrics.dbConnections,
             suffix: "",
             max: 40,
-            color: "#f472b6"
+            color: palette.accentPink
           },
           {
             label: "Queue",
@@ -421,10 +555,10 @@ export class CanvasRenderer {
 
     let y = 54;
     for (const section of sections) {
-      this.ctx.fillStyle = "#64748b";
-      this.ctx.font = "11px ui-monospace, SFMono-Regular, Menlo, monospace";
+      this.ctx.fillStyle = palette.textMuted;
+      this.ctx.font = monoFont(14);
       this.ctx.fillText(section.title, 0, y);
-      y += 14;
+      y += 16;
 
       section.cards.forEach((card, index) => {
         const column = index % 2;
@@ -444,7 +578,7 @@ export class CanvasRenderer {
     source: MetricsSource,
     panelWidth: number
   ) {
-    this.ctx.fillStyle = "#111827";
+    this.ctx.fillStyle = palette.bgCardDark;
     roundRect(this.ctx, 0, 0, panelWidth, 40, 8);
     this.ctx.fill();
 
@@ -453,30 +587,30 @@ export class CanvasRenderer {
     this.ctx.arc(14, 20, 6, 0, Math.PI * 2);
     this.ctx.fill();
 
-    this.ctx.fillStyle = "#e2e8f0";
-    this.ctx.font = "15px system-ui, sans-serif";
+    this.ctx.fillStyle = palette.textPrimary;
+    this.ctx.font = uiFont(16);
     this.ctx.fillText("SERVICE HEALTH", 28, 18);
-    this.ctx.fillStyle = "#94a3b8";
-    this.ctx.font = "11px ui-monospace, SFMono-Regular, Menlo, monospace";
+    this.ctx.fillStyle = palette.textSecondary;
+    this.ctx.font = monoFont(14);
     this.ctx.fillText(health.detail, 28, 33);
 
     const badge = health.label;
     const badgeWidth = this.ctx.measureText(badge).width + 20;
-    this.ctx.fillStyle = "#1f2937";
+    this.ctx.fillStyle = palette.bgInput;
     roundRect(this.ctx, panelWidth - badgeWidth - 10, 8, badgeWidth, 24, 6);
     this.ctx.fill();
     this.ctx.fillStyle = health.color;
-    this.ctx.font = "11px ui-monospace, SFMono-Regular, Menlo, monospace";
+    this.ctx.font = monoFont(14);
     this.ctx.fillText(badge, panelWidth - badgeWidth + 2, 24);
 
     const sourceLabel = source === "live" ? "LIVE" : source === "loading" ? "SYNC" : "OFFLINE";
-    const sourceColor = source === "live" ? "#22c55e" : source === "loading" ? "#f59e0b" : "#ef4444";
+    const sourceColor = source === "live" ? palette.statusLive : source === "loading" ? palette.statusLoading : palette.statusError;
     this.ctx.fillStyle = sourceColor;
     this.ctx.beginPath();
     this.ctx.arc(panelWidth - badgeWidth - 24, 20, 4, 0, Math.PI * 2);
     this.ctx.fill();
-    this.ctx.fillStyle = "#cbd5e1";
-    this.ctx.font = "10px ui-monospace, SFMono-Regular, Menlo, monospace";
+    this.ctx.fillStyle = palette.textSecondary;
+    this.ctx.font = monoFont(14);
     this.ctx.fillText(sourceLabel, panelWidth - badgeWidth - 42, 23);
   }
 
@@ -493,26 +627,26 @@ export class CanvasRenderer {
       color: string;
     }
   ) {
-    this.ctx.fillStyle = "#0b1119";
+    this.ctx.fillStyle = palette.bgPanel;
     roundRect(this.ctx, x, y, width, height, 8);
     this.ctx.fill();
-    this.ctx.strokeStyle = "#243041";
+    this.ctx.strokeStyle = palette.borderPanel;
     this.ctx.lineWidth = 1;
     this.ctx.stroke();
 
-    this.ctx.fillStyle = "#94a3b8";
-    this.ctx.font = "11px ui-monospace, SFMono-Regular, Menlo, monospace";
+    this.ctx.fillStyle = palette.textSecondary;
+    this.ctx.font = monoFont(14);
     this.ctx.fillText(card.label, x + 10, y + 16);
 
-    this.ctx.fillStyle = "#f8fafc";
-    this.ctx.font = "bold 20px ui-monospace, SFMono-Regular, Menlo, monospace";
+    this.ctx.fillStyle = palette.textPrimary;
+    this.ctx.font = monoFont(20, "bold");
     this.ctx.fillText(`${card.value}${card.suffix}`, x + 10, y + 38);
 
     const barX = x + 10;
     const barY = y + height - 18;
     const barWidth = width - 20;
     const ratio = Math.max(0, Math.min(1, card.value / card.max));
-    this.ctx.fillStyle = "#1e293b";
+    this.ctx.fillStyle = palette.bgCard;
     this.ctx.fillRect(barX, barY, barWidth, 6);
     this.ctx.fillStyle = card.color;
     this.ctx.fillRect(barX, barY, barWidth * ratio, 6);
@@ -526,12 +660,9 @@ export class CanvasRenderer {
     }
 
     const terminal = state.monitors.center.terminal;
-    this.ctx.fillStyle = "#64748b";
-    this.ctx.font = "12px system-ui, sans-serif";
-    this.ctx.fillText("DevTools", contentWidth - 96, 18);
     const contentHeight = 540;
     const lineHeight = 22;
-    this.ctx.font = "18px ui-monospace, SFMono-Regular, Menlo, monospace";
+    this.ctx.font = monoFont(18);
     const terminalColumns = Math.max(12, Math.floor(contentWidth / this.ctx.measureText("M").width));
     const visualLines = this.layoutTerminalLines(terminal.lines, terminalColumns);
     const cursorVisualLine = findTerminalCursorVisualLine(visualLines, terminal.cursor.y, terminal.cursor.x);
@@ -548,13 +679,13 @@ export class CanvasRenderer {
     const textBlockHeight = visibleLines.length * lineHeight;
     const baseY = Math.max(20, contentHeight - textBlockHeight);
 
-    this.ctx.fillStyle = "#d1fae5";
+    this.ctx.fillStyle = palette.textTerminal;
     visibleLines.forEach((line, index) => {
       const y = baseY + index * lineHeight;
       let x = 0;
       for (const span of line.spans) {
-        this.ctx.fillStyle = span.color ?? "#d1fae5";
-        this.ctx.font = `${span.bold ? "bold " : ""}${span.dim ? "lighter " : ""}18px ui-monospace, SFMono-Regular, Menlo, monospace`;
+        this.ctx.fillStyle = span.color ?? palette.textTerminal;
+        this.ctx.font = monoFont(18, span.bold ? "bold" : span.dim ? "lighter" : "normal");
         this.ctx.fillText(span.text, x, y);
         x += this.ctx.measureText(span.text).width;
       }
@@ -564,10 +695,10 @@ export class CanvasRenderer {
     if (terminal.cursor.visible && cursorLine >= 0 && cursorLine < visibleLines.length) {
       const line = visibleLines[cursorLine];
       if (!line) return;
-      this.ctx.font = "18px ui-monospace, SFMono-Regular, Menlo, monospace";
+      this.ctx.font = monoFont(18);
       const cursorText = line.plain.slice(0, Math.max(0, terminal.cursor.x - line.startColumn));
       const cursorX = this.ctx.measureText(cursorText).width;
-      this.ctx.fillStyle = "#d1fae5";
+      this.ctx.fillStyle = palette.textTerminal;
       this.ctx.fillRect(cursorX, baseY + cursorLine * lineHeight - 16, 10, 20);
     }
   }
@@ -598,73 +729,120 @@ export class CanvasRenderer {
   }
 
   private drawRightPanel(state: GameRenderState, scenario?: import("@incident/shared").ScenarioDefinition) {
-    const worldHeight = runbookWorldOffset(state.session.difficulty);
-    if (worldHeight > 0) this.drawWorldPanel(state.world);
+    const expanded = state.world.expandedMonitor === "runbook";
+    const activePanelTab = state.monitors.right.activePanelTab ?? "runbook";
     const runbooks = scenario?.runbooks ?? (state.monitors.right.activeRunbook ? [state.monitors.right.activeRunbook] : []);
+    const layout = rightPanelLayout(state.session.difficulty, activePanelTab, runbooks.length > 0);
+
+    if (layout.worldHeight > 0) this.drawWorldPanel(state.world);
+
+    this.drawPrimaryPanelTabs(state, layout.primaryTop);
+
+    if (activePanelTab === "runbook") {
+      this.drawRunbookDocumentTabs(state, runbooks, layout.secondaryTop);
+      const titleTop = layout.contentTop;
+      const bodyTop = titleTop + 36;
+      const maxRunbookLines = Math.max(10, Math.floor((monitorContentHeight - bodyTop - 16) / 24));
+      this.ctx.fillStyle = palette.textPrimary;
+      this.ctx.font = uiFont(22);
+      this.ctx.fillText(state.monitors.right.activeRunbook?.title ?? "Runbook", 0, titleTop);
+      this.ctx.font = uiFont(17);
+      wrapText(this.ctx, state.monitors.right.activeRunbook?.body ?? "", 0, bodyTop, 470, 24, maxRunbookLines);
+      return;
+    }
+
+    this.ctx.fillStyle = palette.textPrimary;
+    this.ctx.font = uiFont(20);
+    this.ctx.fillText("Slack", 0, layout.slackMessagesTop);
+    this.ctx.font = uiFont(16);
+    const messageLineHeight = 22;
+    const maxSlackLines = Math.max(4, Math.floor((layout.slackMessagesBottom - layout.slackMessagesTop - 24) / messageLineHeight));
+    let y = layout.slackMessagesTop + 30;
+    let drawnLines = 0;
+    for (const message of mergedSlackMessages(state).slice(-12)) {
+      if (drawnLines >= maxSlackLines) break;
+      const prefix = message.from === "あなた" ? "▸ " : "";
+      const color = message.from === "あなた" ? palette.textLink : palette.textPrimary;
+      this.ctx.fillStyle = color;
+      const nextY = wrapText(this.ctx, `${prefix}${message.from}: ${message.body}`, 0, y, 470, messageLineHeight, 3);
+      drawnLines += Math.max(1, Math.round((nextY - y) / messageLineHeight));
+      y = nextY + 8;
+    }
+
+    this.drawSlackCompose(state, layout.composeTop);
+  }
+
+  private drawPrimaryPanelTabs(state: GameRenderState, top: number) {
+    const activePanelTab = state.monitors.right.activePanelTab ?? "runbook";
+    const unreadSlack = mergedSlackMessages(state).some((message) => !state.seenSlackIds.includes(message.id));
+    this.ctx.font = uiFont(16);
+    let tabX = 0;
+    for (const tab of RIGHT_PANEL_PRIMARY_TABS) {
+      const active = activePanelTab === tab.id;
+      this.ctx.fillStyle = active ? palette.bgCard : palette.bgCardActive;
+      roundRect(this.ctx, tabX, top, tab.width, RIGHT_PANEL_PRIMARY_TAB_HEIGHT, 6);
+      this.ctx.fill();
+      this.ctx.fillStyle = active ? palette.textPrimary : palette.textMuted;
+      this.ctx.fillText(tab.label, tabX + RUNBOOK_TAB_PAD_X, top + 26);
+      if (tab.id === "slack" && unreadSlack && !active) {
+        this.ctx.fillStyle = palette.statusCritical;
+        this.ctx.beginPath();
+        this.ctx.arc(tabX + tab.width - 12, top + 12, 5, 0, Math.PI * 2);
+        this.ctx.fill();
+      }
+      tabX += tab.width + RUNBOOK_TAB_GAP;
+    }
+  }
+
+  private drawRunbookDocumentTabs(
+    state: GameRenderState,
+    runbooks: import("@incident/shared").RunbookDefinition[],
+    top: number
+  ) {
+    this.ctx.font = uiFont(16);
     let tabX = 0;
     for (let index = 0; index < runbooks.length; index += 1) {
       const runbook = runbooks[index];
       if (!runbook) continue;
       const active = index === state.monitors.right.activeRunbookIndex;
-      this.ctx.fillStyle = active ? "#1e293b" : "#0f172a";
-      const width = Math.min(150, this.ctx.measureText(runbook.title).width + 24);
-      roundRect(this.ctx, tabX, worldHeight, width, 28, 4);
+      const width = measureRunbookTabWidth(runbook.title, (title) => this.ctx.measureText(title).width);
+      this.ctx.fillStyle = active ? palette.bgCard : palette.bgCardActive;
+      roundRect(this.ctx, tabX, top, width, RIGHT_PANEL_SECONDARY_TAB_HEIGHT, 6);
       this.ctx.fill();
-      this.ctx.fillStyle = active ? "#e2e8f0" : "#64748b";
-      this.ctx.font = "13px system-ui, sans-serif";
-      this.ctx.fillText(runbook.title.slice(0, 14), tabX + 8, worldHeight + 18);
-      tabX += width + 6;
+      this.ctx.fillStyle = active ? palette.textPrimary : palette.textMuted;
+      this.ctx.fillText(runbook.title, tabX + RUNBOOK_TAB_PAD_X, top + 26);
+      tabX += width + RUNBOOK_TAB_GAP;
     }
-
-    this.ctx.fillStyle = "#e2e8f0";
-    this.ctx.font = "22px system-ui, sans-serif";
-    this.ctx.fillText(state.monitors.right.activeRunbook?.title ?? "Runbook", 0, worldHeight + 54);
-    this.ctx.font = "17px system-ui, sans-serif";
-    const body = state.monitors.right.activeRunbook?.body ?? "";
-    wrapText(this.ctx, body, 0, worldHeight + 88, 470, 24, 7);
-    this.ctx.fillStyle = "#f8fafc";
-    this.ctx.font = "20px system-ui, sans-serif";
-    this.ctx.fillText("Slack", 0, worldHeight + 300);
-    this.ctx.font = "16px system-ui, sans-serif";
-    let y = worldHeight + 330;
-    for (const message of mergedSlackMessages(state).slice(-3)) {
-      const prefix = message.from === "あなた" ? "▸ " : "";
-      const color = message.from === "あなた" ? "#93c5fd" : "#e2e8f0";
-      this.ctx.fillStyle = color;
-      y = wrapText(this.ctx, `${prefix}${message.from}: ${message.body}`, 0, y, 470, 22, 2) + 8;
-    }
-
-    this.drawSlackCompose(state, worldHeight + 394);
   }
 
   private drawWorldPanel(world: GameRenderState["world"]) {
-    this.ctx.fillStyle = "#64748b";
-    this.ctx.font = "11px ui-monospace, SFMono-Regular, Menlo, monospace";
+    this.ctx.fillStyle = palette.textMuted;
+    this.ctx.font = monoFont(14);
     this.ctx.fillText("SECURITY FEEDS", 0, 12);
 
     this.drawCctvFeed(0, 20, 228, 88, "JANITOR CAM", world.janitorCameraActive);
     this.drawCctvFeed(242, 20, 228, 88, "FRIDGE CAM", world.fridgeCameraActive);
 
-    this.ctx.fillStyle = "#94a3b8";
-    this.ctx.font = "11px ui-monospace, SFMono-Regular, Menlo, monospace";
+    this.ctx.fillStyle = palette.textSecondary;
+    this.ctx.font = monoFont(14);
     this.ctx.fillText("RED BULL", 0, 126);
-    this.ctx.fillStyle = "#1e293b";
+    this.ctx.fillStyle = palette.bgCard;
     roundRect(this.ctx, 0, 132, 470, 14, 4);
     this.ctx.fill();
     const fillWidth = (470 * Math.max(0, Math.min(100, world.redBullPercent))) / 100;
-    this.ctx.fillStyle = world.redBullPercent <= 15 ? "#ef4444" : "#dc2626";
+    this.ctx.fillStyle = world.redBullPercent <= 15 ? palette.statusCritical : palette.statusError;
     roundRect(this.ctx, 0, 132, Math.max(4, fillWidth), 14, 4);
     this.ctx.fill();
-    this.ctx.fillStyle = "#f8fafc";
-    this.ctx.font = "bold 11px ui-monospace, SFMono-Regular, Menlo, monospace";
+    this.ctx.fillStyle = palette.textPrimary;
+    this.ctx.font = monoFont(14, "bold");
     this.ctx.fillText(`${Math.round(world.redBullPercent)}%`, 438, 124);
   }
 
   private drawCctvFeed(x: number, y: number, width: number, height: number, label: string, active: boolean) {
-    this.ctx.fillStyle = active ? "#0a1a0f" : "#0b0f14";
+    this.ctx.fillStyle = active ? palette.bgSlackActive : palette.bgSlackIdle;
     roundRect(this.ctx, x, y, width, height, 4);
     this.ctx.fill();
-    this.ctx.strokeStyle = active ? "#22c55e" : "#334155";
+    this.ctx.strokeStyle = active ? palette.borderSlackActive : palette.borderDefault;
     this.ctx.lineWidth = 2;
     this.ctx.stroke();
 
@@ -673,45 +851,45 @@ export class CanvasRenderer {
       for (let row = 0; row < height; row += 4) {
         this.ctx.fillRect(x + 2, y + row, width - 4, 2);
       }
-      this.ctx.fillStyle = "#166534";
-      this.ctx.font = "10px ui-monospace, SFMono-Regular, Menlo, monospace";
+      this.ctx.fillStyle = palette.accentGreenDark;
+      this.ctx.font = monoFont(14);
       this.ctx.fillText("REC", x + 8, y + 16);
-      this.ctx.fillStyle = "#4ade80";
-      this.ctx.font = "12px system-ui, sans-serif";
+      this.ctx.fillStyle = palette.accentGreen;
+      this.ctx.font = uiFont(14);
       this.ctx.fillText(label === "JANITOR CAM" ? "廊下 — 静止" : "冷蔵庫 — OK", x + 8, y + height - 10);
     } else {
-      this.ctx.fillStyle = "#475569";
-      this.ctx.font = "12px ui-monospace, SFMono-Regular, Menlo, monospace";
+      this.ctx.fillStyle = palette.textMuted;
+      this.ctx.font = monoFont(14);
       this.ctx.fillText("NO SIGNAL", x + width / 2 - 38, y + height / 2 + 4);
     }
 
-    this.ctx.fillStyle = active ? "#86efac" : "#64748b";
-    this.ctx.font = "10px ui-monospace, SFMono-Regular, Menlo, monospace";
+    this.ctx.fillStyle = active ? palette.textTerminalMuted : palette.textMuted;
+    this.ctx.font = monoFont(14);
     this.ctx.fillText(label, x + 8, y + height + 14);
   }
 
   private drawSlackCompose(state: GameRenderState, boxY = 484) {
     const active = state.slackCompose.active;
-    this.ctx.fillStyle = active ? "#1e3a5f" : "#0f172a";
+    this.ctx.fillStyle = active ? palette.bgDevtoolsActive : palette.bgDevtoolsIdle;
     roundRect(this.ctx, 0, boxY, 470, 44, 6);
     this.ctx.fill();
-    this.ctx.strokeStyle = active ? "#3b82f6" : "#334155";
+    this.ctx.strokeStyle = active ? palette.accentBlue : palette.borderDefault;
     this.ctx.lineWidth = 2;
     this.ctx.stroke();
 
-    this.ctx.fillStyle = active ? "#dbeafe" : "#64748b";
-    this.ctx.font = "15px system-ui, sans-serif";
+    this.ctx.fillStyle = active ? palette.textLink : palette.textMuted;
+    this.ctx.font = uiFont(16);
     const draft = state.slackCompose.draft;
     const placeholder = "状況を報告... (クリックして入力)";
     const text = draft.length > 0 ? draft : placeholder;
     this.ctx.fillText(text.slice(0, 42), 12, boxY + 28);
 
     if (active && draft.length > 0) {
-      this.ctx.fillStyle = "#22c55e";
+      this.ctx.fillStyle = palette.accentGreen;
       roundRect(this.ctx, 404, boxY + 8, 56, 28, 4);
       this.ctx.fill();
-      this.ctx.fillStyle = "#052e16";
-      this.ctx.font = "bold 13px system-ui, sans-serif";
+      this.ctx.fillStyle = palette.accentGreenBg;
+      this.ctx.font = uiFont(14, "bold");
       this.ctx.fillText("送信", 416, boxY + 27);
     }
   }
@@ -725,17 +903,17 @@ export class CanvasRenderer {
     let tabX = 0;
     for (const tab of tabs) {
       const active = tab.id === devtools.tab;
-      this.ctx.fillStyle = active ? "#1d4ed8" : "#1e293b";
+      this.ctx.fillStyle = active ? palette.bgButtonPrimary : palette.bgButtonSecondary;
       roundRect(this.ctx, tabX, 0, 108, 28, 4);
       this.ctx.fill();
-      this.ctx.fillStyle = "#e2e8f0";
-      this.ctx.font = "13px system-ui, sans-serif";
+      this.ctx.fillStyle = palette.textPrimary;
+      this.ctx.font = uiFont(15);
       this.ctx.fillText(tab.label, tabX + 10, 18);
       tabX += 114;
     }
 
-    this.ctx.fillStyle = "#cbd5e1";
-    this.ctx.font = "15px ui-monospace, SFMono-Regular, Menlo, monospace";
+    this.ctx.fillStyle = palette.textSecondary;
+    this.ctx.font = monoFont(15);
     let y = 48;
     if (devtools.tab === "network") {
       for (const line of devtools.networkLines.slice(-14)) {
@@ -765,7 +943,7 @@ export class CanvasRenderer {
     this.ctx.lineWidth = 2;
     this.ctx.stroke();
     this.ctx.fillStyle = `rgba(254, 226, 226, ${opacity})`;
-    this.ctx.font = "bold 20px system-ui, sans-serif";
+    this.ctx.font = uiFont(20, "bold");
     this.ctx.fillText(warning.message, box.x + 16, box.y + 34);
   }
 
@@ -775,23 +953,23 @@ export class CanvasRenderer {
     const x = -80 + progress * (logicalWidth + 160);
     const y = 280 + Math.sin(progress * Math.PI * 3) * 120;
 
-    this.ctx.fillStyle = "rgba(15, 23, 42, 0.72)";
+    this.ctx.fillStyle = palette.bgOverlayLight;
     this.ctx.fillRect(0, 0, logicalWidth, logicalHeight);
 
     this.ctx.save();
     this.ctx.translate(x, y);
     this.ctx.rotate(-0.35 + progress * 0.7);
-    this.ctx.fillStyle = "#1d4ed8";
+    this.ctx.fillStyle = palette.bgButtonPrimary;
     roundRect(this.ctx, 0, 0, 48, 96, 6);
     this.ctx.fill();
-    this.ctx.fillStyle = "#dc2626";
+    this.ctx.fillStyle = palette.statusError;
     roundRect(this.ctx, 4, 8, 40, 28, 4);
     this.ctx.fill();
-    this.ctx.fillStyle = "#f8fafc";
-    this.ctx.font = "bold 10px system-ui, sans-serif";
+    this.ctx.fillStyle = palette.textPrimary;
+    this.ctx.font = uiFont(14, "bold");
     this.ctx.fillText("RB", 14, 26);
-    this.ctx.fillStyle = "#93c5fd";
-    this.ctx.font = "bold 22px system-ui, sans-serif";
+    this.ctx.fillStyle = palette.textLink;
+    this.ctx.font = uiFont(22, "bold");
     this.ctx.fillText("翼が生えた!", 56, 48);
     this.ctx.restore();
   }
@@ -801,21 +979,21 @@ export class CanvasRenderer {
     if (!step || state.session.difficulty !== "beginner") return;
 
     const box = navigationOverlayRect;
-    this.ctx.fillStyle = "rgba(15, 23, 42, 0.94)";
+    this.ctx.fillStyle = palette.bgOverlay;
     roundRect(this.ctx, box.x, box.y, box.width, box.height, 10);
     this.ctx.fill();
-    this.ctx.strokeStyle = "#38bdf8";
+    this.ctx.strokeStyle = palette.borderFocus;
     this.ctx.lineWidth = 2;
     this.ctx.stroke();
-    this.ctx.fillStyle = "#38bdf8";
-    this.ctx.font = "14px system-ui, sans-serif";
+    this.ctx.fillStyle = palette.borderFocus;
+    this.ctx.font = uiFont(14);
     this.ctx.fillText("NAV", box.x + 16, box.y + 28);
-    this.ctx.fillStyle = "#e2e8f0";
-    this.ctx.font = "18px system-ui, sans-serif";
+    this.ctx.fillStyle = palette.textPrimary;
+    this.ctx.font = uiFont(18);
     wrapText(this.ctx, step.hint, box.x + 16, box.y + 52, box.width - 32, 24, 3);
     if (step.suggestedCommand) {
-      this.ctx.fillStyle = "#94a3b8";
-      this.ctx.font = "14px ui-monospace, SFMono-Regular, Menlo, monospace";
+      this.ctx.fillStyle = palette.textSecondary;
+      this.ctx.font = monoFont(14);
       this.ctx.fillText(`例: ${step.suggestedCommand}`, box.x + 16, box.y + box.height - 24);
     }
   }
@@ -826,8 +1004,8 @@ export class CanvasRenderer {
     this.ctx.fillStyle = "rgba(239, 68, 68, 0.92)";
     roundRect(this.ctx, 70, 778, 1780, 48, 8);
     this.ctx.fill();
-    this.ctx.fillStyle = "#fff";
-    this.ctx.font = "22px system-ui, sans-serif";
+    this.ctx.fillStyle = palette.textBadge;
+    this.ctx.font = uiFont(22);
     this.ctx.fillText(alert.message, 104, 808);
   }
 
@@ -837,59 +1015,59 @@ export class CanvasRenderer {
     const enabled = state.session.status === "running";
     const typed = extractTypedCommand(state.monitors.center.terminal.commandDraft);
 
-    this.ctx.fillStyle = "#090d14";
+    this.ctx.fillStyle = palette.bgPanelDark;
     this.ctx.fillRect(0, 850, logicalWidth, 170);
 
-    this.ctx.fillStyle = "#64748b";
-    this.ctx.font = "14px ui-monospace, SFMono-Regular, Menlo, monospace";
+    this.ctx.fillStyle = palette.textMuted;
+    this.ctx.font = monoFont(14);
     this.ctx.fillText("INPUT", input.x, input.y - 10);
 
-    this.ctx.fillStyle = "#020617";
+    this.ctx.fillStyle = palette.bgTerminal;
     roundRect(this.ctx, input.x, input.y, input.width, input.height, 8);
     this.ctx.fill();
-    this.ctx.strokeStyle = enabled ? "#334155" : "#1e293b";
+    this.ctx.strokeStyle = enabled ? palette.borderDefault : palette.bgCard;
     this.ctx.lineWidth = 2;
     this.ctx.stroke();
 
     const inputTextY = input.y + Math.round(input.height / 2) + 8;
-    this.ctx.font = "22px ui-monospace, SFMono-Regular, Menlo, monospace";
+    this.ctx.font = monoFont(22);
     if (typed) {
-      this.ctx.fillStyle = "#d1fae5";
+      this.ctx.fillStyle = palette.textTerminal;
       this.ctx.fillText(typed, input.x + 20, inputTextY);
       if (enabled) {
         const textWidth = this.ctx.measureText(typed).width;
         this.ctx.fillRect(input.x + 20 + textWidth + 4, inputTextY - 22, 10, 28);
       }
     } else {
-      this.ctx.fillStyle = "#475569";
+      this.ctx.fillStyle = palette.textMuted;
       this.ctx.fillText(enabled ? "コマンドを入力…" : "セッション開始後に入力できます", input.x + 20, inputTextY);
     }
 
-    this.ctx.fillStyle = enabled ? "#1f2937" : "#111827";
+    this.ctx.fillStyle = enabled ? palette.bgInput : palette.bgCardDark;
     roundRect(this.ctx, button.x, button.y, button.width, button.height, 8);
     this.ctx.fill();
-    this.ctx.strokeStyle = "#334155";
+    this.ctx.strokeStyle = palette.borderDefault;
     this.ctx.lineWidth = 2;
     this.ctx.stroke();
-    this.ctx.fillStyle = enabled ? "#f8fafc" : "#94a3b8";
-    this.ctx.font = "24px system-ui, sans-serif";
+    this.ctx.fillStyle = enabled ? palette.textPrimary : palette.textSecondary;
+    this.ctx.font = uiFont(24);
     centeredText(this.ctx, "復旧完了", button.x, button.y + 2, button.width, button.height);
 
     const retire = inputDockRects.retire;
-    this.ctx.fillStyle = enabled ? "#3f1d1d" : "#1f1313";
+    this.ctx.fillStyle = enabled ? palette.bgButtonDanger : palette.bgButtonDangerDisabled;
     roundRect(this.ctx, retire.x, retire.y, retire.width, retire.height, 8);
     this.ctx.fill();
-    this.ctx.strokeStyle = "#7f1d1d";
+    this.ctx.strokeStyle = palette.borderDanger;
     this.ctx.lineWidth = 2;
     this.ctx.stroke();
-    this.ctx.fillStyle = enabled ? "#fecaca" : "#94a3b8";
-    this.ctx.font = "22px system-ui, sans-serif";
+    this.ctx.fillStyle = enabled ? palette.textWarningFg : palette.textSecondary;
+    this.ctx.font = uiFont(22);
     centeredText(this.ctx, "リタイア", retire.x, retire.y + 2, retire.width, retire.height);
   }
 
   private drawCursor(state: GameRenderState) {
     if (!state.cursor.visible) return;
-    this.ctx.fillStyle = "#ffffff";
+    this.ctx.fillStyle = palette.textPrimary;
     this.ctx.beginPath();
     this.ctx.moveTo(state.cursor.x, state.cursor.y);
     this.ctx.lineTo(state.cursor.x + 20, state.cursor.y + 44);
@@ -919,21 +1097,51 @@ export const inputDockRects = {
 
 export const navigationOverlayRect = { x: 720, y: 860, width: 480, height: 120 } as const;
 
-export const runbookTabRegion = (difficulty: GameRenderState["session"]["difficulty"]) => ({
-  x: runbookContentX,
-  y: runbookContentY + runbookWorldOffset(difficulty),
-  width: 516,
-  height: 36
-});
-
-export const slackComposeRegion = (difficulty: GameRenderState["session"]["difficulty"]) => {
-  const y = runbookContentY + runbookWorldOffset(difficulty) + runbookSlackComposeOffset;
-  return { x: runbookContentX, y, width: 496, height: 48 };
+export const runbookTabRegion = (difficulty: GameRenderState["session"]["difficulty"]) => {
+  const layout = rightPanelLayout(difficulty, "runbook", true);
+  return {
+    x: runbookContentX,
+    y: runbookContentY + layout.secondaryTop - RUNBOOK_TAB_HIT_PAD,
+    width: 516,
+    height: RIGHT_PANEL_SECONDARY_TAB_HEIGHT + RUNBOOK_TAB_HIT_PAD * 2
+  };
 };
 
-export const slackSendButtonRegion = (difficulty: GameRenderState["session"]["difficulty"]) => {
-  const compose = slackComposeRegion(difficulty);
-  return { x: compose.x + 404, y: compose.y + 8, width: 56, height: 28 };
+function slackComposeScreenRegion(
+  difficulty: GameRenderState["session"]["difficulty"],
+  activePanelTab: RightPanelTab,
+  expandedMonitor: MonitorId | null | undefined
+) {
+  if (activePanelTab !== "slack") return null;
+  const layout = rightPanelLayout(difficulty, "slack", false);
+  const content = runbookContentTransform(expandedMonitor === "runbook");
+  return {
+    x: content.x,
+    y: content.y + layout.composeTop * content.scale,
+    width: 470 * content.scale,
+    height: RIGHT_PANEL_COMPOSE_HEIGHT * content.scale
+  };
+}
+
+export const slackComposeRegion = (
+  difficulty: GameRenderState["session"]["difficulty"],
+  activePanelTab: RightPanelTab = "slack",
+  expandedMonitor: MonitorId | null = null
+) => slackComposeScreenRegion(difficulty, activePanelTab, expandedMonitor) ?? { x: 0, y: -1000, width: 0, height: 0 };
+
+export const slackSendButtonRegion = (
+  difficulty: GameRenderState["session"]["difficulty"],
+  activePanelTab: RightPanelTab = "slack",
+  expandedMonitor: MonitorId | null = null
+) => {
+  const compose = slackComposeScreenRegion(difficulty, activePanelTab, expandedMonitor);
+  if (!compose) return { x: 0, y: -1000, width: 0, height: 0 };
+  return {
+    x: compose.x + 404 * compose.width / 470,
+    y: compose.y + 8 * compose.height / RIGHT_PANEL_COMPOSE_HEIGHT,
+    width: 56 * compose.width / 470,
+    height: 28 * compose.height / RIGHT_PANEL_COMPOSE_HEIGHT
+  };
 };
 
 export const devtoolsToggleRegion = { x: 712, y: 204, width: 120, height: 28 } as const;
@@ -947,11 +1155,46 @@ export function monitorMagnifyAt(x: number, y: number): MonitorId | null {
   return null;
 }
 
-export function slackComposeAt(x: number, y: number, difficulty: GameRenderState["session"]["difficulty"]) {
-  const composeRegion = slackComposeRegion(difficulty);
-  if (!containsCanvasPoint(composeRegion, x, y)) return null;
-  if (containsCanvasPoint(slackSendButtonRegion(difficulty), x, y)) return "send" as const;
+export function slackComposeAt(
+  x: number,
+  y: number,
+  difficulty: GameRenderState["session"]["difficulty"],
+  activePanelTab: RightPanelTab = "slack",
+  expandedMonitor: MonitorId | null = null
+) {
+  const composeRegion = slackComposeScreenRegion(difficulty, activePanelTab, expandedMonitor);
+  if (!composeRegion || !containsCanvasPoint(composeRegion, x, y)) return null;
+  const sendRegion = slackSendButtonRegion(difficulty, activePanelTab, expandedMonitor);
+  if (containsCanvasPoint(sendRegion, x, y)) return "send" as const;
   return "compose" as const;
+}
+
+export function rightPanelPrimaryTabAt(
+  x: number,
+  y: number,
+  difficulty: GameRenderState["session"]["difficulty"],
+  expandedMonitor?: MonitorId | null
+): RightPanelTab | null {
+  if (expandedMonitor && expandedMonitor !== "runbook") return null;
+
+  const layout = rightPanelLayout(difficulty, "runbook", true);
+  const content = runbookContentTransform(expandedMonitor === "runbook");
+  const localY = (y - content.y) / content.scale;
+  if (
+    localY < layout.primaryTop - RUNBOOK_TAB_HIT_PAD ||
+    localY > layout.primaryTop + RIGHT_PANEL_PRIMARY_TAB_HEIGHT + RUNBOOK_TAB_HIT_PAD
+  ) {
+    return null;
+  }
+
+  let tabX = 0;
+  for (const tab of RIGHT_PANEL_PRIMARY_TABS) {
+    const hitLeft = content.x + tabX * content.scale - RUNBOOK_TAB_HIT_PAD * content.scale;
+    const hitWidth = (tab.width + RUNBOOK_TAB_HIT_PAD * 2) * content.scale;
+    if (x >= hitLeft && x <= hitLeft + hitWidth) return tab.id;
+    tabX += tab.width + RUNBOOK_TAB_GAP;
+  }
+  return null;
 }
 
 export function runbookTabAt(
@@ -959,18 +1202,30 @@ export function runbookTabAt(
   y: number,
   difficulty: GameRenderState["session"]["difficulty"],
   runbookCount: number,
-  titles: string[]
+  titles: string[],
+  expandedMonitor?: MonitorId | null,
+  activePanelTab: RightPanelTab = "runbook"
 ) {
-  const region = runbookTabRegion(difficulty);
-  if (!containsCanvasPoint(region, x, y) || runbookCount === 0) return -1;
-  let tabX = region.x;
-  const localY = y - region.y;
-  if (localY < 0 || localY > 28) return -1;
+  if (runbookCount === 0 || activePanelTab !== "runbook") return -1;
+  if (expandedMonitor && expandedMonitor !== "runbook") return -1;
+
+  const layout = rightPanelLayout(difficulty, "runbook", true);
+  const content = runbookContentTransform(expandedMonitor === "runbook");
+  const localY = (y - content.y) / content.scale;
+  if (
+    localY < layout.secondaryTop - RUNBOOK_TAB_HIT_PAD ||
+    localY > layout.secondaryTop + RIGHT_PANEL_SECONDARY_TAB_HEIGHT + RUNBOOK_TAB_HIT_PAD
+  ) {
+    return -1;
+  }
+
+  let tabX = 0;
   for (let index = 0; index < runbookCount; index += 1) {
-    const title = titles[index] ?? "";
-    const width = Math.min(150, title.length * 9 + 24);
-    if (x >= tabX && x <= tabX + width) return index;
-    tabX += width + 6;
+    const width = measureRunbookTabWidth(titles[index] ?? "");
+    const hitLeft = content.x + tabX * content.scale - RUNBOOK_TAB_HIT_PAD * content.scale;
+    const hitWidth = (width + RUNBOOK_TAB_HIT_PAD * 2) * content.scale;
+    if (x >= hitLeft && x <= hitLeft + hitWidth) return index;
+    tabX += width + RUNBOOK_TAB_GAP;
   }
   return -1;
 }
@@ -1008,6 +1263,22 @@ function normalizeMultilineText(text: string) {
   return text.replace(/\\n/g, "\n");
 }
 
+function wrapCharacters(ctx: CanvasRenderingContext2D, text: string, maxWidth: number) {
+  const lines: string[] = [];
+  let line = "";
+  for (const char of text) {
+    const candidate = `${line}${char}`;
+    if (ctx.measureText(candidate).width > maxWidth && line) {
+      lines.push(line);
+      line = char;
+    } else {
+      line = candidate;
+    }
+  }
+  if (line) lines.push(line);
+  return lines.length > 0 ? lines : [""];
+}
+
 function wrapText(
   ctx: CanvasRenderingContext2D,
   text: string,
@@ -1024,6 +1295,28 @@ function wrapText(
     if (!paragraph.trim()) {
       y += lineHeight;
       drawn += 1;
+      continue;
+    }
+
+    const listMatch = paragraph.trim().match(/^(\d+\.\s*)([\s\S]*)$/);
+    if (listMatch) {
+      const prefix = listMatch[1] ?? "";
+      const body = listMatch[2] ?? "";
+      const prefixWidth = ctx.measureText(prefix).width;
+      const bodyWidth = Math.max(48, maxWidth - prefixWidth);
+      const bodyLines = wrapCharacters(ctx, body, bodyWidth);
+
+      for (let index = 0; index < bodyLines.length; index += 1) {
+        if (drawn >= maxLines) return y;
+        const segment = bodyLines[index] ?? "";
+        if (index === 0) {
+          ctx.fillText(`${prefix}${segment}`, x, y);
+        } else {
+          ctx.fillText(segment, x + prefixWidth, y);
+        }
+        y += lineHeight;
+        drawn += 1;
+      }
       continue;
     }
 
@@ -1056,10 +1349,10 @@ function wrapText(
 
 function drawMagnifyIcon(ctx: CanvasRenderingContext2D, x: number, y: number, size: number) {
   ctx.save();
-  ctx.fillStyle = "rgba(15, 23, 42, 0.72)";
+  ctx.fillStyle = palette.bgOverlayLight;
   roundRect(ctx, x - 2, y - 2, size + 4, size + 4, 4);
   ctx.fill();
-  ctx.strokeStyle = "#94a3b8";
+  ctx.strokeStyle = palette.textSecondary;
   ctx.lineWidth = 1.5;
   const lensRadius = size * 0.34;
   const lensX = x + size * 0.38;
@@ -1197,8 +1490,6 @@ function extractTypedCommand(command: string, maxChars = 96) {
   return formatTerminalInputText(typed, maxChars);
 }
 
-type MetricTone = "healthy" | "warn" | "critical";
-
 type MetricsHealthSummary = {
   label: string;
   detail: string;
@@ -1210,12 +1501,6 @@ function metricTone(value: number, warnAt: number, criticalAt: number): MetricTo
   if (value >= criticalAt) return "critical";
   if (value >= warnAt) return "warn";
   return "healthy";
-}
-
-function toneColor(tone: MetricTone) {
-  if (tone === "critical") return "#ef4444";
-  if (tone === "warn") return "#f59e0b";
-  return "#22c55e";
 }
 
 function summarizeMetricsHealth(metrics: MetricsSnapshot): MetricsHealthSummary {
@@ -1240,7 +1525,7 @@ function summarizeMetricsHealth(metrics: MetricsSnapshot): MetricsHealthSummary 
       level,
       label: "HEALTHY",
       detail: "All monitored signals within SLO",
-      color: "#22c55e"
+      color: toneColor("healthy")
     };
   }
 
@@ -1249,7 +1534,7 @@ function summarizeMetricsHealth(metrics: MetricsSnapshot): MetricsHealthSummary 
       level,
       label: "DEGRADED",
       detail: issues.slice(0, 2).join(" · "),
-      color: "#f59e0b"
+      color: toneColor("warn")
     };
   }
 
@@ -1257,12 +1542,6 @@ function summarizeMetricsHealth(metrics: MetricsSnapshot): MetricsHealthSummary 
     level,
     label: "CRITICAL",
     detail: issues.slice(0, 2).join(" · "),
-    color: "#ef4444"
+    color: toneColor("critical")
   };
-}
-
-function severityColor(severity: "info" | "warning" | "critical") {
-  if (severity === "critical") return "#ef4444";
-  if (severity === "warning") return "#f59e0b";
-  return "#38bdf8";
 }

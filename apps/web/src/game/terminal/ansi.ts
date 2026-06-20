@@ -5,23 +5,24 @@ export type AnsiSpan = {
   dim?: boolean;
 };
 
+/** Keep in sync with gamePalette.ts */
 const ANSI_COLORS: Record<number, string> = {
-  30: "#94a3b8",
+  30: "#9aa8b8",
   31: "#f87171",
   32: "#4ade80",
-  33: "#facc15",
-  34: "#60a5fa",
-  35: "#c084fc",
-  36: "#22d3ee",
-  37: "#e2e8f0",
-  90: "#64748b",
-  91: "#fca5a5",
-  92: "#86efac",
-  93: "#fde047",
-  94: "#93c5fd",
-  95: "#d8b4fe",
-  96: "#67e8f9",
-  97: "#f8fafc"
+  33: "#fbbf24",
+  34: "#9ecbff",
+  35: "#c4b5fd",
+  36: "#5ec8ff",
+  37: "#f0f4f8",
+  90: "#c5d0dc",
+  91: "#f87171",
+  92: "#a8f5c4",
+  93: "#ffe08a",
+  94: "#9ecbff",
+  95: "#c4b5fd",
+  96: "#5ec8ff",
+  97: "#f0f4f8"
 };
 
 export function parseAnsiLine(line: string): AnsiSpan[] {
