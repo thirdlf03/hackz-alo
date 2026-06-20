@@ -7,6 +7,7 @@ const logicalHeight = 1080;
 
 export class CanvasRenderer {
   private ctx: CanvasRenderingContext2D;
+  private roomGradient: CanvasGradient;
 
   constructor(private canvas: HTMLCanvasElement) {
     const ctx = canvas.getContext("2d");
@@ -14,6 +15,10 @@ export class CanvasRenderer {
     this.ctx = ctx;
     this.canvas.width = logicalWidth;
     this.canvas.height = logicalHeight;
+    const gradient = ctx.createLinearGradient(0, 0, 0, logicalHeight);
+    gradient.addColorStop(0, "#111318");
+    gradient.addColorStop(1, "#050609");
+    this.roomGradient = gradient;
   }
 
   draw(state: GameRenderState, scenario?: import("@incident/shared").ScenarioDefinition) {
@@ -43,10 +48,7 @@ export class CanvasRenderer {
   }
 
   private drawRoom() {
-    const gradient = this.ctx.createLinearGradient(0, 0, 0, logicalHeight);
-    gradient.addColorStop(0, "#111318");
-    gradient.addColorStop(1, "#050609");
-    this.ctx.fillStyle = gradient;
+    this.ctx.fillStyle = this.roomGradient;
     this.ctx.fillRect(0, 0, logicalWidth, logicalHeight);
     this.ctx.fillStyle = "#171b21";
     this.ctx.fillRect(0, 840, logicalWidth, 240);

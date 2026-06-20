@@ -92,16 +92,20 @@ export function App() {
   const [hasRecordingConsent, setHasRecordingConsent] = useState(() => localStorage.getItem(CONSENT_KEY) === "1");
   const [saveRecording, setSaveRecording] = useState(() => localStorage.getItem(SAVE_RECORDING_KEY) !== "0");
 
-  const patchGameStateRef = (updater: (state: GameRenderState) => GameRenderState) => {
+  const patchGameStateRef = (
+    updater: (state: GameRenderState) => GameRenderState,
+    options: { render?: boolean; collectTransitions?: boolean } = {}
+  ) => {
     const current = gameStateRef.current;
     if (!current) return;
     const next = updater(current);
+    if (next === current) return;
     const replayId = sessionRef.current?.replayId;
-    if (replayId && eventEmitterRef.current) {
+    if (options.collectTransitions !== false && replayId && eventEmitterRef.current) {
       collectStateTransitions(current, next, scenarioRef.current, Math.round(elapsedMsRef.current), eventEmitterRef.current, replayId);
     }
     gameStateRef.current = next;
-    setGameState(next);
+    if (options.render !== false) setGameState(next);
   };
 
   useEffect(() => {
@@ -135,9 +139,16 @@ export function App() {
     const renderer = new CanvasRenderer(canvasRef.current);
     rendererRef.current = renderer;
     let frame = 0;
+    let lastState: GameRenderState | undefined;
+    let lastScenario: ScenarioDefinition | undefined;
     const draw = () => {
       const latest = gameStateRef.current;
-      if (latest) renderer.draw(latest, scenarioRef.current);
+      const scenario = scenarioRef.current;
+      if (latest && (latest !== lastState || scenario !== lastScenario)) {
+        renderer.draw(latest, scenario);
+        lastState = latest;
+        lastScenario = scenario;
+      }
       frame = requestAnimationFrame(draw);
     };
     draw();
@@ -232,7 +243,7 @@ export function App() {
     const tick = (now: number) => {
       const delta = now - last;
       last = now;
-      patchGameStateRef((current) => decayWorldOverlays(current, delta));
+      patchGameStateRef((current) => decayWorldOverlays(current, delta), { render: false, collectTransitions: false });
       frame = requestAnimationFrame(tick);
     };
     frame = requestAnimationFrame(tick);
@@ -481,7 +492,7 @@ export function App() {
     if (!canvasRef.current) return;
     canvasRef.current.focus();
     const point = toLogicalCanvasPoint(event, canvasRef.current);
-    patchGameStateRef((current) => addClickEffect(current, point.x, point.y));
+    patchGameStateRef((current) => addClickEffect(current, point.x, point.y), { render: false, collectTransitions: false });
     const replayId = sessionRef.current?.replayId;
     const emitter = eventEmitterRef.current;
     if (screen === "play" && replayId && emitter) {
@@ -553,7 +564,11 @@ export function App() {
   function handleCanvasMove(event: MouseEvent) {
     if (!canvasRef.current || screen !== "play") return;
     const point = toLogicalCanvasPoint(event, canvasRef.current);
-    patchGameStateRef((current) => ({ ...current, cursor: { x: point.x, y: point.y, visible: true } }));
+    patchGameStateRef((current) => {
+      const cursor = current.cursor;
+      if (Math.abs(cursor.x - point.x) < 1 && Math.abs(cursor.y - point.y) < 1 && cursor.visible) return current;
+      return { ...current, cursor: { x: point.x, y: point.y, visible: true } };
+    }, { render: false, collectTransitions: false });
   }
 
   function handleTerminalKey(event: KeyboardEvent) {
