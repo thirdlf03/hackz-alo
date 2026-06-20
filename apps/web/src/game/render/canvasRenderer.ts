@@ -1228,7 +1228,7 @@ export class CanvasRenderer {
       this.ctx.fillText(enabled ? "コマンドを入力…" : "セッション開始後に入力できます", textStartX, inputTextY);
     }
     if (caretVisible) {
-      const caretX = typed ? textStartX + this.ctx.measureText(typed).width + 2 : textStartX;
+      const caretX = typed ? inputCaretX(this.ctx, typed, textStartX) : textStartX;
       this.ctx.fillStyle = palette.textTerminal;
       this.ctx.fillRect(caretX, inputTextY - 20, 2, 24);
     }
@@ -1705,6 +1705,19 @@ function extractTypedCommand(command: string, maxChars = 96) {
   const promptEnd = command.lastIndexOf("# ");
   const typed = promptEnd >= 0 ? command.slice(promptEnd + 2) : command;
   return formatTerminalInputText(typed, maxChars);
+}
+
+function inputCaretX(ctx: CanvasRenderingContext2D, text: string, startX: number) {
+  const trailingWhitespace = text.match(/[ \t]+$/u)?.[0] ?? "";
+  const visibleText = trailingWhitespace ? text.slice(0, -trailingWhitespace.length) : text;
+  const metrics = visibleText ? ctx.measureText(visibleText) : undefined;
+  const visibleRight = metrics
+    ? typeof metrics.actualBoundingBoxRight === "number"
+      ? metrics.actualBoundingBoxRight
+      : metrics.width
+    : 0;
+  const whitespaceWidth = trailingWhitespace ? ctx.measureText(trailingWhitespace).width : 0;
+  return startX + visibleRight + whitespaceWidth + 2;
 }
 
 type MetricsHealthSummary = {

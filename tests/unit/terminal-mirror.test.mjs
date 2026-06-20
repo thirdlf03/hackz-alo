@@ -99,7 +99,7 @@ test("terminalToMirrorState keeps command draft across wrapped cursor line", () 
       active: {
         baseY: 0,
         viewportY: 0,
-        cursorX: 0,
+        cursorX: 1,
         cursorY: 1,
         length: 2,
         getLine(index) {

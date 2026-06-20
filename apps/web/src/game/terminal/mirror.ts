@@ -25,8 +25,12 @@ export function terminalToMirrorState(
     const index = viewportY + row;
     const line = buffer.getLine(index);
     const isCursorLine = index === cursorLineIndex;
+    const preserveUntilColumn =
+      line && isCursorLine && !shouldIgnoreWrappedBlankCursorPadding(line, isCursorLine)
+        ? buffer.cursorX
+        : undefined;
     const text = line
-      ? mirrorLineText(line, isCursorLine ? buffer.cursorX : undefined)
+      ? mirrorLineText(line, preserveUntilColumn)
       : "";
     lines.push(text);
   }
@@ -51,6 +55,13 @@ function mirrorLineText(line: NonNullable<ReturnType<Terminal["buffer"]["active"
   return line.translateToString(false).slice(0, preserveUntilColumn);
 }
 
+function shouldIgnoreWrappedBlankCursorPadding(
+  line: NonNullable<ReturnType<Terminal["buffer"]["active"]["getLine"]>>,
+  isCursorLine: boolean
+) {
+  return isCursorLine && line.isWrapped && line.translateToString(true) === "";
+}
+
 function commandDraftAtCursor(
   buffer: Terminal["buffer"]["active"],
   cursorLineIndex: number,
@@ -65,6 +76,7 @@ function commandDraftAtCursor(
   for (let index = startLineIndex; index <= cursorLineIndex; index += 1) {
     const line = buffer.getLine(index);
     if (!line) continue;
+    if (shouldIgnoreWrappedBlankCursorPadding(line, index === cursorLineIndex)) continue;
     parts.push(mirrorLineText(line, index === cursorLineIndex ? cursorColumn : undefined));
   }
   return parts.join("");

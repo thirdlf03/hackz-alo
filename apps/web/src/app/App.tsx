@@ -924,7 +924,6 @@ export function App() {
         >
           障害対応訓練
         </strong>
-        <span>{scenario?.title ?? "未選択"}</span>
         <div class="speed-control" role="group" aria-label="ゲーム速度">
           {speedOptions.map((speed) => (
             <button
@@ -938,19 +937,21 @@ export function App() {
             </button>
           ))}
         </div>
-        <button
-          type="button"
-          aria-label="シナリオ選択に戻る"
-          onClick={() => setScreen("select")}
-          disabled={screen === "play" || isStarting}
-        >
-          Scenario
-        </button>
-        {canNavigateToReplay && (
-          <button type="button" aria-label="リプレイ詳細を開く" onClick={openReplay}>
-            Replay
+        <div class="topbar-actions">
+          <button
+            type="button"
+            aria-label="シナリオ選択に戻る"
+            onClick={() => setScreen("select")}
+            disabled={screen === "play" || isStarting}
+          >
+            Scenario
           </button>
-        )}
+          {canNavigateToReplay && (
+            <button type="button" aria-label="リプレイ詳細を開く" onClick={openReplay}>
+              Replay
+            </button>
+          )}
+        </div>
       </header>
       {appError && <p class="app-error" role="alert">{appError}</p>}
 
