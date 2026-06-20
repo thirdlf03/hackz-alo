@@ -304,6 +304,8 @@ canvas {
 .replay-side {
   display: grid;
   gap: 12px;
+  min-width: 0;
+  align-content: start;
 }
 
 .replay-meta {
@@ -316,7 +318,27 @@ canvas {
 .replay-tabs {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
+  align-content: flex-start;
   gap: 6px;
+}
+
+.replay-tabs button,
+.replay-main > button,
+.replay-comments button {
+  min-height: 34px;
+  border: 1px solid #334155;
+  border-radius: 6px;
+  padding: 6px 10px;
+  color: #dbeafe;
+  background: #0f172a;
+  cursor: pointer;
+}
+
+.replay-tabs button {
+  flex: 0 0 auto;
+  max-width: 100%;
+  white-space: nowrap;
 }
 
 .replay-tabs button.active {
@@ -328,6 +350,28 @@ canvas {
   margin: 0;
   padding-left: 18px;
   color: #dbeafe;
+}
+
+.replay-list li {
+  margin: 6px 0;
+  line-height: 1.45;
+}
+
+.replay-comments {
+  display: grid;
+  gap: 10px;
+}
+
+.replay-comments textarea {
+  width: 100%;
+  min-height: 84px;
+  resize: vertical;
+  border: 1px solid #334155;
+  border-radius: 6px;
+  padding: 10px;
+  color: #e2e8f0;
+  background: #0f172a;
+  font: inherit;
 }
 
 .visibility-panel {
@@ -446,18 +490,30 @@ canvas {
 
 .timeline {
   margin: 0;
-  padding-left: 20px;
+  padding-left: 0;
+  color: #dbeafe;
+  list-style-position: inside;
 }
 
 .timeline button {
   width: 100%;
-  margin: 4px 0;
+  margin: 4px 0 8px;
   border: 1px solid #334155;
   color: #dbeafe;
   background: #0f172a;
   border-radius: 6px;
-  padding: 8px;
+  padding: 8px 12px;
   text-align: left;
+  cursor: pointer;
+}
+
+.timeline button[aria-current="time"] {
+  border-color: #38bdf8;
+  box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.45);
+}
+
+.timeline button:disabled {
+  cursor: default;
 }
 
 @media (max-width: 760px) {
@@ -481,7 +537,8 @@ canvas {
     width: 100%;
   }
 
-  .replay-layout {
+  .replay-layout,
+  .replay-layout.expanded {
     grid-template-columns: 1fr;
   }
 
