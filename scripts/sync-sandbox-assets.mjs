@@ -32,6 +32,7 @@ export async function installSandboxAssets(sandbox: SandboxRuntime) {
   for (const asset of assets) {
     await sandbox.writeFile(asset.path, asset.content);
   }
+  await sandbox.exec("chmod +x /workspace/bin/*.mjs && ln -sf /workspace/bin/unctl.mjs /usr/local/bin/unctl && ln -sf /workspace/bin/unlang.mjs /usr/local/bin/unlang");
   await sandbox.writeFile(
     "/workspace/run/job-queue.jsonl",
     '{"id":"job-001","status":"pending"}\\n{"id":"job-002","status":"pending"}\\n'

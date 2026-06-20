@@ -20,13 +20,17 @@ export function terminalToMirrorState(
   const lines: string[] = [];
   const firstVisible = Math.max(0, buffer.baseY);
   const lastVisible = Math.min(buffer.length, firstVisible + terminal.rows);
+  const cursorY = Math.max(0, Math.min(buffer.cursorY, terminal.rows - 1));
+  const cursorLineIndex = firstVisible + cursorY;
+  let commandDraft = "";
   for (let index = firstVisible; index < lastVisible; index += 1) {
     const line = buffer.getLine(index);
-    lines.push(line ? line.translateToString(true) : "");
+    const text = line
+      ? mirrorLineText(line, index === cursorLineIndex ? buffer.cursorX : undefined)
+      : "";
+    if (index === cursorLineIndex) commandDraft = text;
+    lines.push(text);
   }
-
-  const currentLine = buffer.getLine(firstVisible + buffer.cursorY);
-  const commandDraft = currentLine ? currentLine.translateToString(true) : "";
 
   return {
     cols: terminal.cols,
@@ -34,10 +38,16 @@ export function terminalToMirrorState(
     lines: lines.length > 0 ? lines : [""],
     cursor: {
       x: buffer.cursorX,
-      y: Math.max(0, Math.min(buffer.cursorY, terminal.rows - 1)),
+      y: cursorY,
       visible: true
     },
     commandDraft,
     commandHistory: commandHistory.map((item) => ({ ...item }))
   };
+}
+
+function mirrorLineText(line: NonNullable<ReturnType<Terminal["buffer"]["active"]["getLine"]>>, preserveUntilColumn?: number) {
+  const trimmed = line.translateToString(true);
+  if (preserveUntilColumn === undefined || trimmed.length >= preserveUntilColumn) return trimmed;
+  return line.translateToString(false).slice(0, preserveUntilColumn);
 }

@@ -13,13 +13,16 @@ import {
   setSlackDraft,
   submitPlayerSlackMessage,
   toggleDevtools,
+  toggleExpandedMonitor,
   toggleNotificationPanel
 } from "../game/state/gameState.js";
 import {
   CanvasRenderer,
   devtoolsTabAt,
   devtoolsToggleRegion,
+  expandedMonitorLayout,
   inputDockRects,
+  monitorMagnifyAt,
   navigationOverlayRect,
   notificationBellRegion,
   runbookTabAt,
@@ -598,7 +601,14 @@ export function App() {
       if (containsPoint(inputDockRects.retire, point.x, point.y)) return void endSession("retire");
       const activeScenario = scenarioRef.current;
       if (activeScenario) {
-        const tabIndex = runbookTabAt(point.x, point.y, activeScenario.runbooks.length, activeScenario.runbooks.map((item) => item.title));
+        const difficulty = gameStateRef.current?.session.difficulty ?? "beginner";
+        const tabIndex = runbookTabAt(
+          point.x,
+          point.y,
+          difficulty,
+          activeScenario.runbooks.length,
+          activeScenario.runbooks.map((item) => item.title)
+        );
         if (tabIndex >= 0) {
           patchGameStateRef((current) => setActiveRunbook(current, activeScenario, tabIndex));
           const runbook = activeScenario.runbooks[tabIndex];
@@ -644,7 +654,19 @@ export function App() {
         patchGameStateRef((current) => dismissNavigationStep(current, current.navigation.activeStepId!));
         return;
       }
-      const slackTarget = slackComposeAt(point.x, point.y);
+      if (gameStateRef.current?.world.expandedMonitor) {
+        if (!containsPoint(expandedMonitorLayout, point.x, point.y)) {
+          patchGameStateRef((current) => ({ ...current, world: { ...current.world, expandedMonitor: null } }));
+        }
+        return;
+      }
+      const monitorMagnify = monitorMagnifyAt(point.x, point.y);
+      if (monitorMagnify) {
+        patchGameStateRef((current) => toggleExpandedMonitor(current, monitorMagnify));
+        void emitter.emit({ replayId, type: "ui_panel_open", at, payload: { panel: `monitor.${monitorMagnify}` } });
+        return;
+      }
+      const slackTarget = slackComposeAt(point.x, point.y, gameStateRef.current?.session.difficulty ?? "beginner");
       if (slackTarget === "send") {
         submitSlackMessage();
         return;

@@ -4,6 +4,39 @@ import { parseAnsiLine, stripAnsi, type AnsiSpan } from "../terminal/ansi.js";
 
 const logicalWidth = 1920;
 const logicalHeight = 1080;
+const monitorContentWidth = 496;
+const monitorContentHeight = 540;
+const terminalContentWidth = 496;
+const worldPanelHeight = 148;
+const runbookContentX = 1332;
+const runbookContentY = 204;
+const runbookSlackComposeOffset = 394;
+
+function showWorldPanel(difficulty: GameRenderState["session"]["difficulty"]) {
+  return difficulty === "advanced";
+}
+
+function runbookWorldOffset(difficulty: GameRenderState["session"]["difficulty"]) {
+  return showWorldPanel(difficulty) ? worldPanelHeight : 0;
+}
+
+export type MonitorId = "metrics" | "terminal" | "runbook";
+
+export const monitorLayouts = [
+  { id: "metrics" as const, x: 70, y: 140, width: 540, height: 620, title: "METRICS" },
+  { id: "terminal" as const, x: 690, y: 140, width: 540, height: 620, title: "TERMINAL" },
+  { id: "runbook" as const, x: 1310, y: 140, width: 540, height: 620, title: "RUNBOOK / SLACK" }
+] as const;
+
+export const expandedMonitorLayout = { x: 260, y: 50, width: 1400, height: 780 } as const;
+
+export const monitorMagnifyRegions = monitorLayouts.map((monitor) => ({
+  id: monitor.id,
+  x: monitor.x + monitor.width - 44,
+  y: monitor.y + 10,
+  width: 32,
+  height: 32
+}));
 
 export class CanvasRenderer {
   private ctx: CanvasRenderingContext2D;
@@ -34,15 +67,23 @@ export class CanvasRenderer {
       ctx.clearRect(0, 0, logicalWidth, logicalHeight);
       ctx.drawImage(this.staticCanvas, 0, 0);
       this.drawHeader(state);
-      this.drawMonitor(70, 140, 540, 620, "METRICS", () => this.drawMetricsPanel(state.monitors.left));
-      this.drawMonitor(690, 140, 540, 620, "TERMINAL", () => this.drawTerminal(state));
-      this.drawMonitor(1310, 140, 540, 620, "RUNBOOK / SLACK", () => this.drawRightPanel(state, scenario));
+      for (const monitor of monitorLayouts) {
+        this.drawMonitor(monitor.x, monitor.y, monitor.width, monitor.height, monitor.title, (content) => {
+          if (monitor.id === "metrics") this.drawMetricsPanel(state.monitors.left);
+          else if (monitor.id === "terminal") this.drawTerminal(state, content.width);
+          else this.drawRightPanel(state, scenario);
+        });
+      }
+      this.drawMonitorMagnifyIcons();
       this.drawAlerts(state);
       if (state.warning && state.warning.flashMs > 0) this.drawCommandWarning(state.warning);
-      if (state.world.redBullFlyingMs > 0) this.drawRedBullFlying(state.world.redBullFlyingMs);
+      if (showWorldPanel(state.session.difficulty) && state.world.redBullFlyingMs > 0) {
+        this.drawRedBullFlying(state.world.redBullFlyingMs);
+      }
       this.drawNavigationOverlay(state, scenario);
       this.drawInputDock(state);
       this.drawNotifications(state);
+      if (state.world.expandedMonitor) this.drawExpandedMonitorOverlay(state, scenario);
       this.drawCursor(state);
     } finally {
       ctx.restore();
@@ -211,19 +252,63 @@ export class CanvasRenderer {
     }
   }
 
-  private drawMonitor(x: number, y: number, width: number, height: number, _title: string, drawContent: () => void) {
+  private drawMonitor(
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    _title: string,
+    drawContent: (content: { width: number; height: number }) => void,
+    options: { contentScale?: number } = {}
+  ) {
     const contentX = x + 22;
     const contentY = y + 64;
     const contentWidth = width - 44;
     const contentHeight = height - 80;
+    const scale =
+      options.contentScale ??
+      Math.min(contentWidth / monitorContentWidth, contentHeight / monitorContentHeight);
 
     this.ctx.save();
     this.ctx.beginPath();
     this.ctx.rect(contentX, contentY, contentWidth, contentHeight);
     this.ctx.clip();
     this.ctx.translate(contentX, contentY);
-    drawContent();
+    if (scale !== 1) this.ctx.scale(scale, scale);
+    drawContent({ width: contentWidth / scale, height: contentHeight / scale });
     this.ctx.restore();
+  }
+
+  private drawMonitorMagnifyIcons() {
+    for (const region of monitorMagnifyRegions) {
+      drawMagnifyIcon(this.ctx, region.x + 4, region.y + 4, 22);
+    }
+  }
+
+  private drawExpandedMonitorOverlay(
+    state: GameRenderState,
+    scenario?: import("@incident/shared").ScenarioDefinition
+  ) {
+    const monitorId = state.world.expandedMonitor;
+    if (!monitorId) return;
+
+    const monitor = monitorLayouts.find((item) => item.id === monitorId);
+    if (!monitor) return;
+
+    this.ctx.fillStyle = "rgba(2, 6, 23, 0.78)";
+    this.ctx.fillRect(0, 0, logicalWidth, logicalHeight);
+
+    const layout = expandedMonitorLayout;
+    this.drawMonitorFrame(layout.x, layout.y, layout.width, layout.height, monitor.title);
+    this.drawMonitor(layout.x, layout.y, layout.width, layout.height, monitor.title, (content) => {
+      if (monitorId === "metrics") this.drawMetricsPanel(state.monitors.left);
+      else if (monitorId === "terminal") this.drawTerminal(state, content.width);
+      else this.drawRightPanel(state, scenario);
+    });
+
+    this.ctx.fillStyle = "#64748b";
+    this.ctx.font = "14px system-ui, sans-serif";
+    this.ctx.fillText("背景をクリックで閉じる", layout.x + layout.width - 168, layout.y + 28);
   }
 
   private drawMonitorFrame(x: number, y: number, width: number, height: number, title: string) {
@@ -433,7 +518,7 @@ export class CanvasRenderer {
     this.ctx.fillRect(barX, barY, barWidth * ratio, 6);
   }
 
-  private drawTerminal(state: GameRenderState) {
+  private drawTerminal(state: GameRenderState, contentWidth = terminalContentWidth) {
     const devtools = state.monitors.center.devtools;
     if (devtools?.visible) {
       this.drawDevtoolsPanel(devtools);
@@ -443,28 +528,31 @@ export class CanvasRenderer {
     const terminal = state.monitors.center.terminal;
     this.ctx.fillStyle = "#64748b";
     this.ctx.font = "12px system-ui, sans-serif";
-    this.ctx.fillText("DevTools", 400, 18);
+    this.ctx.fillText("DevTools", contentWidth - 96, 18);
     const contentHeight = 540;
     const lineHeight = 22;
+    this.ctx.font = "18px ui-monospace, SFMono-Regular, Menlo, monospace";
+    const terminalColumns = Math.max(12, Math.floor(contentWidth / this.ctx.measureText("M").width));
+    const visualLines = this.layoutTerminalLines(terminal.lines, terminalColumns);
+    const cursorVisualLine = findTerminalCursorVisualLine(visualLines, terminal.cursor.y, terminal.cursor.x);
+    const effectiveCursorLine = cursorVisualLine >= 0 ? cursorVisualLine : Math.max(0, visualLines.length - 1);
     const maxLines = Math.floor(contentHeight / lineHeight);
     const startLine =
-      terminal.lines.length <= maxLines
+      visualLines.length <= maxLines
         ? 0
         : Math.min(
-            Math.max(0, terminal.cursor.y - maxLines + 1),
-            terminal.lines.length - maxLines
+            Math.max(0, effectiveCursorLine - maxLines + 1),
+            visualLines.length - maxLines
           );
-    const visibleLines = terminal.lines.slice(startLine, startLine + maxLines);
+    const visibleLines = visualLines.slice(startLine, startLine + maxLines);
     const textBlockHeight = visibleLines.length * lineHeight;
     const baseY = Math.max(20, contentHeight - textBlockHeight);
 
     this.ctx.fillStyle = "#d1fae5";
-    this.ctx.font = "18px ui-monospace, SFMono-Regular, Menlo, monospace";
     visibleLines.forEach((line, index) => {
       const y = baseY + index * lineHeight;
       let x = 0;
-      const cached = this.getCachedTerminalLine(line);
-      for (const span of cached.spans) {
+      for (const span of line.spans) {
         this.ctx.fillStyle = span.color ?? "#d1fae5";
         this.ctx.font = `${span.bold ? "bold " : ""}${span.dim ? "lighter " : ""}18px ui-monospace, SFMono-Regular, Menlo, monospace`;
         this.ctx.fillText(span.text, x, y);
@@ -472,18 +560,29 @@ export class CanvasRenderer {
       }
     });
 
-    const cursorLine = terminal.cursor.y - startLine;
+    const cursorLine = effectiveCursorLine - startLine;
     if (terminal.cursor.visible && cursorLine >= 0 && cursorLine < visibleLines.length) {
-      const line = this.getCachedTerminalLine(visibleLines[cursorLine] ?? "").plain;
+      const line = visibleLines[cursorLine];
+      if (!line) return;
       this.ctx.font = "18px ui-monospace, SFMono-Regular, Menlo, monospace";
-      const cursorX = this.ctx.measureText(line.slice(0, terminal.cursor.x)).width;
+      const cursorText = line.plain.slice(0, Math.max(0, terminal.cursor.x - line.startColumn));
+      const cursorX = this.ctx.measureText(cursorText).width;
       this.ctx.fillStyle = "#d1fae5";
       this.ctx.fillRect(cursorX, baseY + cursorLine * lineHeight - 16, 10, 20);
     }
   }
 
+  private layoutTerminalLines(lines: string[], maxColumns: number): TerminalVisualLine[] {
+    const visualLines: TerminalVisualLine[] = [];
+    for (let sourceIndex = 0; sourceIndex < lines.length; sourceIndex += 1) {
+      const cached = this.getCachedTerminalLine(lines[sourceIndex] ?? "");
+      visualLines.push(...layoutTerminalLine(cached.spans, cached.plain, sourceIndex, maxColumns));
+    }
+    return visualLines.length > 0 ? visualLines : [emptyTerminalVisualLine(0)];
+  }
+
   private getCachedTerminalLine(line: string) {
-    const source = line.trimEnd().slice(0, 120);
+    const source = line.slice(0, 120);
     const cached = this.terminalLineCache.get(source);
     if (cached) return cached;
     const parsed = {
@@ -499,9 +598,8 @@ export class CanvasRenderer {
   }
 
   private drawRightPanel(state: GameRenderState, scenario?: import("@incident/shared").ScenarioDefinition) {
-    this.drawWorldPanel(state.world);
-
-    const worldHeight = 148;
+    const worldHeight = runbookWorldOffset(state.session.difficulty);
+    if (worldHeight > 0) this.drawWorldPanel(state.world);
     const runbooks = scenario?.runbooks ?? (state.monitors.right.activeRunbook ? [state.monitors.right.activeRunbook] : []);
     let tabX = 0;
     for (let index = 0; index < runbooks.length; index += 1) {
@@ -801,6 +899,14 @@ export class CanvasRenderer {
   }
 }
 
+type TerminalVisualLine = {
+  sourceIndex: number;
+  startColumn: number;
+  endColumn: number;
+  plain: string;
+  spans: AnsiSpan[];
+};
+
 export const notificationBellRegion = { x: 1508, y: 34, width: 52, height: 52 } as const;
 
 export const notificationPanelRegion = { x: 1188, y: 92, width: 372, height: 420 } as const;
@@ -813,26 +919,52 @@ export const inputDockRects = {
 
 export const navigationOverlayRect = { x: 720, y: 860, width: 480, height: 120 } as const;
 
-export const runbookTabRegion = { x: 1332, y: 352, width: 516, height: 36 } as const;
+export const runbookTabRegion = (difficulty: GameRenderState["session"]["difficulty"]) => ({
+  x: runbookContentX,
+  y: runbookContentY + runbookWorldOffset(difficulty),
+  width: 516,
+  height: 36
+});
+
+export const slackComposeRegion = (difficulty: GameRenderState["session"]["difficulty"]) => {
+  const y = runbookContentY + runbookWorldOffset(difficulty) + runbookSlackComposeOffset;
+  return { x: runbookContentX, y, width: 496, height: 48 };
+};
+
+export const slackSendButtonRegion = (difficulty: GameRenderState["session"]["difficulty"]) => {
+  const compose = slackComposeRegion(difficulty);
+  return { x: compose.x + 404, y: compose.y + 8, width: 56, height: 28 };
+};
 
 export const devtoolsToggleRegion = { x: 712, y: 204, width: 120, height: 28 } as const;
 
-export const slackComposeRegion = { x: 1332, y: 746, width: 496, height: 48 } as const;
-
-export const slackSendButtonRegion = { x: 1736, y: 754, width: 56, height: 28 } as const;
-
 export const devtoolsTabRegion = { x: 712, y: 236, width: 516, height: 28 } as const;
 
-export function slackComposeAt(x: number, y: number) {
-  if (!containsCanvasPoint(slackComposeRegion, x, y)) return null;
-  if (containsCanvasPoint(slackSendButtonRegion, x, y)) return "send" as const;
+export function monitorMagnifyAt(x: number, y: number): MonitorId | null {
+  for (const region of monitorMagnifyRegions) {
+    if (containsCanvasPoint(region, x, y)) return region.id;
+  }
+  return null;
+}
+
+export function slackComposeAt(x: number, y: number, difficulty: GameRenderState["session"]["difficulty"]) {
+  const composeRegion = slackComposeRegion(difficulty);
+  if (!containsCanvasPoint(composeRegion, x, y)) return null;
+  if (containsCanvasPoint(slackSendButtonRegion(difficulty), x, y)) return "send" as const;
   return "compose" as const;
 }
 
-export function runbookTabAt(x: number, y: number, runbookCount: number, titles: string[]) {
-  if (!containsCanvasPoint(runbookTabRegion, x, y) || runbookCount === 0) return -1;
-  let tabX = runbookTabRegion.x;
-  const localY = y - runbookTabRegion.y;
+export function runbookTabAt(
+  x: number,
+  y: number,
+  difficulty: GameRenderState["session"]["difficulty"],
+  runbookCount: number,
+  titles: string[]
+) {
+  const region = runbookTabRegion(difficulty);
+  if (!containsCanvasPoint(region, x, y) || runbookCount === 0) return -1;
+  let tabX = region.x;
+  const localY = y - region.y;
   if (localY < 0 || localY > 28) return -1;
   for (let index = 0; index < runbookCount; index += 1) {
     const title = titles[index] ?? "";
@@ -872,6 +1004,10 @@ function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, width: n
   ctx.closePath();
 }
 
+function normalizeMultilineText(text: string) {
+  return text.replace(/\\n/g, "\n");
+}
+
 function wrapText(
   ctx: CanvasRenderingContext2D,
   text: string,
@@ -883,7 +1019,7 @@ function wrapText(
 ) {
   let drawn = 0;
 
-  for (const paragraph of text.split("\n")) {
+  for (const paragraph of normalizeMultilineText(text).split("\n")) {
     if (drawn >= maxLines) return y;
     if (!paragraph.trim()) {
       y += lineHeight;
@@ -916,6 +1052,88 @@ function wrapText(
   }
 
   return y;
+}
+
+function drawMagnifyIcon(ctx: CanvasRenderingContext2D, x: number, y: number, size: number) {
+  ctx.save();
+  ctx.fillStyle = "rgba(15, 23, 42, 0.72)";
+  roundRect(ctx, x - 2, y - 2, size + 4, size + 4, 4);
+  ctx.fill();
+  ctx.strokeStyle = "#94a3b8";
+  ctx.lineWidth = 1.5;
+  const lensRadius = size * 0.34;
+  const lensX = x + size * 0.38;
+  const lensY = y + size * 0.38;
+  ctx.beginPath();
+  ctx.arc(lensX, lensY, lensRadius, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(lensX + lensRadius * 0.72, lensY + lensRadius * 0.72);
+  ctx.lineTo(x + size - 2, y + size - 2);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function layoutTerminalLine(spans: AnsiSpan[], plain: string, sourceIndex: number, maxColumns: number): TerminalVisualLine[] {
+  if (plain.length === 0) return [emptyTerminalVisualLine(sourceIndex)];
+
+  const breakColumns = terminalPromptBreakColumns(plain);
+  const lines: TerminalVisualLine[] = [];
+  for (let index = 0; index < breakColumns.length - 1; index += 1) {
+    const rangeStart = breakColumns[index] ?? 0;
+    const rangeEnd = breakColumns[index + 1] ?? plain.length;
+    for (let start = rangeStart; start < rangeEnd; start += maxColumns) {
+      const end = Math.min(rangeEnd, start + maxColumns);
+      lines.push({
+        sourceIndex,
+        startColumn: start,
+        endColumn: end,
+        plain: plain.slice(start, end),
+        spans: sliceAnsiSpans(spans, start, end)
+      });
+    }
+  }
+  return lines.length > 0 ? lines : [emptyTerminalVisualLine(sourceIndex)];
+}
+
+function findTerminalCursorVisualLine(lines: TerminalVisualLine[], sourceIndex: number, cursorColumn: number) {
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const line = lines[index];
+    if (!line || line.sourceIndex !== sourceIndex) continue;
+    if (cursorColumn >= line.startColumn && cursorColumn <= line.endColumn) return index;
+  }
+  return -1;
+}
+
+function terminalPromptBreakColumns(plain: string) {
+  const columns = [0];
+  const promptPattern = /root@[^:\s]+:[^#\n]+# /g;
+  for (const match of plain.matchAll(promptPattern)) {
+    if (match.index > 0) columns.push(match.index);
+  }
+  columns.push(plain.length);
+  return [...new Set(columns)].sort((left, right) => left - right);
+}
+
+function sliceAnsiSpans(spans: AnsiSpan[], startColumn: number, endColumn: number): AnsiSpan[] {
+  const sliced: AnsiSpan[] = [];
+  let cursor = 0;
+  for (const span of spans) {
+    const spanStart = cursor;
+    const spanEnd = cursor + span.text.length;
+    cursor = spanEnd;
+    if (spanEnd <= startColumn || spanStart >= endColumn) continue;
+    const text = span.text.slice(
+      Math.max(0, startColumn - spanStart),
+      Math.min(span.text.length, endColumn - spanStart)
+    );
+    if (text) sliced.push({ ...span, text });
+  }
+  return sliced.length > 0 ? sliced : [{ text: "" }];
+}
+
+function emptyTerminalVisualLine(sourceIndex: number): TerminalVisualLine {
+  return { sourceIndex, startColumn: 0, endColumn: 0, plain: "", spans: [{ text: "" }] };
 }
 
 function centeredText(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, width: number, height: number) {
@@ -969,15 +1187,13 @@ function formatDifficulty(difficulty: GameRenderState["session"]["difficulty"]) 
 }
 
 function formatTerminalInputText(command: string, maxChars = 96) {
-  const trimmed = command.trimEnd();
-  if (trimmed.length <= maxChars) return trimmed;
-  return trimmed.slice(-maxChars);
+  if (command.length <= maxChars) return command;
+  return command.slice(-maxChars);
 }
 
 function extractTypedCommand(command: string, maxChars = 96) {
-  const trimmed = command.trimEnd();
-  const promptEnd = trimmed.lastIndexOf("# ");
-  const typed = promptEnd >= 0 ? trimmed.slice(promptEnd + 2) : trimmed;
+  const promptEnd = command.lastIndexOf("# ");
+  const typed = promptEnd >= 0 ? command.slice(promptEnd + 2) : command;
   return formatTerminalInputText(typed, maxChars);
 }
 

@@ -311,6 +311,7 @@ function defaultWorld(): GameRenderState["world"] {
     narrativeHour: 0,
     janitorCameraActive: false,
     fridgeCameraActive: true,
+    expandedMonitor: null,
     redBullPercent: 100,
     powerOutageFlashMs: 0,
     redBullFlyingMs: 0
@@ -342,9 +343,21 @@ function computeWorld(
     narrativeHour,
     janitorCameraActive,
     fridgeCameraActive,
+    expandedMonitor: state.world.expandedMonitor,
     redBullPercent,
     powerOutageFlashMs: state.world.powerOutageFlashMs,
     redBullFlyingMs
+  };
+}
+
+export function toggleExpandedMonitor(
+  state: GameRenderState,
+  monitor: "metrics" | "terminal" | "runbook"
+): GameRenderState {
+  const expandedMonitor = state.world.expandedMonitor === monitor ? null : monitor;
+  return {
+    ...state,
+    world: { ...state.world, expandedMonitor }
   };
 }
 

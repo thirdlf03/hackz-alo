@@ -326,6 +326,7 @@ export type GameRenderState = {
     narrativeHour: number;
     janitorCameraActive: boolean;
     fridgeCameraActive: boolean;
+    expandedMonitor: "metrics" | "terminal" | "runbook" | null;
     redBullPercent: number;
     powerOutageFlashMs: number;
     redBullFlyingMs: number;
