@@ -15,6 +15,7 @@ type RecorderOptions = {
 
 export class CanvasRecorder {
   private recorder?: MediaRecorder;
+  private activeMimeType?: string;
   private seq = 0;
   private startedAt = 0;
   private lastChunkEndedAtMs = 0;
@@ -23,10 +24,19 @@ export class CanvasRecorder {
 
   constructor(private canvas: HTMLCanvasElement, private options: RecorderOptions) {}
 
+  get mimeType() {
+    return this.activeMimeType;
+  }
+
+  get durationMs() {
+    return this.lastChunkEndedAtMs;
+  }
+
   async start() {
     if (this.recorder && this.recorder.state !== "inactive") return;
     const mimeType = pickSupportedMimeType((candidate) => MediaRecorder.isTypeSupported(candidate));
     if (!mimeType) throw new Error("MediaRecorder is not supported in this browser");
+    this.activeMimeType = mimeType;
     const stream = this.canvas.captureStream(30);
     this.startedAt = performance.now();
     this.lastChunkEndedAtMs = 0;

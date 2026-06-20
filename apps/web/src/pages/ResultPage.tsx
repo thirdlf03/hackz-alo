@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "preact/hooks";
+import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { ApiClient } from "../api/client.js";
 import {
   buildTimelineFromEvents,
@@ -26,8 +26,9 @@ type ReplayMeta = {
   difficulty: string;
   result: string | null;
   duration_ms: number | null;
+  video_duration_ms?: number | null;
   ending_id?: string | null;
-  thumbnail_object_key?: string | null;
+  browser_info_json?: string | null;
 };
 
 const api = new ApiClient();
@@ -45,8 +46,10 @@ export function ResultPage({
   const [meta, setMeta] = useState<ReplayMeta>();
   const [events, setEvents] = useState<IndexedReplayEvent[]>([]);
   const [error, setError] = useState<string>();
+  const [videoDurationMs, setVideoDurationMs] = useState<number | null>();
 
   useEffect(() => {
+    setVideoDurationMs(undefined);
     Promise.all([api.getReplay(replayId), api.getReplayEvents(replayId)])
       .then(([replay, indexed]) => {
         setMeta(replay as ReplayMeta);
@@ -63,22 +66,22 @@ export function ResultPage({
   const runbooks = useMemo(() => events.filter((event) => event.type === "runbook_open"), [events]);
   const importantEvents = useMemo(() => filterImportantEvents(events), [events]);
   const visibleTimeline = useMemo(() => buildTimelineFromEvents(events, timeline), [events, timeline]);
+  const handleVideoDurationChange = useCallback((durationMs: number | null | undefined) => {
+    setVideoDurationMs(durationMs);
+  }, []);
 
   const resultLabel = meta?.result === "resolved" ? "成功" : meta?.result === "retired" ? "リタイア" : "失敗";
   const endingLabel = meta?.ending_id ? formatEnding(meta.ending_id) : undefined;
+  const knownVideoDurationMs = videoDurationMs ?? meta?.video_duration_ms;
+  const durationLabel = canPlayVideo && knownVideoDurationMs === undefined
+    ? "計算中…"
+    : formatDuration(knownVideoDurationMs ?? meta?.duration_ms ?? 0);
 
   return (
     <section class="panel result-panel">
       <p class="eyebrow">Mission Report</p>
       <h1>{scenarioTitle}</h1>
       {error && <p class="app-error" role="alert">{error}</p>}
-      {meta?.thumbnail_object_key && (
-        <img
-          class="result-thumbnail"
-          src={`/api/replays/${encodeURIComponent(replayId)}/thumbnail`}
-          alt="リプレイサムネイル"
-        />
-      )}
       <div class="result-grid">
         <div>
           <span class="result-label">結果</span>
@@ -86,7 +89,7 @@ export function ResultPage({
         </div>
         <div>
           <span class="result-label">対応時間</span>
-          <strong>{formatDuration(meta?.duration_ms ?? 0)}</strong>
+          <strong>{durationLabel}</strong>
         </div>
         <div>
           <span class="result-label">セッション</span>
@@ -105,6 +108,10 @@ export function ResultPage({
         events={events}
         timeline={timeline}
         showVideo={canPlayVideo}
+        durationMs={meta?.duration_ms}
+        videoDurationMs={meta?.video_duration_ms}
+        browserInfoJson={meta?.browser_info_json}
+        onVideoDurationChange={handleVideoDurationChange}
         title="リプレイ動画とタイムライン"
       />
 
@@ -131,7 +138,7 @@ export function ResultPage({
               <li key={event.event_id}>{formatDuration(event.at_ms)} {event.summary ?? event.type}</li>
             ))
             : visibleTimeline.map((event) => (
-              <li key={`${event.at}-${event.label}`}>{formatDuration(event.at * 1000)} {event.label}</li>
+              <li key={event.id}>{formatDuration(event.at * 1000)} {event.label}</li>
             ))}
         </ul>
       </section>

@@ -2,7 +2,7 @@ import type { AlertDefinition, GameRenderState, MetricsSnapshot, ScenarioDefinit
 
 const METRICS_HISTORY_LIMIT = 30;
 const RED_BULL_FLYING_MS = 2800;
-const POWER_OUTAGE_FLASH_MS = 1800;
+const RED_BULL_FLYING_THRESHOLD = 65;
 
 type InitialGameStateOptions = {
   sessionStatus?: GameRenderState["session"]["status"];
@@ -97,14 +97,9 @@ export function advanceGameState(
 
   const activeStep = resolveNavigationStep(scenario, elapsedMs, state.navigation.dismissedStepIds);
   const newAlertArrived = alerts.length > state.monitors.left.alerts.length;
-  const alertFlashMs = newAlertArrived ? 1200 : Math.max(0, state.alertFlashMs - deltaMs);
   const notificationPulseMs = newAlertArrived ? 2400 : Math.max(0, state.notifications.pulseMs - deltaMs);
 
-  const clickEffects = state.clickEffects
-    .map((effect) => ({ ...effect, ageMs: effect.ageMs + deltaMs }))
-    .filter((effect) => effect.ageMs < 600);
-
-  const world = computeWorld(state, elapsedMs, alerts, state.monitors.left.alerts, newAlertArrived);
+  const world = computeWorld(state, elapsedMs);
 
   const nextStatus =
     state.session.status === "resolved" ||
@@ -136,9 +131,8 @@ export function advanceGameState(
       ...state.notifications,
       pulseMs: notificationPulseMs
     },
-    alertFlashMs,
-    world,
-    clickEffects
+    alertFlashMs: 0,
+    world
   };
 }
 
@@ -242,13 +236,6 @@ export function setDevtoolsTab(state: GameRenderState, tab: NonNullable<GameRend
   };
 }
 
-export function addClickEffect(state: GameRenderState, x: number, y: number): GameRenderState {
-  return {
-    ...state,
-    clickEffects: [...state.clickEffects, { id: crypto.randomUUID(), x, y, ageMs: 0 }].slice(-8)
-  };
-}
-
 export function toggleNotificationPanel(state: GameRenderState): GameRenderState {
   const panelOpen = !state.notifications.panelOpen;
   const readAlertIds = panelOpen
@@ -332,10 +319,7 @@ function defaultWorld(): GameRenderState["world"] {
 
 function computeWorld(
   state: GameRenderState,
-  elapsedMs: number,
-  alerts: AlertDefinition[],
-  previousAlerts: AlertDefinition[],
-  newAlertArrived: boolean
+  elapsedMs: number
 ): GameRenderState["world"] {
   const timeLimitMs = Math.max(state.clock.timeLimitMs, 1);
   const narrativeHour = Math.min(6, (elapsedMs / timeLimitMs) * 6);
@@ -345,15 +329,12 @@ function computeWorld(
   let redBullPercent = Math.max(0, 100 - (elapsedMs / timeLimitMs) * 40);
   if (state.world.redBullFlyingMs > 0) redBullPercent = 0;
 
-  const newCritical =
-    newAlertArrived &&
-    alerts.slice(previousAlerts.length).some((alert) => alert.severity === "critical");
-
-  let powerOutageFlashMs = state.world.powerOutageFlashMs;
-  if (newCritical) powerOutageFlashMs = POWER_OUTAGE_FLASH_MS;
-
   let redBullFlyingMs = state.world.redBullFlyingMs;
-  if (redBullPercent <= 0 && redBullFlyingMs <= 0 && state.world.redBullPercent > 0) {
+  if (
+    redBullPercent <= RED_BULL_FLYING_THRESHOLD &&
+    redBullFlyingMs <= 0 &&
+    state.world.redBullPercent > RED_BULL_FLYING_THRESHOLD
+  ) {
     redBullFlyingMs = RED_BULL_FLYING_MS;
   }
 
@@ -362,7 +343,7 @@ function computeWorld(
     janitorCameraActive,
     fridgeCameraActive,
     redBullPercent,
-    powerOutageFlashMs,
+    powerOutageFlashMs: state.world.powerOutageFlashMs,
     redBullFlyingMs
   };
 }

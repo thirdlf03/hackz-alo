@@ -1,13 +1,15 @@
 import type { GameRenderState, MetricsSnapshot, MetricsSource } from "@incident/shared";
 import { mergedSlackMessages } from "../state/gameState.js";
-import { parseAnsiLine, stripAnsi } from "../terminal/ansi.js";
+import { parseAnsiLine, stripAnsi, type AnsiSpan } from "../terminal/ansi.js";
 
 const logicalWidth = 1920;
 const logicalHeight = 1080;
 
 export class CanvasRenderer {
   private ctx: CanvasRenderingContext2D;
-  private roomGradient: CanvasGradient;
+  private staticCanvas: HTMLCanvasElement;
+  private staticCtx: CanvasRenderingContext2D;
+  private terminalLineCache = new Map<string, { spans: AnsiSpan[]; plain: string }>();
 
   constructor(private canvas: HTMLCanvasElement) {
     const ctx = canvas.getContext("2d");
@@ -15,10 +17,13 @@ export class CanvasRenderer {
     this.ctx = ctx;
     this.canvas.width = logicalWidth;
     this.canvas.height = logicalHeight;
-    const gradient = ctx.createLinearGradient(0, 0, 0, logicalHeight);
-    gradient.addColorStop(0, "#111318");
-    gradient.addColorStop(1, "#050609");
-    this.roomGradient = gradient;
+    this.staticCanvas = document.createElement("canvas");
+    this.staticCanvas.width = logicalWidth;
+    this.staticCanvas.height = logicalHeight;
+    const staticCtx = this.staticCanvas.getContext("2d");
+    if (!staticCtx) throw new Error("2d canvas is required");
+    this.staticCtx = staticCtx;
+    this.drawStaticLayer();
   }
 
   draw(state: GameRenderState, scenario?: import("@incident/shared").ScenarioDefinition) {
@@ -27,28 +32,42 @@ export class CanvasRenderer {
     try {
       ctx.setTransform(this.canvas.width / logicalWidth, 0, 0, this.canvas.height / logicalHeight, 0, 0);
       ctx.clearRect(0, 0, logicalWidth, logicalHeight);
-      this.drawRoom();
+      ctx.drawImage(this.staticCanvas, 0, 0);
       this.drawHeader(state);
-      this.drawNotifications(state);
       this.drawMonitor(70, 140, 540, 620, "METRICS", () => this.drawMetricsPanel(state.monitors.left));
       this.drawMonitor(690, 140, 540, 620, "TERMINAL", () => this.drawTerminal(state));
       this.drawMonitor(1310, 140, 540, 620, "RUNBOOK / SLACK", () => this.drawRightPanel(state, scenario));
       this.drawAlerts(state);
-      if (state.alertFlashMs > 0) this.drawAlertFlash(state.alertFlashMs);
       if (state.warning && state.warning.flashMs > 0) this.drawCommandWarning(state.warning);
-      if (state.world.powerOutageFlashMs > 0) this.drawPowerOutageFlash(state.world.powerOutageFlashMs);
       if (state.world.redBullFlyingMs > 0) this.drawRedBullFlying(state.world.redBullFlyingMs);
       this.drawNavigationOverlay(state, scenario);
       this.drawInputDock(state);
-      this.drawClickEffects(state);
+      this.drawNotifications(state);
       this.drawCursor(state);
     } finally {
       ctx.restore();
     }
   }
 
+  private drawStaticLayer() {
+    const previous = this.ctx;
+    this.ctx = this.staticCtx;
+    try {
+      this.ctx.clearRect(0, 0, logicalWidth, logicalHeight);
+      this.drawRoom();
+      this.drawMonitorFrame(70, 140, 540, 620, "METRICS");
+      this.drawMonitorFrame(690, 140, 540, 620, "TERMINAL");
+      this.drawMonitorFrame(1310, 140, 540, 620, "RUNBOOK / SLACK");
+    } finally {
+      this.ctx = previous;
+    }
+  }
+
   private drawRoom() {
-    this.ctx.fillStyle = this.roomGradient;
+    const gradient = this.ctx.createLinearGradient(0, 0, 0, logicalHeight);
+    gradient.addColorStop(0, "#111318");
+    gradient.addColorStop(1, "#050609");
+    this.ctx.fillStyle = gradient;
     this.ctx.fillRect(0, 0, logicalWidth, logicalHeight);
     this.ctx.fillStyle = "#171b21";
     this.ctx.fillRect(0, 840, logicalWidth, 240);
@@ -192,12 +211,22 @@ export class CanvasRenderer {
     }
   }
 
-  private drawMonitor(x: number, y: number, width: number, height: number, title: string, drawContent: () => void) {
+  private drawMonitor(x: number, y: number, width: number, height: number, _title: string, drawContent: () => void) {
     const contentX = x + 22;
     const contentY = y + 64;
     const contentWidth = width - 44;
     const contentHeight = height - 80;
 
+    this.ctx.save();
+    this.ctx.beginPath();
+    this.ctx.rect(contentX, contentY, contentWidth, contentHeight);
+    this.ctx.clip();
+    this.ctx.translate(contentX, contentY);
+    drawContent();
+    this.ctx.restore();
+  }
+
+  private drawMonitorFrame(x: number, y: number, width: number, height: number, title: string) {
     this.ctx.fillStyle = "#252b35";
     roundRect(this.ctx, x - 16, y - 16, width + 32, height + 32, 8);
     this.ctx.fill();
@@ -210,29 +239,17 @@ export class CanvasRenderer {
     this.ctx.fillStyle = "#89a4c7";
     this.ctx.font = "18px ui-monospace, SFMono-Regular, Menlo, monospace";
     this.ctx.fillText(title, x + 22, y + 36);
-
-    this.ctx.save();
-    this.ctx.beginPath();
-    this.ctx.rect(contentX, contentY, contentWidth, contentHeight);
-    this.ctx.clip();
-    this.ctx.translate(contentX, contentY);
-    drawContent();
-    this.ctx.restore();
   }
 
   private drawMetricsPanel(left: GameRenderState["monitors"]["left"]) {
     const { metrics, metricsSource } = left;
     const health = summarizeMetricsHealth(metrics);
     const panelWidth = 496;
-    const cardHeight = 72;
-    const cardGap = 10;
+    const cardHeight = 64;
+    const cardGap = 8;
     const rowStride = cardHeight + cardGap;
 
     this.drawMetricsHealthBanner(health, metricsSource, panelWidth);
-
-    if (left.metricsHistory.length > 1) {
-      this.drawSparkline(0, 44, panelWidth, 28, left.metricsHistory.map((item) => item.http5xxRate * 100), "#f87171");
-    }
 
     const sections: Array<{
       title: string;
@@ -317,7 +334,7 @@ export class CanvasRenderer {
       }
     ];
 
-    let y = 50;
+    let y = 54;
     for (const section of sections) {
       this.ctx.fillStyle = "#64748b";
       this.ctx.font = "11px ui-monospace, SFMono-Regular, Menlo, monospace";
@@ -407,7 +424,7 @@ export class CanvasRenderer {
     this.ctx.fillText(`${card.value}${card.suffix}`, x + 10, y + 38);
 
     const barX = x + 10;
-    const barY = y + 48;
+    const barY = y + height - 18;
     const barWidth = width - 20;
     const ratio = Math.max(0, Math.min(1, card.value / card.max));
     this.ctx.fillStyle = "#1e293b";
@@ -446,7 +463,8 @@ export class CanvasRenderer {
     visibleLines.forEach((line, index) => {
       const y = baseY + index * lineHeight;
       let x = 0;
-      for (const span of parseAnsiLine(line.trimEnd().slice(0, 120))) {
+      const cached = this.getCachedTerminalLine(line);
+      for (const span of cached.spans) {
         this.ctx.fillStyle = span.color ?? "#d1fae5";
         this.ctx.font = `${span.bold ? "bold " : ""}${span.dim ? "lighter " : ""}18px ui-monospace, SFMono-Regular, Menlo, monospace`;
         this.ctx.fillText(span.text, x, y);
@@ -456,11 +474,28 @@ export class CanvasRenderer {
 
     const cursorLine = terminal.cursor.y - startLine;
     if (terminal.cursor.visible && cursorLine >= 0 && cursorLine < visibleLines.length) {
-      const line = stripAnsi((visibleLines[cursorLine] ?? "").trimEnd());
+      const line = this.getCachedTerminalLine(visibleLines[cursorLine] ?? "").plain;
+      this.ctx.font = "18px ui-monospace, SFMono-Regular, Menlo, monospace";
       const cursorX = this.ctx.measureText(line.slice(0, terminal.cursor.x)).width;
       this.ctx.fillStyle = "#d1fae5";
       this.ctx.fillRect(cursorX, baseY + cursorLine * lineHeight - 16, 10, 20);
     }
+  }
+
+  private getCachedTerminalLine(line: string) {
+    const source = line.trimEnd().slice(0, 120);
+    const cached = this.terminalLineCache.get(source);
+    if (cached) return cached;
+    const parsed = {
+      spans: parseAnsiLine(source),
+      plain: stripAnsi(source)
+    };
+    this.terminalLineCache.set(source, parsed);
+    if (this.terminalLineCache.size > 500) {
+      const oldest = this.terminalLineCache.keys().next().value;
+      if (oldest !== undefined) this.terminalLineCache.delete(oldest);
+    }
+    return parsed;
   }
 
   private drawRightPanel(state: GameRenderState, scenario?: import("@incident/shared").ScenarioDefinition) {
@@ -622,12 +657,6 @@ export class CanvasRenderer {
     }
   }
 
-  private drawAlertFlash(remainingMs: number) {
-    const opacity = Math.min(0.35, remainingMs / 1200);
-    this.ctx.fillStyle = `rgba(239, 68, 68, ${opacity})`;
-    this.ctx.fillRect(0, 0, logicalWidth, logicalHeight);
-  }
-
   private drawCommandWarning(warning: { message: string; flashMs: number }) {
     const opacity = Math.min(1, warning.flashMs / 800);
     const box = { x: 70, y: 118, width: logicalWidth - 140, height: 52 };
@@ -640,15 +669,6 @@ export class CanvasRenderer {
     this.ctx.fillStyle = `rgba(254, 226, 226, ${opacity})`;
     this.ctx.font = "bold 20px system-ui, sans-serif";
     this.ctx.fillText(warning.message, box.x + 16, box.y + 34);
-  }
-
-  private drawPowerOutageFlash(remainingMs: number) {
-    const phase = Math.floor(remainingMs / 120) % 2 === 0;
-    const opacity = Math.min(0.55, remainingMs / 1800) * (phase ? 0.9 : 0.35);
-    this.ctx.fillStyle = `rgba(250, 250, 250, ${opacity})`;
-    this.ctx.fillRect(0, 0, logicalWidth, logicalHeight);
-    this.ctx.fillStyle = `rgba(0, 0, 0, ${opacity * 0.4})`;
-    this.ctx.fillRect(0, 0, logicalWidth, logicalHeight);
   }
 
   private drawRedBullFlying(remainingMs: number) {
@@ -700,21 +720,6 @@ export class CanvasRenderer {
       this.ctx.font = "14px ui-monospace, SFMono-Regular, Menlo, monospace";
       this.ctx.fillText(`例: ${step.suggestedCommand}`, box.x + 16, box.y + box.height - 24);
     }
-  }
-
-  private drawSparkline(x: number, y: number, width: number, height: number, values: number[], color: string) {
-    if (values.length < 2) return;
-    const max = Math.max(...values, 1);
-    this.ctx.strokeStyle = color;
-    this.ctx.lineWidth = 2;
-    this.ctx.beginPath();
-    values.forEach((value, index) => {
-      const px = x + (index / (values.length - 1)) * width;
-      const py = y + height - (value / max) * height;
-      if (index === 0) this.ctx.moveTo(px, py);
-      else this.ctx.lineTo(px, py);
-    });
-    this.ctx.stroke();
   }
 
   private drawAlerts(state: GameRenderState) {
@@ -782,17 +787,6 @@ export class CanvasRenderer {
     this.ctx.fillStyle = enabled ? "#fecaca" : "#94a3b8";
     this.ctx.font = "22px system-ui, sans-serif";
     centeredText(this.ctx, "リタイア", retire.x, retire.y + 2, retire.width, retire.height);
-  }
-
-  private drawClickEffects(state: GameRenderState) {
-    for (const effect of state.clickEffects) {
-      const opacity = Math.max(0, 1 - effect.ageMs / 600);
-      this.ctx.strokeStyle = `rgba(94, 234, 212, ${opacity})`;
-      this.ctx.lineWidth = 4;
-      this.ctx.beginPath();
-      this.ctx.arc(effect.x, effect.y, 16 + effect.ageMs / 18, 0, Math.PI * 2);
-      this.ctx.stroke();
-    }
   }
 
   private drawCursor(state: GameRenderState) {

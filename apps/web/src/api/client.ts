@@ -1,4 +1,4 @@
-import type { AlertDefinition, ApiResult, Difficulty, MetricsSnapshot, ReplayEvent, ScenarioDefinition, SlackMessageDefinition } from "@incident/shared";
+import type { AlertDefinition, ApiResult, Difficulty, MetricsSnapshot, ReplayEvent, ScenarioDefinition, SessionStatus, SlackMessageDefinition } from "@incident/shared";
 
 export type ReplayRecord = {
   id: string;
@@ -6,9 +6,10 @@ export type ReplayRecord = {
   difficulty: string;
   result: string | null;
   duration_ms: number | null;
+  video_duration_ms?: number | null;
   ending_id?: string | null;
-  thumbnail_object_key?: string | null;
   featured?: number;
+  browser_info_json?: string | null;
 };
 
 export type SessionLogFile = "access" | "app" | "batch";
@@ -28,6 +29,15 @@ export type SessionClockResponse = {
   timeLimitMs: number;
   alerts: AlertDefinition[];
   slackMessages: SlackMessageDefinition[];
+};
+
+export type SessionSnapshotResponse = SessionClockResponse & {
+  sessionId: string;
+  replayId: string;
+  scenarioId: string;
+  status: SessionStatus;
+  elapsedMs: number;
+  scenario: ScenarioDefinition;
 };
 
 export type ReplayComment = {
@@ -67,6 +77,25 @@ export class ApiClient {
 
   async getSessionClock(sessionId: string) {
     return this.get<SessionClockResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/clock`);
+  }
+
+  subscribeSessionEvents(
+    sessionId: string,
+    handlers: {
+      onSnapshot?: (snapshot: SessionSnapshotResponse) => void;
+      onReplay?: (event: ReplayEvent) => void;
+      onError?: (event: Event) => void;
+    }
+  ) {
+    const source = new EventSource(`/api/sessions/${encodeURIComponent(sessionId)}/events`);
+    source.addEventListener("snapshot", (event) => {
+      handlers.onSnapshot?.(JSON.parse((event as MessageEvent<string>).data) as SessionSnapshotResponse);
+    });
+    source.addEventListener("replay", (event) => {
+      handlers.onReplay?.(JSON.parse((event as MessageEvent<string>).data) as ReplayEvent);
+    });
+    source.addEventListener("error", (event) => handlers.onError?.(event));
+    return source;
   }
 
   async updateSessionClock(sessionId: string, speed: number) {
@@ -133,8 +162,8 @@ export class ApiClient {
     this.eventSeq = 0;
   }
 
-  async finishReplay(replayId: string, browserInfo?: Record<string, unknown>) {
-    return this.post(`/api/replays/${encodeURIComponent(replayId)}/finish`, { browserInfo });
+  async finishReplay(replayId: string, input?: { browserInfo?: Record<string, unknown>; videoDurationMs?: number }) {
+    return this.post(`/api/replays/${encodeURIComponent(replayId)}/finish`, input ?? {});
   }
 
   async createMultipartUpload(replayId: string) {
@@ -153,13 +182,6 @@ export class ApiClient {
 
   async completeMultipartUpload(replayId: string) {
     return this.post(`/api/replays/${encodeURIComponent(replayId)}/mpu/complete`, {});
-  }
-
-  async uploadThumbnail(replayId: string, blob: Blob) {
-    return this.request(`/api/replays/${encodeURIComponent(replayId)}/thumbnail`, {
-      method: "POST",
-      body: blob
-    });
   }
 
   async listReplayChunks(replayId: string) {

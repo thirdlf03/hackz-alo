@@ -200,6 +200,14 @@ export class SessionDurableObject implements DurableObject {
     const stream = new ReadableStream<Uint8Array>({
       start: async (controller) => {
         this.sseClients.add(controller);
+        request.signal.addEventListener(
+          "abort",
+          () => {
+            this.sseClients.delete(controller);
+            try { controller.close(); } catch { /* ignore */ }
+          },
+          { once: true }
+        );
         const snapshot = await this.snapshot();
         controller.enqueue(encoder.encode(`event: snapshot\ndata: ${JSON.stringify(snapshot)}\n\n`));
         const session = await this.requireSession();
@@ -208,14 +216,8 @@ export class SessionDurableObject implements DurableObject {
         }
       },
       cancel: () => {
-        // controller removed on close via broadcast error handling
+        // Removed on abort above or broadcast error handling.
       }
-    });
-    request.signal.addEventListener("abort", () => {
-      for (const client of this.sseClients) {
-        try { client.close(); } catch { /* ignore */ }
-      }
-      this.sseClients.clear();
     });
     return new Response(stream, {
       headers: {

@@ -8,7 +8,8 @@ import { fileURLToPath } from "node:url";
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const migrationPaths = [
   path.join(rootDir, "migrations/0001_initial.sql"),
-  path.join(rootDir, "migrations/0002_remove_auth.sql")
+  path.join(rootDir, "migrations/0002_remove_auth.sql"),
+  path.join(rootDir, "migrations/0003_replay_video_duration.sql")
 ];
 const sqliteAvailable = !spawnSync("sqlite3", ["-version"], { encoding: "utf8" }).error;
 
@@ -37,7 +38,7 @@ insert into replay_comments
 insert into replay_multipart_uploads
   (replay_id, object_key, upload_id, next_part_number, uploaded_parts_json, status, created_at, updated_at)
   values ('repl_1', 'replays/repl_1/video.webm', 'upload_1', 1, '[]', 'created', '2026-06-20T00:00:00.000Z', '2026-06-20T00:00:00.000Z');
-update replays set ending_id = 'clear-shift', result = 'resolved' where id = 'repl_1';
+update replays set ending_id = 'clear-shift', result = 'resolved', video_duration_ms = 5000 where id = 'repl_1';
 select
   (select count(*) from play_sessions),
   (select count(*) from replays),
@@ -45,11 +46,12 @@ select
   (select count(*) from replay_events_index),
   (select count(*) from replay_comments),
   (select count(*) from replay_multipart_uploads),
-  (select ending_id from replays where id = 'repl_1');
+  (select ending_id from replays where id = 'repl_1'),
+  (select video_duration_ms from replays where id = 'repl_1');
 `);
 
     assert.equal(result.status, 0, result.stderr);
-    assert.equal(result.stdout.trim(), "1|1|1|1|1|1|clear-shift");
+    assert.equal(result.stdout.trim(), "1|1|1|1|1|1|clear-shift|5000");
   }
 );
 

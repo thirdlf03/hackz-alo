@@ -4,6 +4,10 @@ import {
   buildTimelineFromEvents,
   formatDuration,
   formatSeconds,
+  gameTimeToVideoSeekSeconds,
+  parseBrowserInfo,
+  parseRecordingStartedAtGameMs,
+  timelineDisplaySeconds,
   type IndexedReplayEvent,
   type TimelineEntry
 } from "../replay/replayMediaUtils.js";
@@ -18,10 +22,14 @@ type ReplayMeta = {
   difficulty: string;
   result: string | null;
   duration_ms: number | null;
-  thumbnail_object_key?: string | null;
+  video_duration_ms?: number | null;
+  browser_info_json?: string | null;
 };
 
+type VideoLoadState = "loading" | "ready" | "unavailable";
+
 const api = new ApiClient();
+const timelineSeekPrerollSeconds = 1;
 
 export function ReplayPage({ replayId, timeline }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -30,13 +38,28 @@ export function ReplayPage({ replayId, timeline }: Props) {
   const [comments, setComments] = useState<Array<{ id: string; at_ms: number; body: string }>>([]);
   const [tab, setTab] = useState<"timeline" | "commands" | "alerts" | "runbooks" | "comments">("timeline");
   const [currentTime, setCurrentTime] = useState(0);
+  const [activeTimelineId, setActiveTimelineId] = useState<string>();
   const [loadError, setLoadError] = useState<string>();
   const [videoSrc, setVideoSrc] = useState<string>();
+  const [videoLoadState, setVideoLoadState] = useState<VideoLoadState>("loading");
+  const [videoDuration, setVideoDuration] = useState(0);
   const [commentDraft, setCommentDraft] = useState("");
   const [shareWarning, setShareWarning] = useState(false);
 
+  const browserInfo = useMemo(() => parseBrowserInfo(meta?.browser_info_json), [meta?.browser_info_json]);
+  const persistedVideoDuration = (meta?.video_duration_ms ?? 0) / 1000;
+  const effectiveVideoDuration = videoDuration > 0 ? videoDuration : persistedVideoDuration;
+  const recordingStartMs = useMemo(
+    () => parseRecordingStartedAtGameMs(browserInfo, meta?.duration_ms ?? 0, effectiveVideoDuration),
+    [browserInfo, meta?.duration_ms, effectiveVideoDuration]
+  );
+
   useEffect(() => {
     let partialUrl: string | undefined;
+    setVideoSrc(undefined);
+    setVideoLoadState("loading");
+    setVideoDuration(0);
+    setCurrentTime(0);
     Promise.all([api.getReplay(replayId), api.getReplayEvents(replayId), api.getReplayComments(replayId)])
       .then(([replay, indexed, loadedComments]) => {
         setMeta(replay as ReplayMeta);
@@ -49,12 +72,17 @@ export function ReplayPage({ replayId, timeline }: Props) {
       .then(async (response) => {
         if (response.ok) {
           setVideoSrc(`/api/replays/${encodeURIComponent(replayId)}/video`);
+          setVideoLoadState("ready");
           return;
         }
         partialUrl = await api.assemblePartialReplayVideo(replayId);
         setVideoSrc(partialUrl);
+        setVideoLoadState("ready");
       })
-      .catch(() => setVideoSrc(undefined));
+      .catch(() => {
+        setVideoSrc(undefined);
+        setVideoLoadState("unavailable");
+      });
 
     return () => {
       if (partialUrl) URL.revokeObjectURL(partialUrl);
@@ -65,11 +93,41 @@ export function ReplayPage({ replayId, timeline }: Props) {
   const commands = events.filter((event) => event.type === "command_detected");
   const alerts = events.filter((event) => event.type === "alert");
   const runbooks = events.filter((event) => event.type === "runbook_open");
+  const hasReplayVideo = videoLoadState === "ready" && Boolean(videoSrc);
+  const isVideoTimingReady = videoLoadState === "unavailable" || effectiveVideoDuration > 0;
+  const displayDurationMs = effectiveVideoDuration > 0
+    ? Math.round(effectiveVideoDuration * 1000)
+    : meta?.duration_ms ?? 0;
+  const durationLabel = (videoLoadState === "loading" || hasReplayVideo) && !isVideoTimingReady
+    ? "計算中…"
+    : formatDuration(displayDurationMs);
 
-  function seekTo(seconds: number) {
+  function seekGameTime(gameSeconds: number, timelineId?: string) {
     const video = videoRef.current;
     if (!video) return;
-    video.currentTime = Math.max(0, seconds);
+    const mapped = gameTimeToVideoSeekSeconds(
+      gameSeconds,
+      effectiveVideoDuration,
+      meta?.duration_ms ?? 0,
+      recordingStartMs
+    );
+    seekVideoSeconds(mapped - timelineSeekPrerollSeconds, timelineId);
+  }
+
+  function seekVideoSeconds(seconds: number, timelineId?: string) {
+    const video = videoRef.current;
+    if (!video) return;
+    const target = clampSeekTime(video, seconds);
+    video.currentTime = target;
+    setCurrentTime(target);
+    setActiveTimelineId(timelineId);
+    void video.play().catch(() => {});
+  }
+
+  function rememberVideoDuration(video: HTMLVideoElement) {
+    const duration = video.duration;
+    if (!Number.isFinite(duration) || duration <= 0) return;
+    setVideoDuration((current) => Math.abs(current - duration) < 0.001 ? current : duration);
   }
 
   async function submitComment() {
@@ -98,22 +156,26 @@ export function ReplayPage({ replayId, timeline }: Props) {
             controls
             preload="metadata"
             src={videoSrc}
-            onTimeUpdate={(event: Event) => setCurrentTime((event.currentTarget as HTMLVideoElement).currentTime)}
+            onLoadedMetadata={(event: Event) => {
+              const video = event.currentTarget as HTMLVideoElement;
+              rememberVideoDuration(video);
+            }}
+            onDurationChange={(event: Event) => rememberVideoDuration(event.currentTarget as HTMLVideoElement)}
+            onTimeUpdate={(event: Event) => {
+              const video = event.currentTarget as HTMLVideoElement;
+              rememberVideoDuration(video);
+              setCurrentTime(video.currentTime);
+            }}
           />
+        ) : videoLoadState === "loading" ? (
+          <p class="result-replay-note">動画の時間を計算中です…</p>
         ) : (
           <p class="result-replay-note">保存された録画はありません。タイムラインのみ表示しています。</p>
-        )}
-        {meta?.thumbnail_object_key && (
-          <img
-            class="replay-thumbnail"
-            alt="シナリオ終了時のサムネイル"
-            src={`/api/replays/${encodeURIComponent(replayId)}/thumbnail`}
-          />
         )}
         <div class="replay-meta">
           <span>結果: {meta?.result ?? "-"}</span>
           <span>難易度: {meta?.difficulty ?? "-"}</span>
-          <span>対応時間: {formatDuration(meta?.duration_ms ?? 0)}</span>
+          <span>対応時間: {durationLabel}</span>
         </div>
         <button type="button" onClick={copyShareLink}>共有リンクをコピー</button>
         {shareWarning && (
@@ -129,20 +191,27 @@ export function ReplayPage({ replayId, timeline }: Props) {
           ))}
         </div>
         {tab === "timeline" && (
-          <ol class="timeline">
-            {visibleTimeline.map((event) => (
-              <li key={`${event.at}-${event.label}`}>
-                <button
-                  type="button"
-                  disabled={!videoSrc}
-                  aria-current={videoSrc && Math.abs(currentTime - event.at) < 1 ? "time" : undefined}
-                  onClick={() => seekTo(event.at)}
-                >
-                  {formatSeconds(event.at)} {event.label}
-                </button>
-              </li>
-            ))}
-          </ol>
+          isVideoTimingReady ? (
+            <ol class="timeline">
+              {visibleTimeline.map((event) => (
+                <li key={event.id}>
+                  {videoSrc ? (
+                    <button
+                      type="button"
+                      aria-current={activeTimelineId === event.id ? "time" : undefined}
+                      onClick={() => seekGameTime(event.at, event.id)}
+                    >
+                      {formatSeconds(timelineDisplaySeconds(event.at, true, effectiveVideoDuration, meta?.duration_ms ?? 0, recordingStartMs))} {event.label}
+                    </button>
+                  ) : (
+                    <span>{formatSeconds(timelineDisplaySeconds(event.at, effectiveVideoDuration > 0, effectiveVideoDuration, meta?.duration_ms ?? 0, recordingStartMs))} {event.label}</span>
+                  )}
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <p class="result-replay-note">タイムラインの時間を計算中です…</p>
+          )
         )}
         {tab === "commands" && <ul class="replay-list">{commands.map((event) => <li key={event.event_id}>{event.summary}</li>)}</ul>}
         {tab === "alerts" && <ul class="replay-list">{alerts.map((event) => <li key={event.event_id}>{event.summary}</li>)}</ul>}
@@ -152,9 +221,13 @@ export function ReplayPage({ replayId, timeline }: Props) {
             <ul class="replay-list">
               {comments.map((comment) => (
                 <li key={comment.id}>
-                  <button type="button" onClick={() => seekTo(comment.at_ms / 1000)}>
-                    {formatSeconds(comment.at_ms / 1000)} {comment.body}
-                  </button>
+                  {videoSrc ? (
+                    <button type="button" onClick={() => seekVideoSeconds(comment.at_ms / 1000)}>
+                      {formatSeconds(comment.at_ms / 1000)} {comment.body}
+                    </button>
+                  ) : (
+                    <span>{formatSeconds(comment.at_ms / 1000)} {comment.body}</span>
+                  )}
                 </li>
               ))}
             </ul>
@@ -166,6 +239,13 @@ export function ReplayPage({ replayId, timeline }: Props) {
       </aside>
     </section>
   );
+}
+
+function clampSeekTime(video: HTMLVideoElement, seconds: number) {
+  const lower = Math.max(0, seconds);
+  return Number.isFinite(video.duration) && video.duration > 0
+    ? Math.min(lower, Math.max(0, video.duration - 0.05))
+    : lower;
 }
 
 function tabLabel(tab: "timeline" | "commands" | "alerts" | "runbooks" | "comments") {

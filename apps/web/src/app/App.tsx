@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
-import type { Difficulty, GameRenderState, ScenarioDefinition } from "@incident/shared";
+import { replayEventSummary, type Difficulty, type GameRenderState, type ScenarioDefinition } from "@incident/shared";
 import {
-  addClickEffect,
   advanceGameState,
   applyLiveMetrics,
   activateSlackCompose,
@@ -37,7 +36,8 @@ import { installOfflineFlush, OfflineUploadQueue } from "../game/recording/offli
 import { classifyCommandEvent, commandEventPayload, ReplayEventEmitter } from "../game/events/emitReplayEvent.js";
 import { detectMetricThresholdCrossings } from "../game/events/monitorEvents.js";
 import { collectStateTransitions } from "../game/events/sessionEvents.js";
-import { ApiClient } from "../api/client.js";
+import { ApiClient, type SessionClockResponse } from "../api/client.js";
+import { isTimelineEventType } from "../replay/replayMediaUtils.js";
 import { ReplayPage } from "../pages/ReplayPage.js";
 import { ResultPage } from "../pages/ResultPage.js";
 import "@xterm/xterm/css/xterm.css";
@@ -62,11 +62,19 @@ const offlineQueue = new OfflineUploadQueue(api);
 const recordingFlushRef: { stop?: () => void } = {};
 installOfflineFlush(offlineQueue, () => recordingFlushRef.stop?.());
 
+function readReplayIdFromSearch() {
+  if (typeof window === "undefined") return undefined;
+  const replayId = new URLSearchParams(window.location.search).get("replay")?.trim();
+  return replayId || undefined;
+}
+
 export function App() {
+  const initialReplayId = readReplayIdFromSearch();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rendererRef = useRef<CanvasRenderer | null>(null);
   const recorderRef = useRef<CanvasRecorder | null>(null);
   const finalizerRef = useRef<RecordingFinalizer | null>(null);
+  const refreshDevtoolsRef = useRef<(() => void) | null>(null);
   const saveRecordingRef = useRef(true);
   const gameStateRef = useRef<GameRenderState | undefined>(undefined);
   const elapsedMsRef = useRef(0);
@@ -77,8 +85,12 @@ export function App() {
   const scenarioRef = useRef<ScenarioDefinition | undefined>(undefined);
   const eventEmitterRef = useRef<ReplayEventEmitter | null>(null);
   const finishingRef = useRef(false);
+  const recordingStartedAtGameMsRef = useRef(0);
+  const liveReplayEventIdsRef = useRef(new Set<string>());
 
-  const [screen, setScreen] = useState<Screen>("select");
+  const [screen, setScreen] = useState<Screen>(initialReplayId ? "replay" : "select");
+  const [deepLinkReplayId, setDeepLinkReplayId] = useState(initialReplayId);
+  const [deepLinkValidated, setDeepLinkValidated] = useState(!initialReplayId);
   const [selectedDifficulty, setSelectedDifficulty] = useState<Difficulty>();
   const [scenarios, setScenarios] = useState<ScenarioSummary[]>([]);
   const [scenario, setScenario] = useState<ScenarioDefinition>();
@@ -102,10 +114,49 @@ export function App() {
     if (next === current) return;
     const replayId = sessionRef.current?.replayId;
     if (options.collectTransitions !== false && replayId && eventEmitterRef.current) {
-      collectStateTransitions(current, next, scenarioRef.current, Math.round(elapsedMsRef.current), eventEmitterRef.current, replayId);
+      collectStateTransitions(current, next, scenarioRef.current, currentGameTimeMs(), eventEmitterRef.current, replayId);
     }
     gameStateRef.current = next;
     if (options.render !== false) setGameState(next);
+  };
+
+  function currentGameTimeMs() {
+    const current = gameStateRef.current;
+    const baseMs = elapsedMsRef.current;
+    const lastTickAt = lastTickAtRef.current;
+    if (screen !== "play" || !current || !lastTickAt || finishingRef.current) return Math.round(baseMs);
+    const elapsedSinceTickMs = Math.max(0, performance.now() - lastTickAt) * current.clock.speed;
+    return Math.round(Math.min(current.clock.timeLimitMs, baseMs + elapsedSinceTickMs));
+  }
+
+  const applyClockSnapshot = (clock: SessionClockResponse) => {
+    elapsedMsRef.current = clock.gameTimeMs;
+    lastTickAtRef.current = performance.now();
+    const previous = gameStateRef.current;
+    if (!previous) return;
+    const delta = Math.max(0, clock.gameTimeMs - previous.clock.elapsedMs);
+    const next = advanceGameState(
+      previous,
+      clock.gameTimeMs,
+      scenarioRef.current,
+      clock.gameSpeed,
+      delta,
+      clock.alerts,
+      clock.slackMessages
+    );
+    const prevAlertCount = previous.monitors.left.alerts.length;
+    if (next.monitors.left.alerts.length > prevAlertCount) {
+      for (const alert of next.monitors.left.alerts.slice(prevAlertCount)) {
+        playAlertBeep(alert.severity);
+      }
+    }
+    const replayId = sessionRef.current?.replayId;
+    if (replayId && eventEmitterRef.current) {
+      collectStateTransitions(previous, next, scenarioRef.current, Math.round(clock.gameTimeMs), eventEmitterRef.current, replayId);
+    }
+    gameStateRef.current = next;
+    setGameState(next);
+    if (clock.gameTimeMs >= clock.timeLimitMs) void endSession("timeout");
   };
 
   useEffect(() => {
@@ -119,6 +170,25 @@ export function App() {
     return () => { delete recordingFlushRef.stop; };
   }, []);
 
+  useEffect(() => {
+    if (!deepLinkReplayId || deepLinkValidated) return;
+    let cancelled = false;
+    api.getReplay(deepLinkReplayId)
+      .then(() => {
+        if (cancelled) return;
+        setDeepLinkValidated(true);
+        setScreen("replay");
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        setAppError(toErrorMessage(error));
+        setDeepLinkReplayId(undefined);
+        setDeepLinkValidated(true);
+        setScreen("select");
+      });
+    return () => { cancelled = true; };
+  }, [deepLinkReplayId, deepLinkValidated]);
+
   useEffect(() => { sessionRef.current = session; }, [session]);
   useEffect(() => { scenarioRef.current = scenario; }, [scenario]);
   useEffect(() => { gameStateRef.current = gameState; }, [gameState]);
@@ -128,7 +198,7 @@ export function App() {
     patchGameStateRef((current) => ({ ...current, clock: { ...current.clock, speed: gameSpeed } }));
     const activeSession = sessionRef.current;
     if (screen === "play" && activeSession) {
-      void api.updateSessionClock(activeSession.sessionId, gameSpeed).catch(console.error);
+      void api.updateSessionClock(activeSession.sessionId, gameSpeed).then(applyClockSnapshot).catch(console.error);
     }
   }, [gameSpeed, screen]);
 
@@ -175,7 +245,11 @@ export function App() {
     recorderRef.current = recorder;
     setGameState((current) => updateRecordingStatus(current, "initializing"));
     recorder.start().then(
-      () => { if (!cancelled) setGameState((current) => updateRecordingStatus(current, "recording")); },
+      () => {
+        if (cancelled) return;
+        recordingStartedAtGameMsRef.current = currentGameTimeMs();
+        setGameState((current) => updateRecordingStatus(current, "recording"));
+      },
       (error) => {
         if (cancelled) return;
         recorderRef.current = null;
@@ -195,45 +269,45 @@ export function App() {
 
   useEffect(() => {
     if (screen !== "play" || !session) return;
-    let cancelled = false;
-    const syncClock = async () => {
-      if (cancelled || finishingRef.current) return;
-      try {
-        const clock = await api.getSessionClock(session.sessionId);
-        if (cancelled) return;
-        elapsedMsRef.current = clock.gameTimeMs;
-        const previous = gameStateRef.current;
-        if (!previous) return;
-        const delta = Math.max(0, clock.gameTimeMs - previous.clock.elapsedMs);
-        const next = advanceGameState(
-          previous,
-          clock.gameTimeMs,
-          scenarioRef.current,
-          clock.gameSpeed,
-          delta,
-          clock.alerts,
-          clock.slackMessages
-        );
-        const prevAlertCount = previous.monitors.left.alerts.length;
-        if (next.monitors.left.alerts.length > prevAlertCount) {
-          for (const alert of next.monitors.left.alerts.slice(prevAlertCount)) {
-            playAlertBeep(alert.severity);
-          }
-        }
-        const replayId = sessionRef.current?.replayId;
-        if (replayId && eventEmitterRef.current) {
-          collectStateTransitions(previous, next, scenarioRef.current, Math.round(clock.gameTimeMs), eventEmitterRef.current, replayId);
-        }
-        gameStateRef.current = next;
-        setGameState(next);
-        if (clock.gameTimeMs >= clock.timeLimitMs) void endSession("timeout");
-      } catch (error) {
-        console.error(error);
-      }
-    };
-    void syncClock();
-    const timer = window.setInterval(syncClock, 500);
-    return () => { cancelled = true; window.clearInterval(timer); };
+    const source = api.subscribeSessionEvents(session.sessionId, {
+      onSnapshot: applyClockSnapshot,
+      onReplay: (event) => {
+        if (liveReplayEventIdsRef.current.has(event.id) || !isTimelineEventType(event.type)) return;
+        liveReplayEventIdsRef.current.add(event.id);
+        setTimeline((items) => [...items, { at: event.at / 1000, label: replayEventSummary(event) }]);
+      },
+      onError: console.error
+    });
+    return () => source.close();
+  }, [screen, session?.sessionId]);
+
+  useEffect(() => {
+    if (screen !== "play" || !session) return;
+    const timer = window.setInterval(() => {
+      if (finishingRef.current || document.visibilityState === "hidden") return;
+      const previous = gameStateRef.current;
+      if (!previous) return;
+      const now = performance.now();
+      const lastTickAt = lastTickAtRef.current || now;
+      lastTickAtRef.current = now;
+      const delta = Math.max(0, (now - lastTickAt) * previous.clock.speed);
+      if (delta === 0) return;
+      const elapsedMs = Math.min(previous.clock.timeLimitMs, previous.clock.elapsedMs + delta);
+      elapsedMsRef.current = elapsedMs;
+      const next = advanceGameState(
+        previous,
+        elapsedMs,
+        scenarioRef.current,
+        previous.clock.speed,
+        delta,
+        previous.monitors.left.alerts,
+        previous.monitors.right.slackMessages
+      );
+      gameStateRef.current = next;
+      setGameState(next);
+      if (elapsedMs >= next.clock.timeLimitMs) void endSession("timeout");
+    }, 500);
+    return () => window.clearInterval(timer);
   }, [screen, session?.sessionId]);
 
   useEffect(() => {
@@ -268,7 +342,7 @@ export function App() {
             void emitter.emitOnce(`metric:${crossing.key}`, {
               replayId,
               type: "monitor_update",
-              at: Math.round(elapsedMsRef.current),
+              at: currentGameTimeMs(),
               actor: "system",
               payload: { metric: crossing.key, label: crossing.label, value: metrics[crossing.key] }
             });
@@ -280,6 +354,7 @@ export function App() {
     };
     const pollDevtools = async () => {
       if (cancelled || document.visibilityState === "hidden") return;
+      if (gameStateRef.current?.monitors.center.devtools?.visible !== true) return;
       try {
         const [access, app, batch, storage] = await Promise.all([
           api.getSessionLogs(session.sessionId, "access"),
@@ -308,10 +383,14 @@ export function App() {
         console.error(error);
       }
     };
+    refreshDevtoolsRef.current = () => { void pollDevtools(); };
     void poll();
-    void pollDevtools();
     timer = window.setInterval(() => { void poll(); void pollDevtools(); }, 5000);
-    return () => { cancelled = true; window.clearInterval(timer); };
+    return () => {
+      cancelled = true;
+      refreshDevtoolsRef.current = null;
+      window.clearInterval(timer);
+    };
   }, [screen, session?.sessionId]);
 
   const filteredScenarios = useMemo(
@@ -323,10 +402,14 @@ export function App() {
     session &&
     (gameState?.recording.status === "ready" || gameState?.recording.status === "upload_degraded")
   );
-  const canOpenReplay = Boolean(session && (canPlayVideo || timeline.length > 0));
+  const hasReplayContent = Boolean(session && (canPlayVideo || timeline.length > 0));
+  const canNavigateToReplay = hasReplayContent && screen === "result";
+  const activeReplayId = session?.replayId ?? deepLinkReplayId;
 
   async function createSessionForScenario(scenarioId: string) {
     setAppError(undefined);
+    setDeepLinkReplayId(undefined);
+    setDeepLinkValidated(true);
     setIsStarting(true);
     try {
       terminalRef.current?.destroy();
@@ -334,6 +417,8 @@ export function App() {
       const created = await api.createSession({ scenarioId });
       api.resetEventSequence();
       eventEmitterRef.current?.reset();
+      liveReplayEventIdsRef.current.clear();
+      recordingStartedAtGameMsRef.current = 0;
       elapsedMsRef.current = 0;
       lastTickAtRef.current = 0;
       finishingRef.current = false;
@@ -361,7 +446,7 @@ export function App() {
         void emitter.emit({
           replayId,
           type: "terminal_output",
-          at: Math.round(elapsedMsRef.current),
+          at: currentGameTimeMs(),
           actor: "sandbox",
           payload: { data: summary }
         });
@@ -370,7 +455,7 @@ export function App() {
         const replayId = sessionRef.current?.replayId;
         const emitter = eventEmitterRef.current;
         if (!replayId || !emitter) return;
-        const at = Math.round(elapsedMsRef.current);
+        const at = currentGameTimeMs();
         if (DANGEROUS_COMMAND.test(command) && scenarioRef.current?.difficulty === "beginner") {
           patchGameStateRef((current) => ({
             ...current,
@@ -398,7 +483,7 @@ export function App() {
       attachTerminalSession(session);
       elapsedMsRef.current = 0;
       lastTickAtRef.current = performance.now();
-      setTimeline([{ at: 0, label: "シナリオ開始" }]);
+      setTimeline([]);
       setGameState(createInitialGameState(scenario, session.sessionId, session.replayId, createEmptyTerminalMirror(), {
         sessionStatus: "running",
         recordingStatus: saveRecording ? "initializing" : "idle",
@@ -420,7 +505,7 @@ export function App() {
     if (!state || !replayId || !emitter) return;
     const body = state.slackCompose.draft.trim();
     if (!body) return;
-    const at = Math.round(elapsedMsRef.current);
+    const at = currentGameTimeMs();
     patchGameStateRef((current) => submitPlayerSlackMessage(current, body, at));
     void emitter.emit({ replayId, type: "player_note", at, payload: { body, channel: "slack" } });
   }
@@ -431,18 +516,17 @@ export function App() {
     terminalRef.current?.destroy();
     terminalRef.current = null;
     const shouldSaveVideo = saveRecordingRef.current && hasRecordingConsent;
+    const activeRecorder = recorderRef.current;
+    const recordingMimeType = activeRecorder?.mimeType;
     setGameState((current) => updateRecordingStatus(current, shouldSaveVideo ? "stopping" : "idle"));
     if (shouldSaveVideo) {
-      await recorderRef.current?.stop().catch((error) => setAppError(toErrorMessage(error)));
+      await activeRecorder?.stop().catch((error) => setAppError(toErrorMessage(error)));
+      const videoDurationMs = activeRecorder?.durationMs;
       recorderRef.current = null;
       await offlineQueue.flush();
       setGameState((current) => updateRecordingStatus(current, "finalizing"));
       const finalized = await finalizerRef.current?.finalize(session.replayId, api).catch(() => false) ?? false;
       finalizerRef.current = null;
-      if (canvasRef.current) {
-        const blob = await new Promise<Blob | null>((resolve) => canvasRef.current!.toBlob(resolve, "image/webp", 0.85));
-        if (blob) await api.uploadThumbnail(session.replayId, blob).catch(console.error);
-      }
       if (!finalized) {
         const headOk = await fetch(`/api/replays/${encodeURIComponent(session.replayId)}/video`, { method: "HEAD" })
           .then((response) => response.ok)
@@ -450,16 +534,23 @@ export function App() {
         if (!headOk) await api.assemblePartialReplayVideo(session.replayId).catch(() => undefined);
       }
       await api.finishReplay(session.replayId, {
-        userAgent: navigator.userAgent,
-        mimeType: recorderRef.current ? "video/webm" : undefined
+        browserInfo: {
+          userAgent: navigator.userAgent,
+          mimeType: recordingMimeType,
+          recordingStartedAtGameMs: recordingStartedAtGameMsRef.current
+        },
+        ...(videoDurationMs === undefined ? {} : { videoDurationMs })
       }).catch(console.error);
     } else {
       recorderRef.current = null;
       finalizerRef.current = null;
       await offlineQueue.flush();
       await api.finishReplay(session.replayId, {
-        userAgent: navigator.userAgent,
-        mimeType: recorderRef.current ? "video/webm" : undefined
+        browserInfo: {
+          userAgent: navigator.userAgent,
+          mimeType: recordingMimeType,
+          recordingStartedAtGameMs: recordingStartedAtGameMsRef.current
+        }
       }).catch(console.error);
     }
     let resolved = false;
@@ -468,6 +559,15 @@ export function App() {
       resolved = Boolean(result?.ok);
     } else if (mode === "retire") {
       await api.retireSession(session.sessionId).catch(console.error);
+    } else if (mode === "timeout") {
+      const at = Math.round(gameStateRef.current?.clock.elapsedMs ?? 0);
+      void eventEmitterRef.current?.emit({
+        replayId: session.replayId,
+        type: "session_end",
+        at,
+        actor: "system",
+        payload: { result: "timeout" }
+      });
     }
     const status = mode === "retire" ? "retired" : resolved ? "resolved" : "failed";
     let recordingStatus: GameRenderState["recording"]["status"] = "idle";
@@ -482,9 +582,6 @@ export function App() {
       session: { ...current.session, status },
       recording: { ...current.recording, status: recordingStatus, saveEnabled: shouldSaveVideo }
     } : current);
-    const elapsedSeconds = Math.round((gameStateRef.current?.clock.elapsedMs ?? 0) / 1000);
-    const label = mode === "timeout" ? "タイムアップ" : mode === "retire" ? "リタイア" : resolved ? "復旧宣言" : "復旧確認失敗";
-    setTimeline((items) => [...items, { at: elapsedSeconds, label }]);
     setScreen("result");
   }
 
@@ -492,11 +589,11 @@ export function App() {
     if (!canvasRef.current) return;
     canvasRef.current.focus();
     const point = toLogicalCanvasPoint(event, canvasRef.current);
-    patchGameStateRef((current) => addClickEffect(current, point.x, point.y), { render: false, collectTransitions: false });
     const replayId = sessionRef.current?.replayId;
     const emitter = eventEmitterRef.current;
     if (screen === "play" && replayId && emitter) {
-      void emitter.emit({ replayId, type: "ui_click", at: Math.round(elapsedMsRef.current), payload: { x: point.x, y: point.y } });
+      const at = currentGameTimeMs();
+      void emitter.emit({ replayId, type: "ui_click", at, payload: { x: point.x, y: point.y } });
       if (containsPoint(inputDockRects.button, point.x, point.y)) return void endSession("resolve");
       if (containsPoint(inputDockRects.retire, point.x, point.y)) return void endSession("retire");
       const activeScenario = scenarioRef.current;
@@ -505,7 +602,7 @@ export function App() {
         if (tabIndex >= 0) {
           patchGameStateRef((current) => setActiveRunbook(current, activeScenario, tabIndex));
           const runbook = activeScenario.runbooks[tabIndex];
-          if (runbook) void emitter.emitOnce(`runbook:${runbook.id}`, { replayId, type: "runbook_open", at: Math.round(elapsedMsRef.current), payload: { runbookId: runbook.id } });
+          if (runbook) void emitter.emitOnce(`runbook:${runbook.id}`, { replayId, type: "runbook_open", at, payload: { runbookId: runbook.id } });
           return;
         }
       }
@@ -517,14 +614,14 @@ export function App() {
         void emitter.emit({
           replayId,
           type: "ui_panel_open",
-          at: Math.round(elapsedMsRef.current),
+          at,
           payload: { panel: "notifications" }
         });
         for (const alert of unread) {
           void emitter.emitOnce(`slack-read:${alert.id}`, {
             replayId,
             type: "slack_message_read",
-            at: Math.round(elapsedMsRef.current),
+            at,
             payload: { alertId: alert.id, message: alert.message }
           });
         }
@@ -532,13 +629,15 @@ export function App() {
       }
       if (containsPoint(devtoolsToggleRegion, point.x, point.y)) {
         patchGameStateRef((current) => toggleDevtools(current));
-        void emitter.emit({ replayId, type: "ui_panel_open", at: Math.round(elapsedMsRef.current), payload: { panel: "devtools" } });
+        window.setTimeout(() => refreshDevtoolsRef.current?.(), 0);
+        void emitter.emit({ replayId, type: "ui_panel_open", at, payload: { panel: "devtools" } });
         return;
       }
       const devtoolsTab = devtoolsTabAt(point.x, point.y);
       if (devtoolsTab) {
         patchGameStateRef((current) => setDevtoolsTab(current, devtoolsTab));
-        void emitter.emit({ replayId, type: "ui_panel_open", at: Math.round(elapsedMsRef.current), payload: { panel: `devtools.${devtoolsTab}` } });
+        window.setTimeout(() => refreshDevtoolsRef.current?.(), 0);
+        void emitter.emit({ replayId, type: "ui_panel_open", at, payload: { panel: `devtools.${devtoolsTab}` } });
         return;
       }
       if (containsPoint(navigationOverlayRect, point.x, point.y) && gameStateRef.current?.navigation.activeStepId) {
@@ -552,7 +651,7 @@ export function App() {
       }
       if (slackTarget === "compose") {
         patchGameStateRef((current) => activateSlackCompose(current));
-        void emitter.emit({ replayId, type: "ui_panel_open", at: Math.round(elapsedMsRef.current), payload: { panel: "slack_compose" } });
+        void emitter.emit({ replayId, type: "ui_panel_open", at, payload: { panel: "slack_compose" } });
         return;
       }
       if (gameStateRef.current?.slackCompose.active) {
@@ -607,6 +706,11 @@ export function App() {
     terminalRef.current.input(input);
   }
 
+  function openReplay() {
+    if (!canNavigateToReplay) return;
+    setScreen("replay");
+  }
+
   return (
     <main class="app-shell">
       <header class="topbar">
@@ -618,7 +722,7 @@ export function App() {
           ))}
         </div>
         <button type="button" onClick={() => setScreen("select")} disabled={screen === "play" || isStarting}>Scenario</button>
-        {canOpenReplay && <button type="button" onClick={() => setScreen("replay")}>Replay</button>}
+        {canNavigateToReplay && <button type="button" onClick={openReplay}>Replay</button>}
       </header>
       {appError && <p class="app-error" role="alert">{appError}</p>}
 
@@ -695,11 +799,16 @@ export function App() {
 
       {screen === "result" && session && scenario && (
         <ResultPage replayId={session.replayId} sessionId={session.sessionId} scenarioTitle={scenario.title}
-          timeline={timeline} canPlayVideo={canPlayVideo} canOpenReplay={canOpenReplay}
-          onRetry={() => setScreen("select")} onOpenReplay={() => setScreen("replay")} />
+          timeline={timeline} canPlayVideo={canPlayVideo} canOpenReplay={canNavigateToReplay}
+          onRetry={() => setScreen("select")} onOpenReplay={openReplay} />
       )}
 
-      {screen === "replay" && session && <ReplayPage replayId={session.replayId} timeline={timeline} />}
+      {screen === "replay" && activeReplayId && !deepLinkValidated && (
+        <section class="panel"><p>リプレイを読み込み中…</p></section>
+      )}
+      {screen === "replay" && activeReplayId && deepLinkValidated && (
+        <ReplayPage replayId={activeReplayId} timeline={session ? timeline : []} />
+      )}
     </main>
   );
 }

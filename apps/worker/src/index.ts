@@ -26,6 +26,7 @@ const app = new Hono<{ Bindings: Bindings }>();
 type WorkerContext = Context<{ Bindings: Bindings }>;
 
 const difficulties = new Set<Difficulty>(["beginner", "intermediate", "advanced"]);
+const sessionActionsWithoutDbLookup = new Set(["events", "clock", "metrics", "logs", "storage"]);
 
 app.post("/api/dev/terminal-debug", async (c) => {
   const body = (await c.req.json().catch(() => ({}))) as {
@@ -117,7 +118,7 @@ app.post("/api/sessions/:sessionId/terminal/resize", async (c) =>
 
 app.get("/api/replays/featured", async (c) => {
   const rows = await c.env.DB.prepare(
-    `select id, scenario_id, difficulty, result, duration_ms, thumbnail_object_key, created_at
+    `select id, scenario_id, difficulty, result, duration_ms, video_duration_ms, thumbnail_object_key, created_at
      from replays where featured = 1 order by created_at desc limit 20`
   ).all();
   return c.json(ok(rows.results ?? []));
@@ -186,7 +187,11 @@ app.post("/api/replays/:replayId/events", async (c) => {
 app.post("/api/replays/:replayId/finish", async (c) => {
   const replay = await getReplay(c.env, c.req.param("replayId"));
   if (!replay) return c.json(err("not_found", "replay not found"), 404);
-  const body = (await c.req.json().catch(() => ({}))) as { browserInfo?: Record<string, unknown> };
+  const body = (await c.req.json().catch(() => ({}))) as {
+    browserInfo?: Record<string, unknown>;
+    videoDurationMs?: unknown;
+  };
+  const videoDurationMs = normalizeOptionalMs(body.videoDurationMs);
   const now = new Date().toISOString();
   const object = await getReplayObject(c.env, String(replay.id));
   const status = object ? "ready" : "upload_degraded";
@@ -195,10 +200,18 @@ app.post("/api/replays/:replayId/finish", async (c) => {
      set finished_at = coalesce(finished_at, ?),
          recording_status = ?,
          browser_info_json = coalesce(?, browser_info_json),
+         video_duration_ms = coalesce(?, video_duration_ms),
          updated_at = ?
      where id = ?`
   )
-    .bind(now, status, body.browserInfo ? JSON.stringify(body.browserInfo) : null, now, replay.id)
+    .bind(
+      now,
+      status,
+      body.browserInfo ? JSON.stringify(body.browserInfo) : null,
+      videoDurationMs,
+      now,
+      replay.id
+    )
     .run();
   return c.json(ok({ replayId: replay.id, status }));
 });
@@ -336,8 +349,10 @@ async function proxySession(
 ) {
   const sessionId = c.req.param("sessionId");
   if (!sessionId) return c.json(err("bad_request", "sessionId is required"), 400);
-  const record = await getSession(c.env, sessionId);
-  if (!record) return c.json(err("not_found", "session not found"), 404);
+  if (!sessionActionsWithoutDbLookup.has(action)) {
+    const record = await getSession(c.env, sessionId);
+    if (!record) return c.json(err("not_found", "session not found"), 404);
+  }
 
   const id = c.env.SESSION_DO.idFromName(sessionId);
   const stub = c.env.SESSION_DO.get(id);
@@ -416,4 +431,11 @@ function parseOptionalNumber(value: string | undefined) {
   if (value === undefined) return undefined;
   const number = Number(value);
   return Number.isFinite(number) && number >= 0 ? number : null;
+}
+
+function normalizeOptionalMs(value: unknown) {
+  if (value === undefined || value === null) return null;
+  return typeof value === "number" && Number.isFinite(value) && value >= 0
+    ? Math.round(value)
+    : null;
 }

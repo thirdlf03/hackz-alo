@@ -419,14 +419,6 @@ canvas {
   letter-spacing: 0.02em;
 }
 
-.result-thumbnail {
-  display: block;
-  width: min(100%, 480px);
-  border-radius: 8px;
-  border: 1px solid #334155;
-  margin: 12px 0;
-}
-
 .consent-row {
   display: flex;
   gap: 10px;
@@ -495,7 +487,8 @@ canvas {
   list-style-position: inside;
 }
 
-.timeline button {
+.timeline button,
+.timeline span {
   width: 100%;
   margin: 4px 0 8px;
   border: 1px solid #334155;
@@ -504,6 +497,15 @@ canvas {
   border-radius: 6px;
   padding: 8px 12px;
   text-align: left;
+}
+
+.timeline span {
+  display: block;
+  color: #94a3b8;
+  cursor: default;
+}
+
+.timeline button {
   cursor: pointer;
 }
 

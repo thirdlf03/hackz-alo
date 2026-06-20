@@ -65,3 +65,30 @@ test("replayEventSummary formats player slack reports", () => {
   );
   assert.equal(summary, "Slack報告: API が落ちています");
 });
+
+test("replayEventSummary formats session lifecycle labels", () => {
+  assert.equal(
+    replayEventSummary(
+      createReplayEvent({
+        replayId: "repl_test",
+        type: "session_start",
+        at: 0,
+        actor: "system",
+        payload: { scenarioId: "process-stop-001" }
+      })
+    ),
+    "シナリオ開始"
+  );
+  assert.equal(
+    replayEventSummary(
+      createReplayEvent({
+        replayId: "repl_test",
+        type: "session_end",
+        at: 1000,
+        actor: "player",
+        payload: { result: "retired" }
+      })
+    ),
+    "リタイア"
+  );
+});

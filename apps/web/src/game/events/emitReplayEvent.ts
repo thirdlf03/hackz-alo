@@ -1,5 +1,6 @@
 import { createReplayEvent, replayEventSummary, type ReplayEvent, type ReplayEventType } from "@incident/shared";
 import type { ApiClient } from "../../api/client.js";
+import { isTimelineEventType } from "../../replay/replayMediaUtils.js";
 
 type EmitOptions = {
   replayId: string;
@@ -42,7 +43,9 @@ export class ReplayEventEmitter {
     });
     try {
       await this.api.uploadEvents(options.replayId, [event]);
-      this.onTimeline?.(options.at / 1000, replayEventSummary(event));
+      if (isTimelineEventType(options.type)) {
+        this.onTimeline?.(options.at / 1000, replayEventSummary(event));
+      }
     } catch (error) {
       console.error(error);
     }
