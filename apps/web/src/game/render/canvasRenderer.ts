@@ -123,18 +123,25 @@ export class CanvasRenderer {
 
   private drawTerminal(state: GameRenderState) {
     const terminal = state.monitors.center.terminal;
-    const visibleLines = terminal.lines.slice(-27);
-    const firstVisibleLine = Math.max(0, terminal.lines.length - visibleLines.length);
+    const maxLines = 27;
+    const startLine =
+      terminal.lines.length <= maxLines
+        ? 0
+        : Math.min(
+            Math.max(0, terminal.cursor.y - maxLines + 1),
+            terminal.lines.length - maxLines
+          );
+    const visibleLines = terminal.lines.slice(startLine, startLine + maxLines);
 
     this.ctx.fillStyle = "#d1fae5";
     this.ctx.font = "18px ui-monospace, SFMono-Regular, Menlo, monospace";
     visibleLines.forEach((line, index) => {
-      this.ctx.fillText(line.slice(0, 72), 0, 28 + index * 22);
+      this.ctx.fillText(line.trimEnd().slice(0, 72), 0, 28 + index * 22);
     });
 
-    const cursorLine = terminal.cursor.y - firstVisibleLine;
+    const cursorLine = terminal.cursor.y - startLine;
     if (terminal.cursor.visible && cursorLine >= 0 && cursorLine < visibleLines.length) {
-      const line = visibleLines[cursorLine] ?? "";
+      const line = (visibleLines[cursorLine] ?? "").trimEnd();
       const cursorX = this.ctx.measureText(line.slice(0, terminal.cursor.x)).width;
       this.ctx.fillRect(cursorX, 12 + cursorLine * 22, 10, 20);
     }
@@ -172,7 +179,7 @@ export class CanvasRenderer {
     const input = inputDockRects.input;
     const button = inputDockRects.button;
     const enabled = state.session.status === "running";
-    const command = state.monitors.center.terminal.commandDraft;
+    const command = formatTerminalInputText(state.monitors.center.terminal.commandDraft);
 
     this.ctx.fillStyle = "#090d14";
     this.ctx.fillRect(0, 890, logicalWidth, 190);
@@ -184,17 +191,18 @@ export class CanvasRenderer {
     this.ctx.lineWidth = 2;
     this.ctx.stroke();
 
+    const inputTextY = input.y + Math.round(input.height / 2) + 9;
     this.ctx.font = "24px ui-monospace, SFMono-Regular, Menlo, monospace";
     if (command) {
       this.ctx.fillStyle = "#d1fae5";
-      this.ctx.fillText(command.slice(-96), input.x + 24, input.y + 72);
+      this.ctx.fillText(command, input.x + 24, inputTextY);
       if (enabled) {
-        const textWidth = this.ctx.measureText(command.slice(-96)).width;
-        this.ctx.fillRect(input.x + 24 + textWidth + 4, input.y + 46, 10, 32);
+        const textWidth = this.ctx.measureText(command).width;
+        this.ctx.fillRect(input.x + 24 + textWidth + 4, inputTextY - 24, 10, 32);
       }
     } else {
       this.ctx.fillStyle = "#64748b";
-      this.ctx.fillText("terminal command", input.x + 24, input.y + 72);
+      this.ctx.fillText("terminal command", input.x + 24, inputTextY);
     }
 
     this.ctx.fillStyle = enabled ? "#1f2937" : "#111827";
@@ -338,4 +346,10 @@ function formatDifficulty(difficulty: GameRenderState["session"]["difficulty"]) 
   if (difficulty === "beginner") return "初級";
   if (difficulty === "intermediate") return "中級";
   return "上級";
+}
+
+function formatTerminalInputText(command: string, maxChars = 96) {
+  const trimmed = command.trimEnd();
+  if (trimmed.length <= maxChars) return trimmed;
+  return trimmed.slice(-maxChars);
 }

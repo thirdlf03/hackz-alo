@@ -271,14 +271,14 @@ button:disabled {
 .game-layout {
   display: grid;
   justify-items: center;
-  padding: 18px;
+  padding: 12px;
   min-height: calc(100vh - 56px);
 }
 
 canvas {
   display: block;
-  width: min(100%, 1280px);
-  max-height: calc(100vh - 92px);
+  width: min(100vw - 24px, 1760px);
+  max-height: calc(100vh - 80px);
   aspect-ratio: 16 / 9;
   border: 1px solid #263244;
   background: #050609;
