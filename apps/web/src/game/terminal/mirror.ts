@@ -28,6 +28,21 @@ export class TerminalMirror {
     this.write("$ ");
   }
 
+  appendDraft(text: string) {
+    const next = `${this.state.commandDraft}${text.replace(/\r?\n/g, " ")}`;
+    this.state.commandDraft = next.slice(0, this.state.cols * 2);
+  }
+
+  backspaceDraft() {
+    this.state.commandDraft = this.state.commandDraft.slice(0, -1);
+  }
+
+  submitDraft() {
+    const command = this.state.commandDraft.trim();
+    if (!command) return;
+    this.input(`${command}\n`);
+  }
+
   write(text: string) {
     const appended = text.split("\n").flatMap((line) => this.wrapLine(line));
     this.state.lines = [...this.state.lines, ...appended].slice(-this.state.rows);

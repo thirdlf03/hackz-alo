@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { GameRenderState, ScenarioDefinition } from "@incident/shared";
 import { createInitialGameState, advanceGameState } from "../game/state/gameState.js";
 import { CanvasRenderer } from "../game/render/canvasRenderer.js";
+import { inputDockRects } from "../game/render/canvasRenderer.js";
 import { TerminalMirror } from "../game/terminal/mirror.js";
 import { CanvasRecorder } from "../game/recording/recorder.js";
 import { ApiClient } from "../api/client.js";
@@ -184,6 +185,51 @@ export function App() {
 
   function handleTerminalInput(input: string) {
     terminalRef.current.input(input);
+    syncTerminalSnapshot();
+  }
+
+  function handleTerminalKey(event: KeyboardEvent) {
+    if (screen !== "play") return;
+    if (event.metaKey || event.ctrlKey || event.altKey) return;
+    if (event.key === "Enter") {
+      event.preventDefault();
+      terminalRef.current.submitDraft();
+      syncTerminalSnapshot();
+      return;
+    }
+    if (event.key === "Backspace") {
+      event.preventDefault();
+      terminalRef.current.backspaceDraft();
+      syncTerminalSnapshot();
+      return;
+    }
+    if (event.key.length === 1) {
+      event.preventDefault();
+      terminalRef.current.appendDraft(event.key);
+      syncTerminalSnapshot();
+    }
+  }
+
+  function handleTerminalPaste(event: ClipboardEvent) {
+    if (screen !== "play") return;
+    const text = event.clipboardData?.getData("text/plain");
+    if (!text) return;
+    event.preventDefault();
+    terminalRef.current.appendDraft(text);
+    syncTerminalSnapshot();
+  }
+
+  function handleCanvasClick(event: MouseEvent) {
+    if (!canvasRef.current) return;
+    canvasRef.current.focus();
+    if (screen !== "play") return;
+    const point = toLogicalCanvasPoint(event, canvasRef.current);
+    if (containsPoint(inputDockRects.button, point.x, point.y)) {
+      void finishPlay();
+    }
+  }
+
+  function syncTerminalSnapshot() {
     setGameState((current) =>
       current
         ? {
@@ -200,7 +246,7 @@ export function App() {
   return (
     <main class="app-shell">
       <header class="topbar">
-        <strong>うん用 障害対応訓練</strong>
+        <strong>障害対応訓練</strong>
         <span>{selectedScenarioTitle}</span>
         <button type="button" onClick={() => setScreen("select")} disabled={screen === "play" || isStarting}>Scenario</button>
         {canOpenReplay && <button type="button" onClick={() => setScreen("replay")}>Replay</button>}
@@ -235,21 +281,16 @@ export function App() {
 
       {(screen === "play" || screen === "result") && (
         <section class="game-layout">
-          <canvas ref={canvasRef} width="1920" height="1080" aria-label="録画対象のゲーム画面" />
-          <div class="input-dock">
-            <input
-              aria-label="terminal input"
-              placeholder="terminal command"
-              disabled={screen !== "play"}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  handleTerminalInput(`${event.currentTarget.value}\n`);
-                  event.currentTarget.value = "";
-                }
-              }}
-            />
-            <button type="button" onClick={finishPlay} disabled={screen !== "play"}>復旧完了</button>
-          </div>
+          <canvas
+            ref={canvasRef}
+            width="1920"
+            height="1080"
+            aria-label="録画対象のゲーム画面"
+            tabIndex={0}
+            onClick={handleCanvasClick}
+            onKeyDown={handleTerminalKey}
+            onPaste={handleTerminalPaste}
+          />
         </section>
       )}
 
@@ -281,4 +322,16 @@ function classifyRecordingError(error: unknown): GameRenderState["recording"]["s
 
 function toErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
+}
+
+function toLogicalCanvasPoint(event: MouseEvent, canvas: HTMLCanvasElement) {
+  const rect = canvas.getBoundingClientRect();
+  return {
+    x: ((event.clientX - rect.left) / rect.width) * 1920,
+    y: ((event.clientY - rect.top) / rect.height) * 1080
+  };
+}
+
+function containsPoint(rect: { x: number; y: number; width: number; height: number }, x: number, y: number) {
+  return x >= rect.x && x <= rect.x + rect.width && y >= rect.y && y <= rect.y + rect.height;
 }

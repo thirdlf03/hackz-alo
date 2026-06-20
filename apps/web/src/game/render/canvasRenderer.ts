@@ -26,6 +26,7 @@ export class CanvasRenderer {
       this.drawMonitor(690, 130, 540, 720, "TERMINAL", () => this.drawTerminal(state));
       this.drawMonitor(1310, 160, 540, 650, "RUNBOOK / SLACK", () => this.drawRightPanel(state));
       this.drawAlerts(state);
+      this.drawInputDock(state);
       this.drawClickEffects(state);
       this.drawCursor(state);
     } finally {
@@ -156,11 +157,51 @@ export class CanvasRenderer {
     const alert = state.monitors.left.alerts[state.monitors.left.alerts.length - 1];
     if (!alert) return;
     this.ctx.fillStyle = "rgba(239, 68, 68, 0.92)";
-    roundRect(this.ctx, 550, 920, 820, 70, 8);
+    roundRect(this.ctx, 550, 825, 820, 56, 8);
     this.ctx.fill();
     this.ctx.fillStyle = "#fff";
-    this.ctx.font = "24px system-ui, sans-serif";
-    this.ctx.fillText(alert.message, 584, 964);
+    this.ctx.font = "22px system-ui, sans-serif";
+    this.ctx.fillText(alert.message, 584, 860);
+  }
+
+  private drawInputDock(state: GameRenderState) {
+    const input = inputDockRects.input;
+    const button = inputDockRects.button;
+    const enabled = state.session.status === "running";
+    const command = state.monitors.center.terminal.commandDraft;
+
+    this.ctx.fillStyle = "#090d14";
+    this.ctx.fillRect(0, 890, logicalWidth, 190);
+
+    this.ctx.fillStyle = "#020617";
+    roundRect(this.ctx, input.x, input.y, input.width, input.height, 8);
+    this.ctx.fill();
+    this.ctx.strokeStyle = "#334155";
+    this.ctx.lineWidth = 2;
+    this.ctx.stroke();
+
+    this.ctx.font = "24px ui-monospace, SFMono-Regular, Menlo, monospace";
+    if (command) {
+      this.ctx.fillStyle = "#d1fae5";
+      this.ctx.fillText(command.slice(-96), input.x + 24, input.y + 72);
+      if (enabled) {
+        const textWidth = this.ctx.measureText(command.slice(-96)).width;
+        this.ctx.fillRect(input.x + 24 + textWidth + 4, input.y + 46, 10, 32);
+      }
+    } else {
+      this.ctx.fillStyle = "#64748b";
+      this.ctx.fillText("terminal command", input.x + 24, input.y + 72);
+    }
+
+    this.ctx.fillStyle = enabled ? "#1f2937" : "#111827";
+    roundRect(this.ctx, button.x, button.y, button.width, button.height, 8);
+    this.ctx.fill();
+    this.ctx.strokeStyle = "#334155";
+    this.ctx.lineWidth = 2;
+    this.ctx.stroke();
+    this.ctx.fillStyle = enabled ? "#f8fafc" : "#94a3b8";
+    this.ctx.font = "28px system-ui, sans-serif";
+    centeredText(this.ctx, "復旧完了", button.x, button.y + 2, button.width, button.height);
   }
 
   private drawClickEffects(state: GameRenderState) {
@@ -185,6 +226,11 @@ export class CanvasRenderer {
     this.ctx.fill();
   }
 }
+
+export const inputDockRects = {
+  input: { x: 60, y: 918, width: 1600, height: 122 },
+  button: { x: 1680, y: 918, width: 180, height: 122 }
+} as const;
 
 function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, radius: number) {
   const right = x + width;
@@ -246,6 +292,11 @@ function wrapText(
   }
 
   return y;
+}
+
+function centeredText(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, width: number, height: number) {
+  const metrics = ctx.measureText(text);
+  ctx.fillText(text, x + (width - metrics.width) / 2, y + height / 2 + 10);
 }
 
 function formatTime(ms: number) {

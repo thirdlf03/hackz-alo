@@ -46,8 +46,7 @@ input {
 }
 
 .topbar button,
-.panel button,
-.input-dock button {
+.panel button {
   border: 1px solid #334155;
   color: #f8fafc;
   background: #1f2937;
@@ -96,7 +95,6 @@ button:disabled {
 .game-layout {
   display: grid;
   justify-items: center;
-  gap: 14px;
   padding: 18px;
   min-height: calc(100vh - 56px);
 }
@@ -104,27 +102,10 @@ button:disabled {
 canvas {
   display: block;
   width: min(100%, 1280px);
-  max-height: calc(100vh - 150px);
+  max-height: calc(100vh - 92px);
   aspect-ratio: 16 / 9;
   border: 1px solid #263244;
   background: #050609;
-}
-
-.input-dock {
-  display: flex;
-  width: min(100%, 1280px);
-  gap: 10px;
-  min-width: 0;
-}
-
-.input-dock input {
-  min-width: 0;
-  flex: 1;
-  border: 1px solid #334155;
-  color: #d1fae5;
-  background: #020617;
-  border-radius: 6px;
-  padding: 10px 12px;
 }
 
 .replay-layout {
@@ -169,9 +150,5 @@ canvas {
   .topbar span {
     flex-basis: 100%;
     order: 3;
-  }
-
-  .input-dock {
-    display: grid;
   }
 }
