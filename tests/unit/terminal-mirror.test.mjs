@@ -33,7 +33,7 @@ test("terminalToMirrorState reads only the visible xterm viewport", () => {
 
   const mirror = terminalToMirrorState(terminal);
 
-  assert.deepEqual(requested, [100, 101, 102]);
+  assert.deepEqual([...new Set(requested)], [100, 101, 102]);
   assert.deepEqual(mirror.lines, ["line-100", "line-101", "line-102"]);
   assert.deepEqual(mirror.cursor, { x: 4, y: 1, visible: true });
   assert.equal(mirror.commandDraft, "line-101");
@@ -89,4 +89,34 @@ test("terminalToMirrorState preserves current-line spaces up to the cursor", () 
 
   assert.deepEqual(mirror.lines, ["root# echo  "]);
   assert.equal(mirror.commandDraft, "root# echo  ");
+});
+
+test("terminalToMirrorState keeps command draft across wrapped cursor line", () => {
+  const terminal = {
+    cols: 20,
+    rows: 2,
+    buffer: {
+      active: {
+        baseY: 0,
+        viewportY: 0,
+        cursorX: 0,
+        cursorY: 1,
+        length: 2,
+        getLine(index) {
+          return {
+            isWrapped: index === 1,
+            translateToString: (trimRight = false) => {
+              if (index === 0) return "root# curl localhost:";
+              return trimRight ? "" : "".padEnd(20, " ");
+            }
+          };
+        }
+      }
+    }
+  };
+
+  const mirror = terminalToMirrorState(terminal);
+
+  assert.deepEqual(mirror.lines, ["root# curl localhost:", ""]);
+  assert.equal(mirror.commandDraft, "root# curl localhost:");
 });

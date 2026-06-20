@@ -18,6 +18,12 @@ const assets = files.map(([relativePath, targetPath]) => ({
   content: readFileSync(path.join(root, "sandbox", relativePath), "utf8")
 }));
 
+const installBinCommand =
+  "chmod +x /workspace/bin/*.mjs && " +
+  "printf '%s\\n' '#!/bin/sh' 'exec node /workspace/bin/unctl.mjs \"$@\"' > /usr/local/bin/unctl && " +
+  "printf '%s\\n' '#!/bin/sh' 'exec node /workspace/bin/unlang.mjs \"$@\"' > /usr/local/bin/unlang && " +
+  "chmod +x /usr/local/bin/unctl /usr/local/bin/unlang";
+
 const output = `import type { SandboxRuntime } from "./runtime.js";
 
 type SandboxAsset = {
@@ -32,7 +38,7 @@ export async function installSandboxAssets(sandbox: SandboxRuntime) {
   for (const asset of assets) {
     await sandbox.writeFile(asset.path, asset.content);
   }
-  await sandbox.exec("chmod +x /workspace/bin/*.mjs && ln -sf /workspace/bin/unctl.mjs /usr/local/bin/unctl && ln -sf /workspace/bin/unlang.mjs /usr/local/bin/unlang");
+  await sandbox.exec(${JSON.stringify(installBinCommand)});
   await sandbox.exec(
     "if ! command -v vim >/dev/null 2>&1; then if command -v apt-get >/dev/null 2>&1; then apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends vim && rm -rf /var/lib/apt/lists/*; elif command -v apk >/dev/null 2>&1; then apk add --no-cache vim; fi; fi",
     { cwd: "/workspace" }

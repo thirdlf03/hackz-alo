@@ -1,10 +1,13 @@
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
 import { once } from "node:events";
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { promisify } from "node:util";
 
 import { runUnlang } from "../../sandbox/bin/unlang.mjs";
 import { injectFault, normalizeWorkspacePath } from "../../sandbox/bin/fault-injector.mjs";
@@ -12,6 +15,8 @@ import { runUnctl } from "../../sandbox/bin/unctl.mjs";
 import { createFakeDbServer, handleCommand } from "../../sandbox/services/fake-db/server.mjs";
 import { createUnyohApiServer, getMetrics, prepareWorkspace } from "../../sandbox/services/unyoh-api/server.mjs";
 import { RequestMetricsTracker } from "../../sandbox/services/metrics/collector.mjs";
+
+const execFileAsync = promisify(execFile);
 
 test("unlang evaluates valid programs and reports structured runtime errors", () => {
   assert.equal(
@@ -79,11 +84,26 @@ test("unctl creates run state and reports api status transitions", async (t) => 
   assert.equal(await runUnctl("status", "api", { workspace }), "api running");
   assert.equal(await runUnctl("stop", "api", { workspace }), "api stopped");
   assert.match(await readFile(path.join(workspace, "run", "api.down"), "utf8"), /^\d{4}-\d{2}-\d{2}T/);
+  assert.match(await readFile(path.join(workspace, "logs", "app.log"), "utf8"), /api stopped by unctl/);
   assert.equal(await runUnctl("status", "api", { workspace }), "api stopped");
   assert.equal(await runUnctl("restart", "api", { workspace }), "api restarted");
   assert.equal(await runUnctl("status", "api", { workspace }), "api running");
+  assert.match(await readFile(path.join(workspace, "logs", "app.log"), "utf8"), /api restarted by unctl/);
 
   await assert.rejects(() => runUnctl("status", "db", { workspace }), /usage: unctl/);
+});
+
+test("unctl CLI writes command results to stdout", async (t) => {
+  const workspace = await tempWorkspace();
+  t.after(() => rm(workspace, { recursive: true, force: true }));
+
+  const script = fileURLToPath(new URL("../../sandbox/bin/unctl.mjs", import.meta.url));
+  const result = await execFileAsync("node", [script, "status", "api"], {
+    env: { ...process.env, WORKSPACE_DIR: workspace }
+  });
+
+  assert.equal(result.stdout, "api running\n");
+  assert.equal(result.stderr, "");
 });
 
 test("unyoh-api reflects marker health, metrics, and access log statuses", async (t) => {

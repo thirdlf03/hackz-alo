@@ -20,7 +20,6 @@ export function terminalToMirrorState(
   const viewportY = buffer.viewportY;
   const lines: string[] = [];
   const cursorLineIndex = viewportY + buffer.cursorY;
-  let commandDraft = "";
 
   for (let row = 0; row < terminal.rows; row += 1) {
     const index = viewportY + row;
@@ -29,7 +28,6 @@ export function terminalToMirrorState(
     const text = line
       ? mirrorLineText(line, isCursorLine ? buffer.cursorX : undefined)
       : "";
-    if (isCursorLine) commandDraft = text;
     lines.push(text);
   }
 
@@ -42,7 +40,7 @@ export function terminalToMirrorState(
       y: buffer.cursorY,
       visible: true
     },
-    commandDraft,
+    commandDraft: commandDraftAtCursor(buffer, cursorLineIndex, buffer.cursorX),
     commandHistory: commandHistory.map((item) => ({ ...item }))
   };
 }
@@ -51,4 +49,23 @@ function mirrorLineText(line: NonNullable<ReturnType<Terminal["buffer"]["active"
   const trimmed = line.translateToString(true);
   if (preserveUntilColumn === undefined || trimmed.length >= preserveUntilColumn) return trimmed;
   return line.translateToString(false).slice(0, preserveUntilColumn);
+}
+
+function commandDraftAtCursor(
+  buffer: Terminal["buffer"]["active"],
+  cursorLineIndex: number,
+  cursorColumn: number
+) {
+  let startLineIndex = cursorLineIndex;
+  while (startLineIndex > 0 && buffer.getLine(startLineIndex)?.isWrapped) {
+    startLineIndex -= 1;
+  }
+
+  const parts: string[] = [];
+  for (let index = startLineIndex; index <= cursorLineIndex; index += 1) {
+    const line = buffer.getLine(index);
+    if (!line) continue;
+    parts.push(mirrorLineText(line, index === cursorLineIndex ? cursorColumn : undefined));
+  }
+  return parts.join("");
 }

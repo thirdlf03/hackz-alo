@@ -253,7 +253,7 @@ export function App() {
   }, [screen]);
 
   useEffect(() => {
-    if ((screen !== "play" && screen !== "result") || !canvasRef.current) return;
+    if (screen !== "play" || !canvasRef.current) return;
     const renderer = new CanvasRenderer(canvasRef.current);
     rendererRef.current = renderer;
     let frame = 0;
@@ -1046,7 +1046,7 @@ export function App() {
         </section>
       )}
 
-      {(screen === "play" || screen === "result") && (
+      {screen === "play" && (
         <section class="game-layout">
           {screen === "play" && gameState?.monitors.center.activeTool === "editor" && (
             <textarea

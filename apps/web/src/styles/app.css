@@ -377,9 +377,11 @@ button:disabled {
 
 .game-layout {
   display: grid;
+  align-content: center;
   justify-items: center;
   padding: 12px;
-  min-height: calc(100vh - 56px);
+  min-height: calc(100dvh - 56px);
+  overflow: hidden;
 }
 
 .editor-overlay {
@@ -407,8 +409,8 @@ button:disabled {
 
 canvas {
   display: block;
-  width: min(100vw - 24px, 1760px);
-  max-height: calc(100vh - 80px);
+  width: min(calc(100vw - 24px), 1760px, calc((100dvh - 96px) * 16 / 9));
+  max-height: calc(100dvh - 96px);
   aspect-ratio: 16 / 9;
   border: 1px solid var(--canvas-border);
   background: var(--canvas-bg);
