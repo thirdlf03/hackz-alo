@@ -5,6 +5,8 @@ export function resolveEndingId(result: string): string {
       return "clear-shift";
     case "failed":
       return "overtime";
+    case "timeout":
+      return "overtime";
     case "retired":
       return "early-exit";
     case "aborted":

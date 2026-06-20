@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn, execSync } from "node:child_process";
 import { existsSync } from "node:fs";
 
 const dockerBin = "/Applications/Docker.app/Contents/Resources/bin";
@@ -65,8 +65,26 @@ function pipeWithPrefix(name, stream) {
 function shutdown(exitCode) {
   if (shuttingDown) return;
   shuttingDown = true;
+  cleanupSandboxContainers();
   for (const child of children) {
     if (!child.killed) child.kill("SIGTERM");
   }
   setTimeout(() => process.exit(exitCode), 500).unref();
+}
+
+function cleanupSandboxContainers() {
+  try {
+    const ids = execSync('docker ps -aq --filter "name=workerd-incident-training-worker-Sandbox"', {
+      env,
+      encoding: "utf8"
+    })
+      .trim()
+      .split(/\r?\n/)
+      .filter(Boolean);
+    if (ids.length === 0) return;
+    execSync(`docker rm -f ${ids.join(" ")}`, { env, stdio: "ignore" });
+    console.log(`[dev] removed ${ids.length} sandbox container(s)`);
+  } catch {
+    // Docker may be unavailable; ignore.
+  }
 }

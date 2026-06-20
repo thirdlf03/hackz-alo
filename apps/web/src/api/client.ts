@@ -137,6 +137,26 @@ export class ApiClient {
     return this.post(`/api/sessions/${encodeURIComponent(sessionId)}/retire`, {});
   }
 
+  async timeoutSession(sessionId: string) {
+    return this.post(`/api/sessions/${encodeURIComponent(sessionId)}/timeout`, {});
+  }
+
+  /** Best-effort cleanup when the tab is closing during play. */
+  notifySessionTimeout(sessionId: string) {
+    const url = `/api/sessions/${encodeURIComponent(sessionId)}/timeout`;
+    const body = new Blob(["{}"], { type: "application/json" });
+    if (typeof navigator !== "undefined" && typeof navigator.sendBeacon === "function") {
+      navigator.sendBeacon(url, body);
+      return;
+    }
+    void fetch(url, {
+      method: "POST",
+      body: "{}",
+      headers: { "content-type": "application/json" },
+      keepalive: true
+    });
+  }
+
   async uploadChunk(replayId: string, chunk: { seq: number; blob: Blob; startedAtMs: number; endedAtMs: number }) {
     const params = new URLSearchParams({
       seq: String(chunk.seq),

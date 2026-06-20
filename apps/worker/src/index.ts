@@ -103,6 +103,7 @@ app.post("/api/sessions/:sessionId/start", async (c) => {
 });
 app.post("/api/sessions/:sessionId/resolve", async (c) => proxySession(c, "resolve"));
 app.post("/api/sessions/:sessionId/retire", async (c) => proxySession(c, "retire"));
+app.post("/api/sessions/:sessionId/timeout", async (c) => proxySession(c, "timeout"));
 app.delete("/api/sessions/:sessionId", async (c) => proxySessionDelete(c, "delete"));
 app.get("/api/sessions/:sessionId/events", async (c) => proxySession(c, "events"));
 app.get("/api/sessions/:sessionId/clock", async (c) => proxySession(c, "clock"));

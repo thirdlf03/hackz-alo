@@ -72,6 +72,7 @@ export class SessionDurableObject implements DurableObject {
       if (request.method === "POST" && action === "start") return this.start(request);
       if (request.method === "POST" && action === "resolve") return this.resolve();
       if (request.method === "POST" && action === "retire") return this.retire();
+      if (request.method === "POST" && action === "timeout") return this.timeout();
       if (request.method === "DELETE" && action === "delete") return this.deleteSession();
       if (request.method === "POST" && action === "clock") return this.updateClock(request);
       if (request.method === "POST" && action === "terminal-resize") return this.terminalResize(request);
@@ -167,10 +168,24 @@ export class SessionDurableObject implements DurableObject {
     return jsonOk({ session: await this.snapshotFor(result) });
   }
 
+  private async timeout() {
+    const session = await this.requireSession();
+    if (isTerminalStatus(session.status)) {
+      return jsonOk({ session: await this.snapshotFor(session) });
+    }
+    const finished = await this.finishSession(session, "failed", "timeout");
+    const result = await this.emit(
+      finished,
+      "session_end",
+      this.getGameTimeMs(finished),
+      "system",
+      { result: "timeout" }
+    );
+    return jsonOk({ session: await this.snapshotFor(result) });
+  }
+
   private async deleteSession() {
     const session = await this.requireSession();
-    this.clearPendingTimers();
-    await destroySessionSandbox(this.env, session.sessionId);
     const aborted = await this.finishSession(session, "aborted", "aborted");
     return jsonOk({ session: await this.snapshotFor(aborted) });
   }

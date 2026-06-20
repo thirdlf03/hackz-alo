@@ -89,6 +89,7 @@ export function App() {
   const scenarioRef = useRef<ScenarioDefinition | undefined>(undefined);
   const eventEmitterRef = useRef<ReplayEventEmitter | null>(null);
   const finishingRef = useRef(false);
+  const tabBeaconSentRef = useRef(false);
   const recordingStartedAtGameMsRef = useRef(0);
   const liveReplayEventIdsRef = useRef(new Set<string>());
 
@@ -207,6 +208,18 @@ export function App() {
   }, [gameSpeed, screen]);
 
   useEffect(() => () => { terminalRef.current?.destroy(); }, []);
+
+  useEffect(() => {
+    const onPageHide = () => {
+      if (finishingRef.current || tabBeaconSentRef.current) return;
+      const activeSession = sessionRef.current;
+      if (!activeSession || screen !== "play") return;
+      tabBeaconSentRef.current = true;
+      api.notifySessionTimeout(activeSession.sessionId);
+    };
+    window.addEventListener("pagehide", onPageHide);
+    return () => window.removeEventListener("pagehide", onPageHide);
+  }, [screen]);
 
   useEffect(() => {
     if ((screen !== "play" && screen !== "result") || !canvasRef.current) return;
@@ -426,6 +439,7 @@ export function App() {
       elapsedMsRef.current = 0;
       lastTickAtRef.current = 0;
       finishingRef.current = false;
+      tabBeaconSentRef.current = false;
       setScenario(created.scenario);
       setSession(created);
       setTimeline([]);
@@ -564,14 +578,7 @@ export function App() {
     } else if (mode === "retire") {
       await api.retireSession(session.sessionId).catch(console.error);
     } else if (mode === "timeout") {
-      const at = Math.round(gameStateRef.current?.clock.elapsedMs ?? 0);
-      void eventEmitterRef.current?.emit({
-        replayId: session.replayId,
-        type: "session_end",
-        at,
-        actor: "system",
-        payload: { result: "timeout" }
-      });
+      await api.timeoutSession(session.sessionId).catch(console.error);
     }
     const status = mode === "retire" ? "retired" : resolved ? "resolved" : "failed";
     let recordingStatus: GameRenderState["recording"]["status"] = "idle";
