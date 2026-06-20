@@ -128,7 +128,7 @@ textarea,
 }
 
 .topbar button:hover,
-.panel button:hover,
+.panel button:not(.result-action-primary):hover,
 .speed-control button:hover {
   border-color: #6f8198;
 }
@@ -635,6 +635,12 @@ canvas:focus-visible {
   flex-shrink: 0;
 }
 
+.result-panel {
+  display: grid;
+  gap: 20px;
+  padding-bottom: 48px;
+}
+
 .result-panel .result-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -644,6 +650,143 @@ canvas:focus-visible {
 
 .result-panel .result-grid strong {
   font-variant-numeric: tabular-nums;
+}
+
+.result-hero {
+  display: grid;
+  gap: 14px;
+  margin-top: 8px;
+  padding: 24px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(16, 24, 33, 0.96), rgba(10, 14, 20, 0.92));
+}
+
+.result-badge {
+  justify-self: start;
+  margin: 0;
+  padding: 8px 18px;
+  border-radius: 999px;
+  font-size: clamp(22px, 4vw, 30px);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.result-badge-success {
+  color: var(--text-success-badge);
+  background: var(--surface-success-badge);
+  border: 1px solid var(--border-success);
+}
+
+.result-badge-warning {
+  color: var(--text-warning);
+  background: rgba(120, 83, 14, 0.35);
+  border: 1px solid rgba(251, 191, 36, 0.45);
+}
+
+.result-badge-danger {
+  color: #fecaca;
+  background: rgba(127, 29, 29, 0.42);
+  border: 1px solid var(--border-error);
+}
+
+.result-badge-neutral {
+  color: var(--text-primary);
+  background: var(--surface-button);
+  border: 1px solid var(--border-default);
+}
+
+.result-hero-meta {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: clamp(18px, 3vw, 24px);
+  font-weight: 600;
+}
+
+.result-flavor {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-body);
+  line-height: var(--line-height-body);
+}
+
+.result-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin: 4px 0 0;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.result-stats div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.result-stats dt {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-caption);
+  font-weight: 500;
+}
+
+.result-stats dd {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: clamp(24px, 4vw, 32px);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+
+.result-highlights h2 {
+  margin: 0 0 12px;
+  font-size: 18px;
+}
+
+.result-highlights ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 8px;
+}
+
+.result-highlights li {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: 12px;
+  align-items: baseline;
+  padding: 12px 14px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--surface-input);
+}
+
+.result-highlight-time {
+  color: var(--text-accent);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.result-highlight-label {
+  color: var(--text-link);
+  line-height: var(--line-height-body);
+}
+
+.result-session-meta {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-caption);
+  word-break: break-all;
+}
+
+.result-session-meta .result-label {
+  margin: 0;
 }
 
 .result-label {
@@ -662,7 +805,33 @@ canvas:focus-visible {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
-  margin-top: 18px;
+  margin-top: 4px;
+}
+
+.result-action-primary,
+.result-action-secondary {
+  flex: 1 1 180px;
+}
+
+.result-action-primary {
+  border-color: var(--border-success);
+  background: var(--accent-primary);
+  color: var(--text-on-accent);
+  font-weight: 700;
+}
+
+.result-action-primary:hover:not(:disabled) {
+  border-color: var(--border-success);
+  background: var(--accent-primary);
+}
+
+.result-action-primary:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.result-action-secondary {
+  background: var(--surface-button);
 }
 
 .result-replay-panel {
@@ -762,6 +931,15 @@ canvas:focus-visible {
     width: auto;
     max-width: 100%;
     grid-template-columns: repeat(3, minmax(var(--touch-speed), 1fr));
+  }
+
+  .result-highlights li {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+
+  .result-stats {
+    grid-template-columns: 1fr;
   }
 
   .replay-layout,

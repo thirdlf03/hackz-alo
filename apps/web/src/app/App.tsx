@@ -1108,8 +1108,7 @@ export function App() {
 
       {screen === "result" && session && scenario && (
         <ResultPage replayId={session.replayId} sessionId={session.sessionId} scenarioTitle={scenario.title}
-          timeline={timeline} canPlayVideo={canPlayVideo} canOpenReplay={canNavigateToReplay}
-          onRetry={() => setScreen("select")} onOpenReplay={openReplay} />
+          canOpenReplay={canNavigateToReplay} onRetry={() => setScreen("select")} onOpenReplay={openReplay} />
       )}
 
       {screen === "replay" && activeReplayId && !deepLinkValidated && (
