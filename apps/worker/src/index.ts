@@ -6,10 +6,8 @@ import {
   replayThumbnailKey,
   type ApiResult,
   type Difficulty,
-  type ReplayEvent,
-  type ReplayVisibility
+  type ReplayEvent
 } from "@incident/shared";
-import { devAuth } from "./auth.js";
 import { SessionDurableObject } from "./durable/SessionDurableObject.js";
 import {
   completeMultipartUpload,
@@ -19,18 +17,15 @@ import {
   putReplayEvents,
   uploadMultipartPart
 } from "./storage/replayStorage.js";
-import type { AppVariables, AuthUser, Bindings } from "./types.js";
+import type { Bindings } from "./types.js";
 
 export { SessionDurableObject };
 export { Sandbox } from "@cloudflare/sandbox";
 
-const app = new Hono<{ Bindings: Bindings; Variables: AppVariables }>();
-type WorkerContext = Context<{ Bindings: Bindings; Variables: AppVariables }>;
+const app = new Hono<{ Bindings: Bindings }>();
+type WorkerContext = Context<{ Bindings: Bindings }>;
 
-const replayVisibilities = new Set<ReplayVisibility>(["private", "self", "unlisted", "team", "public"]);
 const difficulties = new Set<Difficulty>(["beginner", "intermediate", "advanced"]);
-
-app.use("/api/*", devAuth);
 
 app.post("/api/dev/terminal-debug", async (c) => {
   const body = (await c.req.json().catch(() => ({}))) as {
@@ -51,7 +46,6 @@ app.get("/api/scenarios/:scenarioId", (c) => {
 });
 
 app.post("/api/sessions", async (c) => {
-  const user = c.get("user");
   const body = (await c.req.json().catch(() => ({}))) as { scenarioId?: string; difficulty?: string };
   const scenario = resolveRequestedScenario(body);
   if (!scenario) return c.json(err("bad_request", "scenarioId or difficulty is required"), 400);
@@ -60,30 +54,23 @@ app.post("/api/sessions", async (c) => {
   const replayId = `repl_${crypto.randomUUID().replaceAll("-", "")}`;
   const now = new Date().toISOString();
   await c.env.DB.prepare(
-    `insert or ignore into users (id, display_name, created_at)
-     values (?, ?, ?)`
-  )
-    .bind(user.id, user.displayName, now)
-    .run();
-  await c.env.DB.prepare(
     `insert into play_sessions
-     (id, user_id, scenario_id, scenario_version, sandbox_id, replay_id, status, created_at)
-     values (?, ?, ?, ?, ?, ?, ?, ?)`
+     (id, scenario_id, scenario_version, sandbox_id, replay_id, status, created_at)
+     values (?, ?, ?, ?, ?, ?, ?)`
   )
-    .bind(sessionId, user.id, scenario.id, scenario.version, `session-${sessionId}`, replayId, "created", now)
+    .bind(sessionId, scenario.id, scenario.version, `session-${sessionId}`, replayId, "created", now)
     .run();
   await c.env.DB.prepare(
     `insert into replays
-     (id, user_id, session_id, scenario_id, difficulty, started_at, visibility, recording_status, created_at, updated_at)
-     values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+     (id, session_id, scenario_id, difficulty, started_at, recording_status, created_at, updated_at)
+     values (?, ?, ?, ?, ?, ?, ?, ?)`
   )
-    .bind(replayId, user.id, sessionId, scenario.id, scenario.difficulty, now, "private", "idle", now, now)
+    .bind(replayId, sessionId, scenario.id, scenario.difficulty, now, "idle", now, now)
     .run();
 
   const bootstrapResponse = await fetchSessionObject(c.env, sessionId, "bootstrap", {
     sessionId,
     replayId,
-    userId: user.id,
     scenarioId: scenario.id
   });
   if (!bootstrapResponse.ok) return bootstrapResponse;
@@ -104,28 +91,40 @@ function randomFloat() {
 
 app.get("/api/sessions/:sessionId", async (c) => proxySession(c, "snapshot"));
 app.post("/api/sessions/:sessionId/start", async (c) => {
-  const user = c.get("user");
   const sessionId = c.req.param("sessionId");
-  const record = await getOwnedSession(c.env, user, sessionId);
+  const record = await getSession(c.env, sessionId);
   if (!record) return c.json(err("not_found", "session not found"), 404);
   return proxySession(c, "start", {
     sessionId,
     replayId: String(record.replay_id),
-    userId: user.id,
     scenarioId: String(record.scenario_id)
   });
 });
 app.post("/api/sessions/:sessionId/resolve", async (c) => proxySession(c, "resolve"));
 app.post("/api/sessions/:sessionId/retire", async (c) => proxySession(c, "retire"));
+app.delete("/api/sessions/:sessionId", async (c) => proxySessionDelete(c, "delete"));
 app.get("/api/sessions/:sessionId/events", async (c) => proxySession(c, "events"));
+app.get("/api/sessions/:sessionId/clock", async (c) => proxySession(c, "clock"));
+app.post("/api/sessions/:sessionId/clock", async (c) => proxySession(c, "clock", await c.req.json().catch(() => ({}))));
 app.get("/api/sessions/:sessionId/metrics", async (c) => proxySession(c, "metrics"));
 app.get("/api/sessions/:sessionId/logs", async (c) => proxySession(c, "logs"));
 app.get("/api/sessions/:sessionId/storage", async (c) => proxySession(c, "storage"));
 app.get("/api/sessions/:sessionId/ws/terminal", async (c) => proxySession(c, "terminal"));
 app.post("/api/sessions/:sessionId/terminal/interrupt", async (c) => proxySession(c, "terminal-interrupt"));
+app.post("/api/sessions/:sessionId/terminal/resize", async (c) =>
+  proxySession(c, "terminal-resize", await c.req.json().catch(() => ({})))
+);
+
+app.get("/api/replays/featured", async (c) => {
+  const rows = await c.env.DB.prepare(
+    `select id, scenario_id, difficulty, result, duration_ms, thumbnail_object_key, created_at
+     from replays where featured = 1 order by created_at desc limit 20`
+  ).all();
+  return c.json(ok(rows.results ?? []));
+});
 
 app.post("/api/replays/:replayId/chunks", async (c) => {
-  const replay = await getOwnedReplay(c.env, c.get("user"), c.req.param("replayId"));
+  const replay = await getReplay(c.env, c.req.param("replayId"));
   if (!replay) return c.json(err("not_found", "replay not found"), 404);
   const seq = parseSequence(c.req.query("seq"));
   if (seq === undefined) return c.json(err("bad_request", "invalid seq"), 400);
@@ -145,13 +144,13 @@ app.post("/api/replays/:replayId/chunks", async (c) => {
 });
 
 app.post("/api/replays/:replayId/mpu/create", async (c) => {
-  const replay = await getOwnedReplay(c.env, c.get("user"), c.req.param("replayId"));
+  const replay = await getReplay(c.env, c.req.param("replayId"));
   if (!replay) return c.json(err("not_found", "replay not found"), 404);
   return c.json(ok(await createMultipartUpload(c.env, String(replay.id))));
 });
 
 app.put("/api/replays/:replayId/mpu/parts/:partNumber", async (c) => {
-  const replay = await getOwnedReplay(c.env, c.get("user"), c.req.param("replayId"));
+  const replay = await getReplay(c.env, c.req.param("replayId"));
   if (!replay) return c.json(err("not_found", "replay not found"), 404);
   const partNumber = parsePartNumber(c.req.param("partNumber"));
   if (partNumber === undefined) {
@@ -169,13 +168,13 @@ app.put("/api/replays/:replayId/mpu/parts/:partNumber", async (c) => {
 });
 
 app.post("/api/replays/:replayId/mpu/complete", async (c) => {
-  const replay = await getOwnedReplay(c.env, c.get("user"), c.req.param("replayId"));
+  const replay = await getReplay(c.env, c.req.param("replayId"));
   if (!replay) return c.json(err("not_found", "replay not found"), 404);
   return c.json(ok(await completeMultipartUpload(c.env, String(replay.id))));
 });
 
 app.post("/api/replays/:replayId/events", async (c) => {
-  const replay = await getOwnedReplay(c.env, c.get("user"), c.req.param("replayId"));
+  const replay = await getReplay(c.env, c.req.param("replayId"));
   if (!replay) return c.json(err("not_found", "replay not found"), 404);
   const events = await c.req.json().catch(() => []);
   if (!Array.isArray(events)) return c.json(err("bad_request", "events must be an array"), 400);
@@ -185,8 +184,9 @@ app.post("/api/replays/:replayId/events", async (c) => {
 });
 
 app.post("/api/replays/:replayId/finish", async (c) => {
-  const replay = await getOwnedReplay(c.env, c.get("user"), c.req.param("replayId"));
+  const replay = await getReplay(c.env, c.req.param("replayId"));
   if (!replay) return c.json(err("not_found", "replay not found"), 404);
+  const body = (await c.req.json().catch(() => ({}))) as { browserInfo?: Record<string, unknown> };
   const now = new Date().toISOString();
   const object = await getReplayObject(c.env, String(replay.id));
   const status = object ? "ready" : "upload_degraded";
@@ -194,22 +194,23 @@ app.post("/api/replays/:replayId/finish", async (c) => {
     `update replays
      set finished_at = coalesce(finished_at, ?),
          recording_status = ?,
+         browser_info_json = coalesce(?, browser_info_json),
          updated_at = ?
      where id = ?`
   )
-    .bind(now, status, now, replay.id)
+    .bind(now, status, body.browserInfo ? JSON.stringify(body.browserInfo) : null, now, replay.id)
     .run();
   return c.json(ok({ replayId: replay.id, status }));
 });
 
 app.get("/api/replays/:replayId", async (c) => {
-  const replay = await getVisibleReplay(c.env, c.get("user"), c.req.param("replayId"));
+  const replay = await getReplay(c.env, c.req.param("replayId"));
   if (!replay) return c.json(err("not_found", "replay not found"), 404);
   return c.json(ok(replay));
 });
 
 app.get("/api/replays/:replayId/video", async (c) => {
-  const replay = await getVisibleReplay(c.env, c.get("user"), c.req.param("replayId"));
+  const replay = await getReplay(c.env, c.req.param("replayId"));
   if (!replay) return c.json(err("not_found", "replay not found"), 404);
   const object = await getReplayObject(c.env, String(replay.id));
   if (!object) return c.json(err("not_found", "video not found"), 404);
@@ -221,32 +222,86 @@ app.get("/api/replays/:replayId/video", async (c) => {
   });
 });
 
+app.get("/api/replays/:replayId/chunks", async (c) => {
+  const replay = await getReplay(c.env, c.req.param("replayId"));
+  if (!replay) return c.json(err("not_found", "replay not found"), 404);
+  const rows = await c.env.DB.prepare(
+    "select seq, object_key, byte_size, started_at_ms, ended_at_ms from replay_chunks where replay_id = ? order by seq asc"
+  )
+    .bind(replay.id)
+    .all();
+  return c.json(ok(rows.results ?? []));
+});
+
+app.get("/api/replays/:replayId/chunks/:seq", async (c) => {
+  const replay = await getReplay(c.env, c.req.param("replayId"));
+  if (!replay) return c.json(err("not_found", "replay not found"), 404);
+  const seq = parseSequence(c.req.param("seq"));
+  if (seq === undefined) return c.json(err("bad_request", "invalid seq"), 400);
+  const row = await c.env.DB.prepare("select object_key from replay_chunks where replay_id = ? and seq = ?")
+    .bind(replay.id, seq)
+    .first<{ object_key: string }>();
+  if (!row) return c.json(err("not_found", "chunk not found"), 404);
+  const object = await c.env.REPLAY_BUCKET.get(row.object_key);
+  if (!object) return c.json(err("not_found", "chunk not found"), 404);
+  return new Response(object.body, {
+    headers: { "content-type": object.httpMetadata?.contentType ?? "video/webm" }
+  });
+});
+
 app.get("/api/replays/:replayId/events", async (c) => {
-  const replay = await getVisibleReplay(c.env, c.get("user"), c.req.param("replayId"));
+  const replay = await getReplay(c.env, c.req.param("replayId"));
   if (!replay) return c.json(err("not_found", "replay not found"), 404);
   const rows = await c.env.DB.prepare(
     "select event_id, type, at_ms, summary, visibility from replay_events_index where replay_id = ? order by at_ms asc"
   )
     .bind(replay.id)
     .all();
-  return c.json(ok(rows.results));
+  return c.json(ok(rows.results ?? []));
 });
 
-app.patch("/api/replays/:replayId/visibility", async (c) => {
-  const replay = await getOwnedReplay(c.env, c.get("user"), c.req.param("replayId"));
+app.get("/api/replays/:replayId/thumbnail", async (c) => {
+  const replay = await getReplay(c.env, c.req.param("replayId"));
   if (!replay) return c.json(err("not_found", "replay not found"), 404);
-  const body = (await c.req.json().catch(() => ({}))) as { visibility?: ReplayVisibility };
-  if (!body.visibility || !replayVisibilities.has(body.visibility)) {
-    return c.json(err("bad_request", "invalid visibility"), 400);
+  const key = replay.thumbnail_object_key;
+  if (!key) return c.json(err("not_found", "thumbnail not found"), 404);
+  const object = await c.env.REPLAY_BUCKET.get(key);
+  if (!object) return c.json(err("not_found", "thumbnail not found"), 404);
+  return new Response(object.body, {
+    headers: { "content-type": object.httpMetadata?.contentType ?? "image/webp" }
+  });
+});
+
+app.get("/api/replays/:replayId/comments", async (c) => {
+  const replay = await getReplay(c.env, c.req.param("replayId"));
+  if (!replay) return c.json(err("not_found", "replay not found"), 404);
+  const rows = await c.env.DB.prepare(
+    "select id, at_ms, body, created_at from replay_comments where replay_id = ? order by at_ms asc"
+  )
+    .bind(replay.id)
+    .all();
+  return c.json(ok(rows.results ?? []));
+});
+
+app.post("/api/replays/:replayId/comments", async (c) => {
+  const replay = await getReplay(c.env, c.req.param("replayId"));
+  if (!replay) return c.json(err("not_found", "replay not found"), 404);
+  const body = (await c.req.json().catch(() => ({}))) as { atMs?: number; body?: string };
+  if (typeof body.atMs !== "number" || typeof body.body !== "string" || !body.body.trim()) {
+    return c.json(err("bad_request", "atMs and body are required"), 400);
   }
-  await c.env.DB.prepare("update replays set visibility = ?, updated_at = ? where id = ?")
-    .bind(body.visibility, new Date().toISOString(), replay.id)
+  const id = `cmt_${crypto.randomUUID().replaceAll("-", "")}`;
+  const now = new Date().toISOString();
+  await c.env.DB.prepare(
+    "insert into replay_comments (id, replay_id, at_ms, body, created_at) values (?, ?, ?, ?, ?)"
+  )
+    .bind(id, replay.id, Math.max(0, Math.floor(body.atMs)), body.body.trim(), now)
     .run();
-  return c.json(ok({ replayId: replay.id, visibility: body.visibility }));
+  return c.json(ok({ id, atMs: body.atMs, body: body.body.trim(), createdAt: now }));
 });
 
 app.post("/api/replays/:replayId/thumbnail", async (c) => {
-  const replay = await getOwnedReplay(c.env, c.get("user"), c.req.param("replayId"));
+  const replay = await getReplay(c.env, c.req.param("replayId"));
   if (!replay) return c.json(err("not_found", "replay not found"), 404);
   const key = replayThumbnailKey(String(replay.id));
   await c.env.REPLAY_BUCKET.put(key, c.req.raw.body ?? new ArrayBuffer(0), {
@@ -281,8 +336,7 @@ async function proxySession(
 ) {
   const sessionId = c.req.param("sessionId");
   if (!sessionId) return c.json(err("bad_request", "sessionId is required"), 400);
-  const user = c.get("user");
-  const record = await getOwnedSession(c.env, user, sessionId);
+  const record = await getSession(c.env, sessionId);
   if (!record) return c.json(err("not_found", "session not found"), 404);
 
   const id = c.env.SESSION_DO.idFromName(sessionId);
@@ -293,11 +347,22 @@ async function proxySession(
     body === undefined
       ? new Request(target, c.req.raw)
       : new Request(target, {
-          method: "POST",
+          method: c.req.method === "GET" ? "POST" : c.req.method,
           headers: { "content-type": "application/json" },
           body: JSON.stringify(body)
         });
   return stub.fetch(request);
+}
+
+async function proxySessionDelete(c: WorkerContext, action: string) {
+  const sessionId = c.req.param("sessionId");
+  if (!sessionId) return c.json(err("bad_request", "sessionId is required"), 400);
+  const record = await getSession(c.env, sessionId);
+  if (!record) return c.json(err("not_found", "session not found"), 404);
+  const id = c.env.SESSION_DO.idFromName(sessionId);
+  const stub = c.env.SESSION_DO.get(id);
+  const target = new URL(`https://session.internal/internal/sessions/${sessionId}/${action}`);
+  return stub.fetch(new Request(target, { method: "DELETE" }));
 }
 
 async function fetchSessionObject(env: Bindings, sessionId: string, action: string, body: unknown) {
@@ -315,38 +380,25 @@ async function fetchSessionObject(env: Bindings, sessionId: string, action: stri
 
 type SessionRow = {
   id: string;
-  user_id: string;
   scenario_id: string;
   replay_id: string;
 };
 
 type ReplayRow = {
   id: string;
-  user_id: string;
-  visibility: ReplayVisibility;
+  thumbnail_object_key: string | null;
 };
 
-async function getOwnedSession(env: Bindings, user: AuthUser, sessionId: string) {
-  const result = await env.DB.prepare("select * from play_sessions where id = ? and user_id = ?")
-    .bind(sessionId, user.id)
+async function getSession(env: Bindings, sessionId: string) {
+  return env.DB.prepare("select * from play_sessions where id = ?")
+    .bind(sessionId)
     .first<SessionRow>();
-  return result;
 }
 
-async function getOwnedReplay(env: Bindings, user: AuthUser, replayId: string) {
-  return env.DB.prepare("select * from replays where id = ? and user_id = ?")
-    .bind(replayId, user.id)
-    .first<ReplayRow>();
-}
-
-async function getVisibleReplay(env: Bindings, user: AuthUser, replayId: string) {
-  const replay = await env.DB.prepare("select * from replays where id = ?")
+async function getReplay(env: Bindings, replayId: string) {
+  return env.DB.prepare("select * from replays where id = ?")
     .bind(replayId)
     .first<ReplayRow>();
-  if (!replay) return undefined;
-  if (replay.user_id === user.id) return replay;
-  if (replay.visibility === "public" || replay.visibility === "unlisted") return replay;
-  return undefined;
 }
 
 function parseSequence(value: string | undefined) {

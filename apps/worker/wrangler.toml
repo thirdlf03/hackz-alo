@@ -13,6 +13,7 @@ max_instances = 1
 binding = "DB"
 database_name = "incident-training"
 database_id = "local-development"
+migrations_dir = "../../migrations"
 
 [[r2_buckets]]
 binding = "REPLAY_BUCKET"

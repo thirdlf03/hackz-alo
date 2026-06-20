@@ -1,4 +1,4 @@
-import type { ApiResult, Difficulty, MetricsSnapshot, ReplayEvent, ReplayVisibility, ScenarioDefinition } from "@incident/shared";
+import type { AlertDefinition, ApiResult, Difficulty, MetricsSnapshot, ReplayEvent, ScenarioDefinition, SlackMessageDefinition } from "@incident/shared";
 
 export type ReplayRecord = {
   id: string;
@@ -6,7 +6,9 @@ export type ReplayRecord = {
   difficulty: string;
   result: string | null;
   duration_ms: number | null;
-  visibility: ReplayVisibility;
+  ending_id?: string | null;
+  thumbnail_object_key?: string | null;
+  featured?: number;
 };
 
 export type SessionLogFile = "access" | "app" | "batch";
@@ -20,6 +22,21 @@ export type SessionStorageResponse = {
   entries: Array<{ key: string; value: string }>;
 };
 
+export type SessionClockResponse = {
+  gameTimeMs: number;
+  gameSpeed: number;
+  timeLimitMs: number;
+  alerts: AlertDefinition[];
+  slackMessages: SlackMessageDefinition[];
+};
+
+export type ReplayComment = {
+  id: string;
+  at_ms: number;
+  body: string;
+  created_at: string;
+};
+
 export class ApiClient {
   private eventSeq = 0;
 
@@ -31,6 +48,10 @@ export class ApiClient {
     return this.get<ScenarioDefinition>(`/api/scenarios/${encodeURIComponent(id)}`);
   }
 
+  async listFeaturedReplays() {
+    return this.get<Array<ReplayRecord & { created_at: string }>>("/api/replays/featured");
+  }
+
   async createSession(input: { difficulty?: Difficulty; scenarioId?: string }) {
     const data = await this.post<{ sessionId: string; replayId: string; scenario: ScenarioDefinition }>("/api/sessions", input);
     return { sessionId: data.sessionId, replayId: data.replayId, scenario: data.scenario };
@@ -38,6 +59,18 @@ export class ApiClient {
 
   async startSession(sessionId: string) {
     return this.post(`/api/sessions/${encodeURIComponent(sessionId)}/start`, {});
+  }
+
+  async deleteSession(sessionId: string) {
+    return this.request(`/api/sessions/${encodeURIComponent(sessionId)}`, { method: "DELETE" });
+  }
+
+  async getSessionClock(sessionId: string) {
+    return this.get<SessionClockResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/clock`);
+  }
+
+  async updateSessionClock(sessionId: string, speed: number) {
+    return this.post<SessionClockResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/clock`, { speed });
   }
 
   async getSessionMetrics(sessionId: string) {
@@ -51,6 +84,13 @@ export class ApiClient {
 
   async getSessionStorage(sessionId: string) {
     return this.get<SessionStorageResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/storage`);
+  }
+
+  async resizeTerminal(sessionId: string, cols: number, rows: number) {
+    return this.post<{ cols: number; rows: number }>(
+      `/api/sessions/${encodeURIComponent(sessionId)}/terminal/resize`,
+      { cols, rows }
+    );
   }
 
   async interruptTerminal(sessionId: string) {
@@ -93,8 +133,8 @@ export class ApiClient {
     this.eventSeq = 0;
   }
 
-  async finishReplay(replayId: string) {
-    return this.post(`/api/replays/${encodeURIComponent(replayId)}/finish`, {});
+  async finishReplay(replayId: string, browserInfo?: Record<string, unknown>) {
+    return this.post(`/api/replays/${encodeURIComponent(replayId)}/finish`, { browserInfo });
   }
 
   async createMultipartUpload(replayId: string) {
@@ -122,9 +162,23 @@ export class ApiClient {
     });
   }
 
-  async warmReplayVideo(replayId: string) {
-    const response = await fetch(`/api/replays/${encodeURIComponent(replayId)}/video`, { method: "HEAD" });
-    if (!response.ok) throw new Error("video assembly failed");
+  async listReplayChunks(replayId: string) {
+    return this.get<Array<{ seq: number; object_key: string; byte_size: number }>>(
+      `/api/replays/${encodeURIComponent(replayId)}/chunks`
+    );
+  }
+
+  async fetchReplayChunkBlob(replayId: string, seq: number) {
+    const response = await fetch(`/api/replays/${encodeURIComponent(replayId)}/chunks/${seq}`);
+    if (!response.ok) throw new Error("chunk fetch failed");
+    return response.blob();
+  }
+
+  async assemblePartialReplayVideo(replayId: string) {
+    const chunks = await this.listReplayChunks(replayId);
+    if (chunks.length === 0) throw new Error("no chunks");
+    const blobs = await Promise.all(chunks.map((chunk) => this.fetchReplayChunkBlob(replayId, chunk.seq)));
+    return URL.createObjectURL(new Blob(blobs, { type: blobs[0]?.type || "video/webm" }));
   }
 
   async getReplay(replayId: string) {
@@ -137,8 +191,12 @@ export class ApiClient {
     );
   }
 
-  async updateReplayVisibility(replayId: string, visibility: ReplayVisibility) {
-    return this.patch(`/api/replays/${encodeURIComponent(replayId)}/visibility`, { visibility });
+  async getReplayComments(replayId: string) {
+    return this.get<ReplayComment[]>(`/api/replays/${encodeURIComponent(replayId)}/comments`);
+  }
+
+  async addReplayComment(replayId: string, atMs: number, body: string) {
+    return this.post<ReplayComment>(`/api/replays/${encodeURIComponent(replayId)}/comments`, { atMs, body });
   }
 
   private async get<T>(path: string): Promise<T> {
@@ -153,16 +211,13 @@ export class ApiClient {
     });
   }
 
-  private async patch<T>(path: string, body: unknown): Promise<T> {
-    return this.request<T>(path, {
-      method: "PATCH",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body)
-    });
-  }
-
   private async request<T>(path: string, init: RequestInit): Promise<T> {
     const response = await fetch(path, init);
+    if (init.method === "DELETE" && response.status === 200) {
+      const payload = (await response.json()) as ApiResult<T>;
+      if (!payload.ok) throw new Error(payload.error.message);
+      return payload.data;
+    }
     const payload = (await response.json()) as ApiResult<T>;
     if (!payload.ok) throw new Error(payload.error.message);
     return payload.data;

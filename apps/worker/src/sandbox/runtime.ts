@@ -172,6 +172,24 @@ export async function injectFault(
     await sandbox.exec(
       `node /workspace/bin/fault-injector.mjs composite_restart_loop ${shellArg(String(params.diskPath ?? "/workspace/logs/debug.log"))} ${Number(params.bytes ?? 67108864)} ${shellArg(String(params.processId ?? "api"))}`
     );
+  } else if (type === "janitor_power_pull") {
+    await sandbox.exec(
+      `node /workspace/bin/fault-injector.mjs janitor_power_pull ${shellArg(String(params.processId ?? "api"))}`
+    );
+  } else if (type === "cable_jumprope") {
+    await sandbox.exec(
+      `node /workspace/bin/fault-injector.mjs cable_jumprope ${shellArg(String(params.hostsPath ?? "/workspace/run/hosts.override"))}`
+    );
+  } else if (type === "keyboard_spill") {
+    await sandbox.exec(
+      `node /workspace/bin/fault-injector.mjs keyboard_spill ${shellArg(String(params.noise ?? "べちゃっxべちゃっ"))}`
+    );
+  } else if (type === "alert_spam") {
+    await sandbox.exec(`node /workspace/bin/fault-injector.mjs alert_spam ${Number(params.count ?? 24)}`);
+  } else if (type === "runbook_gaslight") {
+    await sandbox.exec(
+      `node /workspace/bin/fault-injector.mjs runbook_gaslight ${shellArg(String(params.replacement ?? "気合いで直す。根性。深呼吸。"))}`
+    );
   } else {
     throw new Error(`unknown fault type: ${type}`);
   }
@@ -230,6 +248,20 @@ function parseMetricsSnapshot(payload: Record<string, unknown>): MetricsSnapshot
     dbConnections: payload.dbConnections as number,
     queueDepth: payload.queueDepth as number
   };
+}
+
+export async function destroySessionSandbox(env: Bindings, sessionId: string) {
+  const sandbox = getSessionSandbox(env, sessionId);
+  try {
+    await sandbox.killAllProcesses();
+  } catch {
+    // best effort
+  }
+  try {
+    await (sandbox as SandboxRuntime & { destroy(): Promise<void> }).destroy();
+  } catch {
+    // best effort
+  }
 }
 
 function sessionSandboxName(sessionId: string) {

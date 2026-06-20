@@ -4,18 +4,83 @@
   "title": "壊れたデプロイの夜",
   "difficulty": "intermediate",
   "timeLimitMinutes": 10,
-  "service": { "name": "うん用 API", "healthUrl": "http://localhost:8080/health" },
-  "briefing": ["デプロイ直後の 5xx は設定ミスを疑う。", "deploy.json と app.log を見る。"],
+  "service": {
+    "name": "うん用 API",
+    "healthUrl": "http://localhost:8080/health"
+  },
+  "briefing": [
+    "デプロイ直後の 5xx は設定ミスを疑う。",
+    "deploy.json と app.log を見る。"
+  ],
   "startup": [
-    { "id": "api", "command": "PORT=8080 node /workspace/services/unyoh-api/server.mjs", "waitForPort": 8080 },
-    { "id": "fake-db", "command": "node /workspace/services/fake-db/server.mjs", "waitForPort": 15432 }
+    {
+      "id": "api",
+      "command": "PORT=8080 node /workspace/services/unyoh-api/server.mjs",
+      "waitForPort": 8080
+    },
+    {
+      "id": "fake-db",
+      "command": "node /workspace/services/fake-db/server.mjs",
+      "waitForPort": 15432
+    }
   ],
-  "triggers": [{ "id": "bad-deploy", "atMs": 45000, "type": "bad_deploy", "params": { "configPath": "/workspace/run/deploy.json" } }],
-  "alerts": [{ "id": "deploy-500", "atMs": 70000, "severity": "critical", "message": "HTTP 500 spike after deploy", "source": "scenario" }],
+  "triggers": [
+    {
+      "id": "bad-deploy",
+      "atMs": 45000,
+      "type": "bad_deploy",
+      "params": {
+        "configPath": "/workspace/run/deploy.json"
+      }
+    }
+  ],
+  "alerts": [
+    {
+      "id": "deploy-500",
+      "atMs": 70000,
+      "severity": "critical",
+      "message": "HTTP 500 spike after deploy",
+      "source": "scenario"
+    }
+  ],
   "successConditions": [
-    { "type": "http_status", "url": "http://localhost:8080/health", "status": 200 },
-    { "type": "process_running", "processId": "api" }
+    {
+      "type": "http_status",
+      "url": "http://localhost:8080/health",
+      "status": 200
+    },
+    {
+      "type": "process_running",
+      "processId": "api"
+    }
   ],
-  "runbooks": [{ "id": "runbook.deploy", "title": "Bad deploy", "body": "1. cat /workspace/run/deploy.json\\n2. rm /workspace/run/api.down\\n3. unctl restart api" }],
-  "slackMessages": []
+  "runbooks": [
+    {
+      "id": "runbook.deploy",
+      "title": "Bad deploy",
+      "body": "1. cat /workspace/run/deploy.json\\n2. rm /workspace/run/api.down\\n3. unctl restart api"
+    }
+  ],
+  "slackMessages": [],
+  "navigationSteps": [
+    {
+      "id": "nav-5xx",
+      "atMs": 0,
+      "hint": "HTTP 5xx が上がっていないか監視画面で確認する",
+      "panel": "metrics"
+    },
+    {
+      "id": "nav-deploy",
+      "atMs": 50000,
+      "hint": "deploy.json の内容を確認する",
+      "panel": "terminal",
+      "suggestedCommand": "cat /workspace/run/deploy.json"
+    },
+    {
+      "id": "nav-runbook",
+      "atMs": 80000,
+      "hint": "Bad deploy Runbook を参照する",
+      "panel": "runbook"
+    }
+  ]
 }

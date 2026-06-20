@@ -1,7 +1,5 @@
-import { useEffect, useMemo, useState } from "preact/hooks";
-import type { ReplayVisibility } from "@incident/shared";
+import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { ApiClient } from "../api/client.js";
-import { ReplayMediaPanel } from "../components/ReplayMediaPanel.js";
 import {
   buildTimelineFromEvents,
   filterImportantEvents,
@@ -9,6 +7,7 @@ import {
   type IndexedReplayEvent,
   type TimelineEntry
 } from "../replay/replayMediaUtils.js";
+import { ReplayMediaPanel } from "../components/ReplayMediaPanel.js";
 
 type Props = {
   replayId: string;
@@ -27,7 +26,8 @@ type ReplayMeta = {
   difficulty: string;
   result: string | null;
   duration_ms: number | null;
-  visibility: ReplayVisibility;
+  ending_id?: string | null;
+  thumbnail_object_key?: string | null;
 };
 
 const api = new ApiClient();
@@ -65,12 +65,20 @@ export function ResultPage({
   const visibleTimeline = useMemo(() => buildTimelineFromEvents(events, timeline), [events, timeline]);
 
   const resultLabel = meta?.result === "resolved" ? "成功" : meta?.result === "retired" ? "リタイア" : "失敗";
+  const endingLabel = meta?.ending_id ? formatEnding(meta.ending_id) : undefined;
 
   return (
     <section class="panel result-panel">
       <p class="eyebrow">Mission Report</p>
       <h1>{scenarioTitle}</h1>
       {error && <p class="app-error" role="alert">{error}</p>}
+      {meta?.thumbnail_object_key && (
+        <img
+          class="result-thumbnail"
+          src={`/api/replays/${encodeURIComponent(replayId)}/thumbnail`}
+          alt="リプレイサムネイル"
+        />
+      )}
       <div class="result-grid">
         <div>
           <span class="result-label">結果</span>
@@ -84,6 +92,12 @@ export function ResultPage({
           <span class="result-label">セッション</span>
           <strong>{sessionId}</strong>
         </div>
+        {endingLabel && (
+          <div>
+            <span class="result-label">エンディング</span>
+            <strong>{endingLabel}</strong>
+          </div>
+        )}
       </div>
 
       <ReplayMediaPanel
@@ -128,4 +142,19 @@ export function ResultPage({
       </div>
     </section>
   );
+}
+
+function formatEnding(endingId: string) {
+  switch (endingId) {
+    case "clear-shift":
+      return "無事退勤";
+    case "overtime":
+      return "残業確定";
+    case "early-exit":
+      return "途中撤退";
+    case "aborted":
+      return "強制終了";
+    default:
+      return endingId;
+  }
 }

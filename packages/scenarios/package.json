@@ -5,6 +5,9 @@
   "type": "module",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
+  "scripts": {
+    "build": "tsx ../../scripts/build-scenarios.mjs"
+  },
   "dependencies": {
     "@incident/shared": "0.1.0"
   }

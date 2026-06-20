@@ -12,6 +12,7 @@ export type TerminalSessionOptions = {
   rows?: number;
   onSnapshot: (snapshot: TerminalMirrorState) => void;
   onCommand?: (command: string) => void;
+  onOutput?: (summary: string) => void;
   onConnectionChange?: (state: TerminalConnectionState, error?: Error) => void;
 };
 
@@ -24,6 +25,7 @@ export class TerminalSession {
   private inputBuffer = "";
   private connectionState: TerminalConnectionState = "disconnected";
   private snapshotFrame = 0;
+  private lastOutputLine = "";
 
   constructor(private readonly options: TerminalSessionOptions) {
     installTerminalWebSocketDebug();
@@ -148,7 +150,13 @@ export class TerminalSession {
     if (this.snapshotFrame) return;
     this.snapshotFrame = requestAnimationFrame(() => {
       this.snapshotFrame = 0;
-      this.options.onSnapshot(this.snapshot());
+      const snapshot = this.snapshot();
+      const lastLine = snapshot.lines.at(-1) ?? "";
+      if (lastLine && lastLine !== this.lastOutputLine) {
+        this.lastOutputLine = lastLine;
+        this.options.onOutput?.(lastLine.slice(0, 120));
+      }
+      this.options.onSnapshot(snapshot);
     });
   }
 }

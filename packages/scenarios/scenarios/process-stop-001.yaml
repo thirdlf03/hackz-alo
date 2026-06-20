@@ -1,0 +1,65 @@
+id: process-stop-001
+version: 1
+title: API が寝落ちした夜
+difficulty: beginner
+timeLimitMinutes: 10
+service:
+  name: うん用 API
+  healthUrl: http://localhost:8080/health
+briefing:
+  - うん用 API は社内売上確認画面の裏側で使われている。
+  - 通常は /health が 200 を返し、access.log にリクエストが流れる。
+  - 困ったらまず監視、ログ、プロセス状態を順番に見る。
+startup:
+  - id: api
+    command: PORT=8080 node /workspace/services/unyoh-api/server.mjs
+    waitForPort: 8080
+  - id: fake-db
+    command: node /workspace/services/fake-db/server.mjs
+    waitForPort: 15432
+triggers:
+  - id: stop-api
+    atMs: 60000
+    type: process_stop
+    params:
+      processId: api
+alerts:
+  - id: http-500
+    atMs: 90000
+    severity: critical
+    message: HTTP 500 rate is above threshold
+    source: scenario
+  - id: health-check-failed
+    atMs: 110000
+    severity: critical
+    message: うん用 API health check failed
+    source: monitor
+successConditions:
+  - type: http_status
+    url: http://localhost:8080/health
+    status: 200
+  - type: process_running
+    processId: api
+runbooks:
+  - id: runbook.process
+    title: API プロセス停止時の初動
+    body: 1. curl localhost:8080/health で影響を確認する\n2. ps aux | grep unyoh-api でプロセスを見る\n3. tail -n 50 /workspace/logs/app.log を確認する\n4. unctl restart api で暫定復旧する\n5. curl で復旧確認する
+slackMessages:
+  - id: boss-restart
+    atMs: 120000
+    from: 上司
+    body: 再起動すれば直る気がする。おやすみ。
+navigationSteps:
+  - id: nav-metrics
+    atMs: 0
+    hint: 左の監視画面で HTTP 5xx と SERVICE HEALTH を確認する
+    panel: metrics
+  - id: nav-health
+    atMs: 30000
+    hint: ターミナルで curl localhost:8080/health を実行する
+    panel: terminal
+    suggestedCommand: curl localhost:8080/health
+  - id: nav-runbook
+    atMs: 60000
+    hint: 右の Runbook で復旧手順を確認する
+    panel: runbook

@@ -1,0 +1,54 @@
+id: unlang-mystery-001
+version: 1
+title: うん言語の深淵
+difficulty: advanced
+timeLimitMinutes: 15
+service:
+  name: うん用 batch
+  healthUrl: http://localhost:8080/health
+briefing:
+  - うん言語のエラーは仕様表なしでは読めない。
+  - バッチ修正後はログの失敗行も片付ける。
+startup:
+  - id: api
+    command: PORT=8080 node /workspace/services/unyoh-api/server.mjs
+    waitForPort: 8080
+  - id: fake-db
+    command: node /workspace/services/fake-db/server.mjs
+    waitForPort: 15432
+triggers:
+  - id: queue
+    atMs: 45000
+    type: queue_backlog
+    params:
+      count: 24
+  - id: unlang
+    atMs: 90000
+    type: unlang_batch_failure
+    params:
+      jobId: sales-nightly
+      path: /workspace/services/batch/sales.un
+alerts:
+  - id: batch-failed
+    atMs: 100000
+    severity: critical
+    message: sales-nightly batch failed
+    source: scenario
+successConditions:
+  - type: unlang_batch_ok
+    jobId: sales-nightly
+  - type: log_absent
+    path: /workspace/logs/batch.log
+    pattern: うんともすんとも
+runbooks:
+  - id: runbook.unlang
+    title: うん言語調査
+    body: 1. batch.log\n2. sales.un\n3. 仕様表\n4. unlang run
+  - id: runbook.unlang-spec
+    title: うん言語仕様表
+    body: うんわりは割り算。うんなしは 0。うんともすんともは runtime error。
+slackMessages:
+  - id: keiri
+    atMs: 110000
+    from: 経理
+    body: またうんともすんともです

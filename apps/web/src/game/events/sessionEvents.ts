@@ -50,7 +50,6 @@ export function collectStateTransitions(
   replayId: string
 ) {
   if (!previous || !scenario) return;
-  void emitNewAlerts(emitter, replayId, elapsedMs, previous.monitors.left.alerts, next.monitors.left.alerts);
   void emitNewSlackMessages(
     emitter,
     replayId,

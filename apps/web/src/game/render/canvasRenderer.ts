@@ -1,5 +1,6 @@
 import type { GameRenderState, MetricsSnapshot, MetricsSource } from "@incident/shared";
 import { mergedSlackMessages } from "../state/gameState.js";
+import { parseAnsiLine, stripAnsi } from "../terminal/ansi.js";
 
 const logicalWidth = 1920;
 const logicalHeight = 1080;
@@ -29,6 +30,9 @@ export class CanvasRenderer {
       this.drawMonitor(1310, 140, 540, 620, "RUNBOOK / SLACK", () => this.drawRightPanel(state, scenario));
       this.drawAlerts(state);
       if (state.alertFlashMs > 0) this.drawAlertFlash(state.alertFlashMs);
+      if (state.warning && state.warning.flashMs > 0) this.drawCommandWarning(state.warning);
+      if (state.world.powerOutageFlashMs > 0) this.drawPowerOutageFlash(state.world.powerOutageFlashMs);
+      if (state.world.redBullFlyingMs > 0) this.drawRedBullFlying(state.world.redBullFlyingMs);
       this.drawNavigationOverlay(state, scenario);
       this.drawInputDock(state);
       this.drawClickEffects(state);
@@ -59,6 +63,9 @@ export class CanvasRenderer {
       70,
       108
     );
+    this.ctx.fillStyle = "#fbbf24";
+    this.ctx.font = "bold 26px ui-monospace, SFMono-Regular, Menlo, monospace";
+    this.ctx.fillText(formatNarrativeClock(state.world.narrativeHour), 1280, 70);
     this.ctx.fillStyle = state.recording.saveEnabled
       ? state.recording.status === "recording"
         ? "#ff3b30"
@@ -435,18 +442,29 @@ export class CanvasRenderer {
     this.ctx.fillStyle = "#d1fae5";
     this.ctx.font = "18px ui-monospace, SFMono-Regular, Menlo, monospace";
     visibleLines.forEach((line, index) => {
-      this.ctx.fillText(line.trimEnd().slice(0, 72), 0, baseY + index * lineHeight);
+      const y = baseY + index * lineHeight;
+      let x = 0;
+      for (const span of parseAnsiLine(line.trimEnd().slice(0, 120))) {
+        this.ctx.fillStyle = span.color ?? "#d1fae5";
+        this.ctx.font = `${span.bold ? "bold " : ""}${span.dim ? "lighter " : ""}18px ui-monospace, SFMono-Regular, Menlo, monospace`;
+        this.ctx.fillText(span.text, x, y);
+        x += this.ctx.measureText(span.text).width;
+      }
     });
 
     const cursorLine = terminal.cursor.y - startLine;
     if (terminal.cursor.visible && cursorLine >= 0 && cursorLine < visibleLines.length) {
-      const line = (visibleLines[cursorLine] ?? "").trimEnd();
+      const line = stripAnsi((visibleLines[cursorLine] ?? "").trimEnd());
       const cursorX = this.ctx.measureText(line.slice(0, terminal.cursor.x)).width;
+      this.ctx.fillStyle = "#d1fae5";
       this.ctx.fillRect(cursorX, baseY + cursorLine * lineHeight - 16, 10, 20);
     }
   }
 
   private drawRightPanel(state: GameRenderState, scenario?: import("@incident/shared").ScenarioDefinition) {
+    this.drawWorldPanel(state.world);
+
+    const worldHeight = 148;
     const runbooks = scenario?.runbooks ?? (state.monitors.right.activeRunbook ? [state.monitors.right.activeRunbook] : []);
     let tabX = 0;
     for (let index = 0; index < runbooks.length; index += 1) {
@@ -455,37 +473,89 @@ export class CanvasRenderer {
       const active = index === state.monitors.right.activeRunbookIndex;
       this.ctx.fillStyle = active ? "#1e293b" : "#0f172a";
       const width = Math.min(150, this.ctx.measureText(runbook.title).width + 24);
-      roundRect(this.ctx, tabX, 0, width, 28, 4);
+      roundRect(this.ctx, tabX, worldHeight, width, 28, 4);
       this.ctx.fill();
       this.ctx.fillStyle = active ? "#e2e8f0" : "#64748b";
       this.ctx.font = "13px system-ui, sans-serif";
-      this.ctx.fillText(runbook.title.slice(0, 14), tabX + 8, 18);
+      this.ctx.fillText(runbook.title.slice(0, 14), tabX + 8, worldHeight + 18);
       tabX += width + 6;
     }
 
     this.ctx.fillStyle = "#e2e8f0";
     this.ctx.font = "22px system-ui, sans-serif";
-    this.ctx.fillText(state.monitors.right.activeRunbook?.title ?? "Runbook", 0, 54);
+    this.ctx.fillText(state.monitors.right.activeRunbook?.title ?? "Runbook", 0, worldHeight + 54);
     this.ctx.font = "17px system-ui, sans-serif";
     const body = state.monitors.right.activeRunbook?.body ?? "";
-    wrapText(this.ctx, body, 0, 88, 470, 24, 11);
+    wrapText(this.ctx, body, 0, worldHeight + 88, 470, 24, 7);
     this.ctx.fillStyle = "#f8fafc";
     this.ctx.font = "20px system-ui, sans-serif";
-    this.ctx.fillText("Slack", 0, 390);
+    this.ctx.fillText("Slack", 0, worldHeight + 300);
     this.ctx.font = "16px system-ui, sans-serif";
-    let y = 420;
-    for (const message of mergedSlackMessages(state).slice(-4)) {
+    let y = worldHeight + 330;
+    for (const message of mergedSlackMessages(state).slice(-3)) {
       const prefix = message.from === "あなた" ? "▸ " : "";
       const color = message.from === "あなた" ? "#93c5fd" : "#e2e8f0";
       this.ctx.fillStyle = color;
       y = wrapText(this.ctx, `${prefix}${message.from}: ${message.body}`, 0, y, 470, 22, 2) + 8;
     }
 
-    this.drawSlackCompose(state);
+    this.drawSlackCompose(state, worldHeight + 394);
   }
 
-  private drawSlackCompose(state: GameRenderState) {
-    const boxY = 484;
+  private drawWorldPanel(world: GameRenderState["world"]) {
+    this.ctx.fillStyle = "#64748b";
+    this.ctx.font = "11px ui-monospace, SFMono-Regular, Menlo, monospace";
+    this.ctx.fillText("SECURITY FEEDS", 0, 12);
+
+    this.drawCctvFeed(0, 20, 228, 88, "JANITOR CAM", world.janitorCameraActive);
+    this.drawCctvFeed(242, 20, 228, 88, "FRIDGE CAM", world.fridgeCameraActive);
+
+    this.ctx.fillStyle = "#94a3b8";
+    this.ctx.font = "11px ui-monospace, SFMono-Regular, Menlo, monospace";
+    this.ctx.fillText("RED BULL", 0, 126);
+    this.ctx.fillStyle = "#1e293b";
+    roundRect(this.ctx, 0, 132, 470, 14, 4);
+    this.ctx.fill();
+    const fillWidth = (470 * Math.max(0, Math.min(100, world.redBullPercent))) / 100;
+    this.ctx.fillStyle = world.redBullPercent <= 15 ? "#ef4444" : "#dc2626";
+    roundRect(this.ctx, 0, 132, Math.max(4, fillWidth), 14, 4);
+    this.ctx.fill();
+    this.ctx.fillStyle = "#f8fafc";
+    this.ctx.font = "bold 11px ui-monospace, SFMono-Regular, Menlo, monospace";
+    this.ctx.fillText(`${Math.round(world.redBullPercent)}%`, 438, 124);
+  }
+
+  private drawCctvFeed(x: number, y: number, width: number, height: number, label: string, active: boolean) {
+    this.ctx.fillStyle = active ? "#0a1a0f" : "#0b0f14";
+    roundRect(this.ctx, x, y, width, height, 4);
+    this.ctx.fill();
+    this.ctx.strokeStyle = active ? "#22c55e" : "#334155";
+    this.ctx.lineWidth = 2;
+    this.ctx.stroke();
+
+    if (active) {
+      this.ctx.fillStyle = "rgba(34, 197, 94, 0.08)";
+      for (let row = 0; row < height; row += 4) {
+        this.ctx.fillRect(x + 2, y + row, width - 4, 2);
+      }
+      this.ctx.fillStyle = "#166534";
+      this.ctx.font = "10px ui-monospace, SFMono-Regular, Menlo, monospace";
+      this.ctx.fillText("REC", x + 8, y + 16);
+      this.ctx.fillStyle = "#4ade80";
+      this.ctx.font = "12px system-ui, sans-serif";
+      this.ctx.fillText(label === "JANITOR CAM" ? "廊下 — 静止" : "冷蔵庫 — OK", x + 8, y + height - 10);
+    } else {
+      this.ctx.fillStyle = "#475569";
+      this.ctx.font = "12px ui-monospace, SFMono-Regular, Menlo, monospace";
+      this.ctx.fillText("NO SIGNAL", x + width / 2 - 38, y + height / 2 + 4);
+    }
+
+    this.ctx.fillStyle = active ? "#86efac" : "#64748b";
+    this.ctx.font = "10px ui-monospace, SFMono-Regular, Menlo, monospace";
+    this.ctx.fillText(label, x + 8, y + height + 14);
+  }
+
+  private drawSlackCompose(state: GameRenderState, boxY = 484) {
     const active = state.slackCompose.active;
     this.ctx.fillStyle = active ? "#1e3a5f" : "#0f172a";
     roundRect(this.ctx, 0, boxY, 470, 44, 6);
@@ -554,6 +624,56 @@ export class CanvasRenderer {
     const opacity = Math.min(0.35, remainingMs / 1200);
     this.ctx.fillStyle = `rgba(239, 68, 68, ${opacity})`;
     this.ctx.fillRect(0, 0, logicalWidth, logicalHeight);
+  }
+
+  private drawCommandWarning(warning: { message: string; flashMs: number }) {
+    const opacity = Math.min(1, warning.flashMs / 800);
+    const box = { x: 70, y: 118, width: logicalWidth - 140, height: 52 };
+    this.ctx.fillStyle = `rgba(127, 29, 29, ${0.92 * opacity})`;
+    roundRect(this.ctx, box.x, box.y, box.width, box.height, 8);
+    this.ctx.fill();
+    this.ctx.strokeStyle = `rgba(248, 113, 113, ${opacity})`;
+    this.ctx.lineWidth = 2;
+    this.ctx.stroke();
+    this.ctx.fillStyle = `rgba(254, 226, 226, ${opacity})`;
+    this.ctx.font = "bold 20px system-ui, sans-serif";
+    this.ctx.fillText(warning.message, box.x + 16, box.y + 34);
+  }
+
+  private drawPowerOutageFlash(remainingMs: number) {
+    const phase = Math.floor(remainingMs / 120) % 2 === 0;
+    const opacity = Math.min(0.55, remainingMs / 1800) * (phase ? 0.9 : 0.35);
+    this.ctx.fillStyle = `rgba(250, 250, 250, ${opacity})`;
+    this.ctx.fillRect(0, 0, logicalWidth, logicalHeight);
+    this.ctx.fillStyle = `rgba(0, 0, 0, ${opacity * 0.4})`;
+    this.ctx.fillRect(0, 0, logicalWidth, logicalHeight);
+  }
+
+  private drawRedBullFlying(remainingMs: number) {
+    const duration = 2800;
+    const progress = 1 - remainingMs / duration;
+    const x = -80 + progress * (logicalWidth + 160);
+    const y = 280 + Math.sin(progress * Math.PI * 3) * 120;
+
+    this.ctx.fillStyle = "rgba(15, 23, 42, 0.72)";
+    this.ctx.fillRect(0, 0, logicalWidth, logicalHeight);
+
+    this.ctx.save();
+    this.ctx.translate(x, y);
+    this.ctx.rotate(-0.35 + progress * 0.7);
+    this.ctx.fillStyle = "#1d4ed8";
+    roundRect(this.ctx, 0, 0, 48, 96, 6);
+    this.ctx.fill();
+    this.ctx.fillStyle = "#dc2626";
+    roundRect(this.ctx, 4, 8, 40, 28, 4);
+    this.ctx.fill();
+    this.ctx.fillStyle = "#f8fafc";
+    this.ctx.font = "bold 10px system-ui, sans-serif";
+    this.ctx.fillText("RB", 14, 26);
+    this.ctx.fillStyle = "#93c5fd";
+    this.ctx.font = "bold 22px system-ui, sans-serif";
+    this.ctx.fillText("翼が生えた!", 56, 48);
+    this.ctx.restore();
   }
 
   private drawNavigationOverlay(state: GameRenderState, scenario?: import("@incident/shared").ScenarioDefinition) {
@@ -697,13 +817,13 @@ export const inputDockRects = {
 
 export const navigationOverlayRect = { x: 720, y: 860, width: 480, height: 120 } as const;
 
-export const runbookTabRegion = { x: 1332, y: 204, width: 516, height: 36 } as const;
+export const runbookTabRegion = { x: 1332, y: 352, width: 516, height: 36 } as const;
 
 export const devtoolsToggleRegion = { x: 712, y: 204, width: 120, height: 28 } as const;
 
-export const slackComposeRegion = { x: 1332, y: 688, width: 496, height: 48 } as const;
+export const slackComposeRegion = { x: 1332, y: 746, width: 496, height: 48 } as const;
 
-export const slackSendButtonRegion = { x: 1736, y: 696, width: 56, height: 28 } as const;
+export const slackSendButtonRegion = { x: 1736, y: 754, width: 56, height: 28 } as const;
 
 export const devtoolsTabRegion = { x: 712, y: 236, width: 516, height: 28 } as const;
 
@@ -812,6 +932,13 @@ function formatTime(ms: number) {
   const minutes = Math.floor(total / 60).toString().padStart(2, "0");
   const seconds = (total % 60).toString().padStart(2, "0");
   return `${minutes}:${seconds}`;
+}
+
+function formatNarrativeClock(narrativeHour: number) {
+  const totalMinutes = Math.floor(narrativeHour * 60);
+  const hours = Math.floor(totalMinutes / 60).toString().padStart(2, "0");
+  const minutes = (totalMinutes % 60).toString().padStart(2, "0");
+  return `深夜 ${hours}:${minutes}`;
 }
 
 function formatRecordingStatus(status: GameRenderState["recording"]["status"], saveEnabled: boolean) {

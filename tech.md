@@ -14,7 +14,7 @@ MVP は Cloudflare Workers + Hono + Durable Objects + D1 + R2 + Cloudflare Sandb
 
 リアルタイム状態は Durable Object が持つ。D1 は永続 metadata、R2 は動画・event log、KV は静的 scenario/runbook のキャッシュに限定する。KV は読み取りが一時的に古くなる可能性があるため、進行中セッションの真実の状態には使わない [R16]。Durable Objects は stateful coordination と WebSocket 接続の集約に向いている [R7][R8]。
 
-Cloudflare Sandbox はユーザーごと、プレイセッションごとに分離する。Sandbox SDK は VM-level isolation を提供するが、アプリケーション側で認証・認可・入力検証・rate limiting を実装する必要がある [R4]。ユーザー入力を backend-generated command に混ぜる場合は、command string へ直接埋め込まず、stdin / file API / allowlist を使う [R2][R4]。
+Cloudflare Sandbox はプレイセッションごとに分離する。Sandbox SDK は VM-level isolation を提供するが、アプリケーション側で入力検証・rate limiting を実装する必要がある [R4]。ユーザー入力を backend-generated command に混ぜる場合は、command string へ直接埋め込まず、stdin / file API / allowlist を使う [R2][R4]。
 
 ## 1. 採用スタック
 
@@ -40,7 +40,7 @@ Browser
   v
 Cloudflare Worker (Hono)
   |
-  | session routing / auth / validation
+  | session routing / validation
   v
 Session Durable Object  <----------------------+
   |                                            |
@@ -66,13 +66,13 @@ Session Durable Object  <----------------------+
 
 ### 2.1 責務分離
 
-Worker は stateless routing layer。認証、Hono routing、request validation、R2/D1 binding 操作、Durable Object への dispatch を担当する。
+Worker は stateless routing layer。Hono routing、request validation、R2/D1 binding 操作、Durable Object への dispatch を担当する。
 
 Session Durable Object は stateful runtime。1 play session に 1 object を対応させ、scenario clock、trigger 発火、alert 配信、event log 追記、terminal/replay 状態、multiplayer 接続管理を担当する。Durable Objects は状態と storage を持ち、複数 client の coordination に使える [R7]。
 
 Cloudflare Sandbox は壊してよい実行環境。ユーザーの疑似 SSH/terminal 操作、プロセス再起動、ログ閲覧、ファイル編集、batch 実行、障害注入の実体を担当する。Sandbox SDK は command execution、background process、terminal WebSocket、file operation を提供する [R1][R2][R3]。
 
-D1 は検索可能な metadata。session 一覧、replay 一覧、visibility、scenario version、結果、採点ではない summary index を持つ。
+D1 は検索可能な metadata。session 一覧、replay 一覧、scenario version、結果、採点ではない summary index を持つ。
 
 R2 は巨大/追記的 object。動画、録画 chunk、JSONL event log、thumbnail を持つ。R2 は object put/get/list と multipart upload を Workers binding 経由で扱える [R10][R11]。
 
@@ -342,7 +342,6 @@ Replay page は DOM UI でよい。録画対象ではない。
 - command list
 - runbook list
 - important events
-- visibility settings
 
 動画と timeline は `video.currentTime` と event `at` を同期する。
 
@@ -446,7 +445,6 @@ POST   /api/replays/:replayId/finish
 GET    /api/replays/:replayId
 GET    /api/replays/:replayId/video
 GET    /api/replays/:replayId/events
-PATCH  /api/replays/:replayId/visibility
 ```
 
 ### 6.3 Session Durable Object
@@ -458,7 +456,6 @@ PATCH  /api/replays/:replayId/visibility
 ```ts
 type SessionState = {
   sessionId: string;
-  userId: string;
   scenarioId: string;
   scenarioVersion: string;
   replayId: string;
@@ -558,7 +555,7 @@ await sandbox.writeFile("/tmp/input", userInput);
 await sandbox.exec("python /workspace/bin/process_input.py", { stdin: userInput });
 ```
 
-Sandbox docs は stdin を使うことで shell injection risk を避けやすいと説明している [R2]。また SDK の security model は input validation / auth / rate limiting をアプリ側責務としている [R4]。
+Sandbox docs は stdin を使うことで shell injection risk を避けやすいと説明している [R2]。また SDK の security model は input validation / rate limiting をアプリ側責務としている [R4]。
 
 ### 7.4 障害注入
 
@@ -662,12 +659,6 @@ game time は session start からの logical ms。
 D1 は Worker binding から使い、prepared statement + bind を基本にする。D1 docs は binding 経由アクセス、prepared statement の `bind()`、`run()` を提供している [R13][R14]。
 
 ```sql
-create table users (
-  id text primary key,
-  display_name text not null,
-  created_at text not null
-);
-
 create table scenarios (
   id text not null,
   version integer not null,
@@ -680,7 +671,6 @@ create table scenarios (
 
 create table play_sessions (
   id text primary key,
-  user_id text not null,
   scenario_id text not null,
   scenario_version integer not null,
   sandbox_id text not null,
@@ -695,7 +685,6 @@ create table play_sessions (
 
 create table replays (
   id text primary key,
-  user_id text not null,
   session_id text not null,
   scenario_id text not null,
   difficulty text not null,
@@ -706,7 +695,6 @@ create table replays (
   video_object_key text,
   event_log_object_key text,
   thumbnail_object_key text,
-  visibility text not null default 'private',
   browser_info_json text,
   recording_status text not null,
   mime_type text,
@@ -931,26 +919,9 @@ Sandbox SDK は separate VM による filesystem/process/network/resource isolat
 - 1 play session = 1 sandbox。
 - sandbox に本物の secret を入れない。
 - sandbox から外部 API に出す通信は原則禁止。必要な場合は Worker proxy 経由。
-- preview URL を使う場合は session ownership を確認する。
 - session 終了時に sandbox を destroy / cleanup する。
 
-### 13.2 Auth / authorization
-
-全 API で user を認証し、`session.user_id === currentUser.id` を確認する。replay は visibility に応じて認可する。
-
-Visibility:
-
-```txt
-private          owner only
-self            owner only; private と同等だが UI 表示用
-unlisted         signed/public id URL を知る人
-team            same team
-public          anyone
-```
-
-初期値は `private`。
-
-### 13.3 Command injection
+### 13.2 Command injection
 
 terminal の raw input は sandbox shell に流す。これは sandbox 内で完結する前提。ただし backend が user input を使って `sandbox.exec()` を組み立てる場合は別問題。
 
@@ -973,11 +944,11 @@ const command = allowedCommands[commandId];
 await sandbox.exec(command.render(validatedParams));
 ```
 
-### 13.4 Replay privacy
+### 13.3 Replay privacy
 
-録画には terminal input、Slack 風 UI、ユーザー名が映る可能性がある。公開前に必ず preview と warning を出す。event log も公開範囲の対象にする。
+録画には terminal input、Slack 風 UI、表示名が映る可能性がある。共有前に preview と warning を出す。
 
-公開 replay で隠す候補:
+共有 replay で隠す候補:
 
 - user display name
 - player_note
@@ -986,7 +957,7 @@ await sandbox.exec(command.render(validatedParams));
 
 MVP では sandbox に PII/secret を入れず、ユーザー自由入力を最小化する。
 
-### 13.5 R2 object access
+### 13.4 R2 object access
 
 R2 object key は user input から直接作らない。`replayId` は ULID/UUID、`seq` は integer validation。
 
@@ -997,9 +968,9 @@ replays/{replayId}/events/{seq}.jsonl
 replays/{replayId}/thumbnail.webp
 ```
 
-public replay でも R2 bucket を無条件 public にせず、Worker 経由で ACL を確認して返す。public bucket を使う場合は object key を推測困難にする。
+R2 bucket は無条件 public にせず、Worker 経由で object を返す。object key は推測困難にする。
 
-### 13.6 SQL injection
+### 13.5 SQL injection
 
 D1 query は prepared statement + bind を使う。D1 docs は `prepare(...).bind(...)` を推奨し、SQL injection 対策になると説明している [R14]。
 
@@ -1069,7 +1040,6 @@ Sandbox が落ちた場合:
 - success condition evaluation
 - event log schema
 - un language lexer/parser/evaluator
-- replay visibility authorization
 - R2 key generation
 - MIME type selection
 
@@ -1078,7 +1048,6 @@ Sandbox が落ちた場合:
 - Hono route + D1/R2 binding
 - Session DO lifecycle
 - Sandbox command wrapper with fake sandbox
-- terminal WebSocket auth
 - recording upload API idempotency
 - replay metadata creation
 
@@ -1156,11 +1125,8 @@ Playwright で確認:
    - JSONL timeline
    - command/alert/runbook list
    - seek sync
-   - visibility UI
 
 9. Security hardening
-   - auth/ownership
-   - replay ACL
    - command allowlist for backend exec
    - R2 key validation
 
@@ -1181,7 +1147,7 @@ Playwright で確認:
 | KV stale read | live session state が古い | KV を static cache に限定 |
 | Sandbox cost/cold start | セッション開始が遅い | briefing 中に warm up、MVP は session 数制限 |
 | Worker subrequest limit | metrics polling/command 多発で失敗 | DO で集約、polling 間隔制限、Sandbox 内 exporter |
-| replay 公開で入力内容露出 | privacy issue | default private、preview、warning、redaction flag |
+| replay 共有で入力内容露出 | privacy issue | preview、warning、redaction flag |
 | full-screen terminal app の mirror 不完全 | replay 表示ずれ | MVP は必要操作を line-oriented command に寄せる |
 
 ## 19. 将来拡張
@@ -1211,7 +1177,6 @@ Do:
 - recording chunk と R2 multipart part を分けて考える。
 - live session state は Durable Object に置く。
 - D1 は prepared statement を使う。
-- replay visibility は API で必ず確認する。
 - sandbox には本物の secret を入れない。
 
 Don't:

@@ -358,6 +358,31 @@ canvas {
   cursor: pointer;
 }
 
+.scenario-card-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.tutorial-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #14532d;
+  color: #86efac;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.result-thumbnail {
+  display: block;
+  width: min(100%, 480px);
+  border-radius: 8px;
+  border: 1px solid #334155;
+  margin: 12px 0;
+}
+
 .consent-row {
   display: flex;
   gap: 10px;

@@ -3,3 +3,5 @@ export * from "./schema.js";
 export * from "./events.js";
 export * from "./r2Keys.js";
 export * from "./recording.js";
+export * from "./gameClock.js";
+export * from "./endings.js";

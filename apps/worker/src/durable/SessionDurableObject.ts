@@ -1,6 +1,8 @@
 import {
   createReplayEvent,
   replayEventSummary,
+  resolveEndingId,
+  type AlertDefinition,
   type ApiResult,
   type ReplayEvent,
   type ScenarioDefinition,
@@ -10,6 +12,7 @@ import {
 import { getScenario } from "@incident/scenarios";
 import type { Bindings } from "../types.js";
 import {
+  destroySessionSandbox,
   evaluateSuccessCondition,
   fetchSessionMetrics,
   fetchSessionLogs,
@@ -23,27 +26,38 @@ import {
 type StoredSession = {
   sessionId: string;
   replayId: string;
-  userId: string;
   scenarioId: string;
   status: SessionStatus;
   startedAt?: string;
   finishedAt?: string;
-  gameStartedAtMs?: number;
+  gameTimeMs: number;
+  gameSpeed: number;
+  gameClockWallMs?: number;
   triggeredIds: string[];
+  firedAlertIds: string[];
+  firedSlackIds: string[];
   eventSeq: number;
   bufferedEvents: ReplayEvent[];
 };
 
-type SessionBootstrap = Pick<StoredSession, "sessionId" | "replayId" | "userId" | "scenarioId">;
+type SessionBootstrap = Pick<StoredSession, "sessionId" | "replayId" | "scenarioId">;
 
 type SuccessCheck = {
   condition: ScenarioDefinition["successConditions"][number];
   ok: boolean;
 };
 
+type PendingTimer = {
+  kind: "trigger" | "alert" | "slack";
+  id: string;
+  handle: ReturnType<typeof setTimeout>;
+};
+
 export class SessionDurableObject implements DurableObject {
   private metricsCache?: MetricsSnapshot;
   private metricsCachedAt = 0;
+  private pendingTimers: PendingTimer[] = [];
+  private sseClients: Set<ReadableStreamDefaultController<Uint8Array>> = new Set();
   private static readonly METRICS_TTL_MS = 3000;
 
   constructor(private state: DurableObjectState, private env: Bindings) {}
@@ -58,7 +72,11 @@ export class SessionDurableObject implements DurableObject {
       if (request.method === "POST" && action === "start") return this.start(request);
       if (request.method === "POST" && action === "resolve") return this.resolve();
       if (request.method === "POST" && action === "retire") return this.retire();
-      if (request.method === "GET" && action === "events") return this.events();
+      if (request.method === "DELETE" && action === "delete") return this.deleteSession();
+      if (request.method === "POST" && action === "clock") return this.updateClock(request);
+      if (request.method === "POST" && action === "terminal-resize") return this.terminalResize(request);
+      if (request.method === "GET" && action === "events") return this.events(request);
+      if (request.method === "GET" && action === "clock") return jsonOk(this.clockPayload(await this.requireSession()));
       if (request.method === "GET" && action === "metrics") return this.metrics();
       if (request.method === "GET" && action === "logs") return this.logs(request);
       if (request.method === "GET" && action === "storage") return this.storage();
@@ -89,12 +107,14 @@ export class SessionDurableObject implements DurableObject {
     }
 
     const scenario = requireScenario(session.scenarioId);
-    const started = Date.now();
+    const started = new Date().toISOString();
     let running: StoredSession = {
       ...session,
       status: "running",
-      startedAt: new Date(started).toISOString(),
-      gameStartedAtMs: started
+      startedAt: started,
+      gameTimeMs: 0,
+      gameSpeed: session.gameSpeed || 1,
+      gameClockWallMs: Date.now()
     };
     await this.state.storage.put("session", running);
     await this.persistSession(running);
@@ -104,15 +124,8 @@ export class SessionDurableObject implements DurableObject {
     try {
       startup = await startScenarioSandbox(this.env, running.sessionId, scenario);
     } catch (error) {
-      const failed: StoredSession = {
-        ...running,
-        status: "failed",
-        finishedAt: new Date().toISOString()
-      };
-      await this.state.storage.put("session", failed);
-      await this.persistSession(failed, "failed");
-      await this.persistReplayResult(failed, "failed");
-      await this.emit(failed, "sandbox_error", this.elapsedMs(failed), "sandbox", {
+      const failed = await this.finishSession(running, "failed", "failed");
+      await this.emit(failed, "sandbox_error", this.getGameTimeMs(failed), "sandbox", {
         message: messageFrom(error)
       });
       throw new HttpError(502, "sandbox_start_failed", messageFrom(error));
@@ -122,7 +135,7 @@ export class SessionDurableObject implements DurableObject {
       scenarioId: scenario.id,
       startup
     });
-    await this.scheduleTriggers(running, scenario);
+    this.scheduleScenarioTimeline(running, scenario);
     return jsonOk({ session: await this.snapshotFor(running), startup });
   }
 
@@ -136,63 +149,99 @@ export class SessionDurableObject implements DurableObject {
       }))
     );
     const resolved = checks.every((check) => check.ok);
-    let finished: StoredSession = {
-      ...session,
-      status: resolved ? "resolved" : "failed",
-      finishedAt: new Date().toISOString()
-    };
-    await this.state.storage.put("session", finished);
-    await this.persistSession(finished, resolved ? "resolved" : "failed");
-    await this.persistReplayResult(finished, resolved ? "resolved" : "failed");
-    this.clearMetricsCache();
-    finished = await this.emit(
+    const finished = await this.finishSession(session, resolved ? "resolved" : "failed", resolved ? "resolved" : "failed");
+    const result = await this.emit(
       finished,
       resolved ? "incident_resolved" : "session_end",
-      this.elapsedMs(finished),
+      this.getGameTimeMs(finished),
       "system",
       { checks }
     );
-    return jsonOk({ ok: resolved, checks, session: await this.snapshotFor(finished) });
+    return jsonOk({ ok: resolved, checks, session: await this.snapshotFor(result) });
   }
 
   private async retire() {
     const session = await this.requireSession();
-    let retired: StoredSession = {
-      ...session,
-      status: "retired",
-      finishedAt: new Date().toISOString()
-    };
-    await this.state.storage.put("session", retired);
-    await this.persistSession(retired, "retired");
-    await this.persistReplayResult(retired, "retired");
-    this.clearMetricsCache();
-    retired = await this.emit(retired, "session_end", this.elapsedMs(retired), "player", { result: "retired" });
-    return jsonOk({ session: await this.snapshotFor(retired) });
+    const retired = await this.finishSession(session, "retired", "retired");
+    const result = await this.emit(retired, "session_end", this.getGameTimeMs(retired), "player", { result: "retired" });
+    return jsonOk({ session: await this.snapshotFor(result) });
   }
 
-  private async events() {
+  private async deleteSession() {
     const session = await this.requireSession();
+    this.clearPendingTimers();
+    await destroySessionSandbox(this.env, session.sessionId);
+    const aborted = await this.finishSession(session, "aborted", "aborted");
+    return jsonOk({ session: await this.snapshotFor(aborted) });
+  }
+
+  private async updateClock(request: Request) {
+    const session = await this.requireSession();
+    if (session.status !== "running") {
+      throw new HttpError(409, "invalid_state", "clock updates require a running session");
+    }
+    const body = (await request.json().catch(() => ({}))) as { speed?: number };
+    const speed = typeof body.speed === "number" && body.speed > 0 && body.speed <= 4 ? body.speed : session.gameSpeed;
+    const synced: StoredSession = {
+      ...session,
+      gameTimeMs: this.getGameTimeMs(session),
+      gameSpeed: speed,
+      gameClockWallMs: Date.now()
+    };
+    await this.state.storage.put("session", synced);
+    const scenario = requireScenario(synced.scenarioId);
+    this.rescheduleScenarioTimeline(synced, scenario);
+    return jsonOk(this.clockPayload(synced));
+  }
+
+  private async events(request: Request) {
+    await this.requireSession();
     const encoder = new TextEncoder();
-    const stream = new ReadableStream({
+    const stream = new ReadableStream<Uint8Array>({
       start: async (controller) => {
-        controller.enqueue(encoder.encode(`event: snapshot\ndata: ${JSON.stringify(await this.snapshot())}\n\n`));
-        for (const event of session.bufferedEvents.slice(-20)) {
+        this.sseClients.add(controller);
+        const snapshot = await this.snapshot();
+        controller.enqueue(encoder.encode(`event: snapshot\ndata: ${JSON.stringify(snapshot)}\n\n`));
+        const session = await this.requireSession();
+        for (const event of session.bufferedEvents.slice(-50)) {
           controller.enqueue(encoder.encode(`event: replay\ndata: ${JSON.stringify(event)}\n\n`));
         }
-        controller.close();
+      },
+      cancel: () => {
+        // controller removed on close via broadcast error handling
       }
+    });
+    request.signal.addEventListener("abort", () => {
+      for (const client of this.sseClients) {
+        try { client.close(); } catch { /* ignore */ }
+      }
+      this.sseClients.clear();
     });
     return new Response(stream, {
       headers: {
         "content-type": "text/event-stream",
-        "cache-control": "no-cache"
+        "cache-control": "no-cache",
+        connection: "keep-alive"
       }
     });
   }
 
+  private terminalCols = 100;
+  private terminalRows = 30;
+
   private async terminal(request: Request) {
     const session = await this.requireSession();
-    return proxySessionTerminal(this.env, session.sessionId, request, { cols: 100, rows: 30 });
+    return proxySessionTerminal(this.env, session.sessionId, request, {
+      cols: this.terminalCols,
+      rows: this.terminalRows
+    });
+  }
+
+  private async terminalResize(request: Request) {
+    const body = (await request.json().catch(() => ({}))) as { cols?: number; rows?: number };
+    if (typeof body.cols === "number" && body.cols >= 40 && body.cols <= 200) this.terminalCols = body.cols;
+    if (typeof body.rows === "number" && body.rows >= 10 && body.rows <= 60) this.terminalRows = body.rows;
+    return jsonOk({ cols: this.terminalCols, rows: this.terminalRows });
   }
 
   private async terminalInterrupt() {
@@ -252,26 +301,52 @@ export class SessionDurableObject implements DurableObject {
   }
 
   private async snapshotFor(session: StoredSession) {
+    const scenario = requireScenario(session.scenarioId);
     return {
       ...session,
-      elapsedMs: this.elapsedMs(session),
-      scenario: requireScenario(session.scenarioId)
+      gameTimeMs: this.getGameTimeMs(session),
+      elapsedMs: this.getGameTimeMs(session),
+      alerts: this.firedAlerts(scenario, session),
+      slackMessages: this.firedSlackMessages(scenario, session),
+      scenario
     };
+  }
+
+  private clockPayload(session: StoredSession) {
+    const scenario = requireScenario(session.scenarioId);
+    return {
+      gameTimeMs: this.getGameTimeMs(session),
+      gameSpeed: session.gameSpeed,
+      timeLimitMs: scenario.timeLimitMinutes * 60 * 1000,
+      alerts: this.firedAlerts(scenario, session),
+      slackMessages: this.firedSlackMessages(scenario, session)
+    };
+  }
+
+  private firedAlerts(scenario: ScenarioDefinition, session: StoredSession): AlertDefinition[] {
+    return scenario.alerts.filter((alert) => session.firedAlertIds.includes(alert.id));
+  }
+
+  private firedSlackMessages(scenario: ScenarioDefinition, session: StoredSession) {
+    return scenario.slackMessages.filter((message) => session.firedSlackIds.includes(message.id));
   }
 
   private async loadOrCreate(input: Partial<SessionBootstrap>): Promise<StoredSession> {
     const existing = await this.state.storage.get<StoredSession>("session");
     if (existing) return existing;
-    if (!input.sessionId || !input.replayId || !input.userId || !input.scenarioId) {
+    if (!input.sessionId || !input.replayId || !input.scenarioId) {
       throw new HttpError(400, "bad_request", "missing session bootstrap fields");
     }
     return {
       sessionId: input.sessionId,
       replayId: input.replayId,
-      userId: input.userId,
       scenarioId: input.scenarioId,
       status: "briefing",
+      gameTimeMs: 0,
+      gameSpeed: 1,
       triggeredIds: [],
+      firedAlertIds: [],
+      firedSlackIds: [],
       eventSeq: 0,
       bufferedEvents: []
     };
@@ -283,32 +358,124 @@ export class SessionDurableObject implements DurableObject {
     return session;
   }
 
-  private async scheduleTriggers(session: StoredSession, scenario: ScenarioDefinition) {
+  private getGameTimeMs(session: StoredSession) {
+    if (session.status !== "running" || !session.gameClockWallMs) return session.gameTimeMs;
+    const wallDelta = Date.now() - session.gameClockWallMs;
+    return Math.max(0, Math.round(session.gameTimeMs + wallDelta * session.gameSpeed));
+  }
+
+  private clearPendingTimers() {
+    for (const timer of this.pendingTimers) clearTimeout(timer.handle);
+    this.pendingTimers = [];
+  }
+
+  private rescheduleScenarioTimeline(session: StoredSession, scenario: ScenarioDefinition) {
+    this.clearPendingTimers();
+    if (session.status !== "running") return;
+    this.scheduleScenarioTimeline(session, scenario);
+  }
+
+  private scheduleScenarioTimeline(session: StoredSession, scenario: ScenarioDefinition) {
     for (const trigger of scenario.triggers) {
       if (session.triggeredIds.includes(trigger.id)) continue;
-      const delay = Math.max(0, trigger.atMs - this.elapsedMs(session));
-      this.state.waitUntil(
-        (async () => {
-          await new Promise((resolve) => setTimeout(resolve, delay));
-          const latest = await this.requireSession();
-          if (latest.status !== "running" || latest.triggeredIds.includes(trigger.id)) return;
-          try {
-            await injectFault(this.env, latest.sessionId, trigger.type, trigger.params);
-            const triggered: StoredSession = {
-              ...latest,
-              triggeredIds: [...latest.triggeredIds, trigger.id]
-            };
-            await this.state.storage.put("session", triggered);
-            await this.emit(triggered, "scenario_event", trigger.atMs, "scenario", { trigger });
-          } catch (error) {
-            await this.emit(latest, "sandbox_error", this.elapsedMs(latest), "sandbox", {
-              triggerId: trigger.id,
-              message: messageFrom(error)
-            });
-          }
-        })()
-      );
+      this.scheduleAtGameTime(session, trigger.atMs, "trigger", trigger.id, async () => {
+        const latest = await this.requireSession();
+        if (latest.status !== "running" || latest.triggeredIds.includes(trigger.id)) return;
+        try {
+          await injectFault(this.env, latest.sessionId, trigger.type, trigger.params);
+          let triggered: StoredSession = {
+            ...latest,
+            triggeredIds: [...latest.triggeredIds, trigger.id]
+          };
+          await this.state.storage.put("session", triggered);
+          triggered = await this.emit(triggered, "scenario_event", trigger.atMs, "scenario", { trigger });
+          this.broadcastSse("snapshot", await this.snapshotFor(triggered));
+        } catch (error) {
+          await this.emit(latest, "sandbox_error", trigger.atMs, "sandbox", {
+            triggerId: trigger.id,
+            message: messageFrom(error)
+          });
+        }
+      });
     }
+
+    for (const alert of scenario.alerts) {
+      if (session.firedAlertIds.includes(alert.id)) continue;
+      this.scheduleAtGameTime(session, alert.atMs, "alert", alert.id, async () => {
+        const latest = await this.requireSession();
+        if (latest.status !== "running" || latest.firedAlertIds.includes(alert.id)) return;
+        const next: StoredSession = {
+          ...latest,
+          firedAlertIds: [...latest.firedAlertIds, alert.id]
+        };
+        await this.state.storage.put("session", next);
+        const updated = await this.emit(next, "alert", alert.atMs, "scenario", {
+          alertId: alert.id,
+          message: alert.message,
+          severity: alert.severity
+        });
+        this.broadcastSse("replay", updated.bufferedEvents.at(-1));
+        this.broadcastSse("snapshot", await this.snapshotFor(updated));
+      });
+    }
+
+    for (const message of scenario.slackMessages) {
+      if (session.firedSlackIds.includes(message.id)) continue;
+      this.scheduleAtGameTime(session, message.atMs, "slack", message.id, async () => {
+        const latest = await this.requireSession();
+        if (latest.status !== "running" || latest.firedSlackIds.includes(message.id)) return;
+        const next: StoredSession = {
+          ...latest,
+          firedSlackIds: [...latest.firedSlackIds, message.id]
+        };
+        await this.state.storage.put("session", next);
+        this.broadcastSse("snapshot", await this.snapshotFor(next));
+      });
+    }
+  }
+
+  private scheduleAtGameTime(
+    session: StoredSession,
+    atMs: number,
+    kind: PendingTimer["kind"],
+    id: string,
+    run: () => Promise<void>
+  ) {
+    const delay = Math.max(0, (atMs - this.getGameTimeMs(session)) / Math.max(session.gameSpeed, 0.1));
+    const handle = setTimeout(() => {
+      this.pendingTimers = this.pendingTimers.filter((timer) => timer.handle !== handle);
+      void run();
+    }, delay);
+    this.pendingTimers.push({ kind, id, handle });
+  }
+
+  private broadcastSse(event: string, data: unknown) {
+    const encoder = new TextEncoder();
+    const chunk = encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    for (const client of this.sseClients) {
+      try {
+        client.enqueue(chunk);
+      } catch {
+        this.sseClients.delete(client);
+      }
+    }
+  }
+
+  private async finishSession(session: StoredSession, status: SessionStatus, result: string) {
+    this.clearPendingTimers();
+    this.clearMetricsCache();
+    const finished: StoredSession = {
+      ...session,
+      status,
+      gameTimeMs: this.getGameTimeMs(session),
+      finishedAt: new Date().toISOString()
+    };
+    delete finished.gameClockWallMs;
+    await this.state.storage.put("session", finished);
+    await this.persistSession(finished, result);
+    await this.persistReplayResult(finished, result);
+    await destroySessionSandbox(this.env, session.sessionId);
+    return finished;
   }
 
   private async emit(
@@ -326,6 +493,7 @@ export class SessionDurableObject implements DurableObject {
     };
     await this.state.storage.put("session", next);
     await this.persistReplayEvent(event);
+    this.broadcastSse("replay", event);
     return next;
   }
 
@@ -333,16 +501,15 @@ export class SessionDurableObject implements DurableObject {
     await this.env.DB.prepare(
       `update play_sessions
        set status = ?, started_at = ?, finished_at = ?, result = ?, duration_ms = ?
-       where id = ? and user_id = ?`
+       where id = ?`
     )
       .bind(
         session.status,
         session.startedAt ?? null,
         session.finishedAt ?? null,
         result ?? null,
-        session.finishedAt ? this.elapsedMs(session) : null,
-        session.sessionId,
-        session.userId
+        session.finishedAt ? this.getGameTimeMs(session) : null,
+        session.sessionId
       )
       .run();
   }
@@ -350,11 +517,9 @@ export class SessionDurableObject implements DurableObject {
   private async persistReplayStart(session: StoredSession) {
     const now = new Date().toISOString();
     await this.env.DB.prepare(
-      `update replays
-       set started_at = ?, recording_status = ?, updated_at = ?
-       where id = ? and user_id = ?`
+      `update replays set started_at = ?, recording_status = ?, updated_at = ? where id = ?`
     )
-      .bind(session.startedAt ?? now, "recording", now, session.replayId, session.userId)
+      .bind(session.startedAt ?? now, "recording", now, session.replayId)
       .run();
   }
 
@@ -362,10 +527,17 @@ export class SessionDurableObject implements DurableObject {
     const finishedAt = session.finishedAt ?? new Date().toISOString();
     await this.env.DB.prepare(
       `update replays
-       set finished_at = coalesce(finished_at, ?), result = ?, duration_ms = ?, updated_at = ?
-       where id = ? and user_id = ?`
+       set finished_at = coalesce(finished_at, ?), result = ?, ending_id = ?, duration_ms = ?, updated_at = ?
+       where id = ?`
     )
-      .bind(finishedAt, result, this.elapsedMs(session), new Date().toISOString(), session.replayId, session.userId)
+      .bind(
+        finishedAt,
+        result,
+        resolveEndingId(result),
+        this.getGameTimeMs(session),
+        new Date().toISOString(),
+        session.replayId
+      )
       .run();
   }
 
@@ -377,11 +549,6 @@ export class SessionDurableObject implements DurableObject {
     )
       .bind(event.replayId, event.id, event.type, event.at, replayEventSummary(event), event.visibility)
       .run();
-  }
-
-  private elapsedMs(session: StoredSession) {
-    if (!session.gameStartedAtMs) return 0;
-    return Math.max(0, Date.now() - session.gameStartedAtMs);
   }
 }
 

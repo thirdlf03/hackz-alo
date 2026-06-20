@@ -6,6 +6,7 @@ import {
   applyLiveMetrics,
   activateSlackCompose,
   createInitialGameState,
+  decayWorldOverlays,
   deactivateSlackCompose,
   dismissNavigationStep,
   setActiveRunbook,
@@ -30,9 +31,11 @@ import { TerminalSession } from "../game/terminal/session.js";
 import { terminalDebug } from "../game/terminal/debug.js";
 import { keyboardEventToTerminalInput } from "../game/terminal/input.js";
 import { CanvasRecorder } from "../game/recording/recorder.js";
+import { playAlertBeep } from "../game/recording/audio.js";
 import { RecordingFinalizer } from "../game/recording/finalizer.js";
 import { installOfflineFlush, OfflineUploadQueue } from "../game/recording/offlineQueue.js";
-import { classifyCommandEvent, ReplayEventEmitter } from "../game/events/emitReplayEvent.js";
+import { classifyCommandEvent, commandEventPayload, ReplayEventEmitter } from "../game/events/emitReplayEvent.js";
+import { detectMetricThresholdCrossings } from "../game/events/monitorEvents.js";
 import { collectStateTransitions } from "../game/events/sessionEvents.js";
 import { ApiClient } from "../api/client.js";
 import { ReplayPage } from "../pages/ReplayPage.js";
@@ -45,6 +48,8 @@ type FinishMode = "resolve" | "retire" | "timeout";
 
 const CONSENT_KEY = "incident-recording-consent";
 const SAVE_RECORDING_KEY = "incident-recording-save";
+const TUTORIAL_SCENARIO_ID = "process-stop-001";
+const DANGEROUS_COMMAND = /\brm\s+-rf\b/i;
 const difficultyOptions: Array<{ difficulty: Difficulty; label: string; tone: string; summary: string }> = [
   { difficulty: "beginner", label: "初級", tone: "green", summary: "監視とログを順番に追う短い初動訓練" },
   { difficulty: "intermediate", label: "中級", tone: "amber", summary: "原因候補を絞り込みながら復旧まで進める訓練" },
@@ -54,7 +59,8 @@ const speedOptions = [0.5, 1, 1.5, 2] as const;
 
 const api = new ApiClient();
 const offlineQueue = new OfflineUploadQueue(api);
-installOfflineFlush(offlineQueue);
+const recordingFlushRef: { stop?: () => void } = {};
+installOfflineFlush(offlineQueue, () => recordingFlushRef.stop?.());
 
 export function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -99,10 +105,14 @@ export function App() {
   };
 
   useEffect(() => {
+    recordingFlushRef.stop = () => {
+      void recorderRef.current?.stop().catch(console.error);
+    };
     api.listScenarios().then(setScenarios).catch((error) => setAppError(toErrorMessage(error)));
     eventEmitterRef.current = new ReplayEventEmitter(api, (at, label) => {
       setTimeline((items) => [...items, { at, label }]);
     });
+    return () => { delete recordingFlushRef.stop; };
   }, []);
 
   useEffect(() => { sessionRef.current = session; }, [session]);
@@ -112,7 +122,11 @@ export function App() {
   useEffect(() => {
     gameSpeedRef.current = gameSpeed;
     patchGameStateRef((current) => ({ ...current, clock: { ...current.clock, speed: gameSpeed } }));
-  }, [gameSpeed]);
+    const activeSession = sessionRef.current;
+    if (screen === "play" && activeSession) {
+      void api.updateSessionClock(activeSession.sessionId, gameSpeed).catch(console.error);
+    }
+  }, [gameSpeed, screen]);
 
   useEffect(() => () => { terminalRef.current?.destroy(); }, []);
 
@@ -169,31 +183,61 @@ export function App() {
   }, [screen, session?.replayId, hasRecordingConsent, saveRecording]);
 
   useEffect(() => {
-    if (screen !== "play" || !scenario) return;
-    if (lastTickAtRef.current === 0) lastTickAtRef.current = performance.now();
-    const tick = () => {
-      const activeScenario = scenarioRef.current;
-      if (!activeScenario || finishingRef.current) return;
-      const now = performance.now();
-      const deltaMs = now - lastTickAtRef.current;
-      lastTickAtRef.current = now;
-      elapsedMsRef.current += deltaMs * gameSpeedRef.current;
-      const previous = gameStateRef.current;
-      if (previous) {
-        const next = advanceGameState(previous, elapsedMsRef.current, activeScenario, gameSpeedRef.current, deltaMs);
+    if (screen !== "play" || !session) return;
+    let cancelled = false;
+    const syncClock = async () => {
+      if (cancelled || finishingRef.current) return;
+      try {
+        const clock = await api.getSessionClock(session.sessionId);
+        if (cancelled) return;
+        elapsedMsRef.current = clock.gameTimeMs;
+        const previous = gameStateRef.current;
+        if (!previous) return;
+        const delta = Math.max(0, clock.gameTimeMs - previous.clock.elapsedMs);
+        const next = advanceGameState(
+          previous,
+          clock.gameTimeMs,
+          scenarioRef.current,
+          clock.gameSpeed,
+          delta,
+          clock.alerts,
+          clock.slackMessages
+        );
+        const prevAlertCount = previous.monitors.left.alerts.length;
+        if (next.monitors.left.alerts.length > prevAlertCount) {
+          for (const alert of next.monitors.left.alerts.slice(prevAlertCount)) {
+            playAlertBeep(alert.severity);
+          }
+        }
         const replayId = sessionRef.current?.replayId;
         if (replayId && eventEmitterRef.current) {
-          collectStateTransitions(previous, next, activeScenario, Math.round(elapsedMsRef.current), eventEmitterRef.current, replayId);
+          collectStateTransitions(previous, next, scenarioRef.current, Math.round(clock.gameTimeMs), eventEmitterRef.current, replayId);
         }
         gameStateRef.current = next;
         setGameState(next);
-        if (elapsedMsRef.current >= next.clock.timeLimitMs) void endSession("timeout");
+        if (clock.gameTimeMs >= clock.timeLimitMs) void endSession("timeout");
+      } catch (error) {
+        console.error(error);
       }
     };
-    tick();
-    const timer = window.setInterval(tick, 500);
-    return () => window.clearInterval(timer);
-  }, [screen, scenario?.id]);
+    void syncClock();
+    const timer = window.setInterval(syncClock, 500);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, [screen, session?.sessionId]);
+
+  useEffect(() => {
+    if (screen !== "play") return;
+    let last = performance.now();
+    let frame = 0;
+    const tick = (now: number) => {
+      const delta = now - last;
+      last = now;
+      patchGameStateRef((current) => decayWorldOverlays(current, delta));
+      frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [screen]);
 
   useEffect(() => {
     if (screen !== "play" || !session) return;
@@ -204,7 +248,21 @@ export function App() {
       try {
         const metrics = await api.getSessionMetrics(session.sessionId);
         if (cancelled) return;
+        const previous = gameStateRef.current?.monitors.left.metrics;
         patchGameStateRef((current) => applyLiveMetrics(current, metrics));
+        const replayId = sessionRef.current?.replayId;
+        const emitter = eventEmitterRef.current;
+        if (replayId && emitter && previous) {
+          for (const crossing of detectMetricThresholdCrossings(previous, metrics)) {
+            void emitter.emitOnce(`metric:${crossing.key}`, {
+              replayId,
+              type: "monitor_update",
+              at: Math.round(elapsedMsRef.current),
+              actor: "system",
+              payload: { metric: crossing.key, label: crossing.label, value: metrics[crossing.key] }
+            });
+          }
+        }
       } catch {
         if (!cancelled) patchGameStateRef((current) => ({ ...current, monitors: { ...current.monitors, left: { ...current.monitors.left, metricsSource: "offline" } } }));
       }
@@ -285,15 +343,33 @@ export function App() {
     const terminal = new TerminalSession({
       sessionId: activeSession.sessionId,
       onSnapshot: (snapshot) => patchGameStateRef((current) => ({ ...current, monitors: { ...current.monitors, center: { ...current.monitors.center, terminal: snapshot } } })),
+      onOutput: (summary) => {
+        const replayId = sessionRef.current?.replayId;
+        const emitter = eventEmitterRef.current;
+        if (!replayId || !emitter || !summary.trim()) return;
+        void emitter.emit({
+          replayId,
+          type: "terminal_output",
+          at: Math.round(elapsedMsRef.current),
+          actor: "sandbox",
+          payload: { data: summary }
+        });
+      },
       onCommand: (command) => {
         const replayId = sessionRef.current?.replayId;
         const emitter = eventEmitterRef.current;
         if (!replayId || !emitter) return;
         const at = Math.round(elapsedMsRef.current);
+        if (DANGEROUS_COMMAND.test(command) && scenarioRef.current?.difficulty === "beginner") {
+          patchGameStateRef((current) => ({
+            ...current,
+            warning: { message: "危険: rm -rf は本番では慎重に。Runbook を確認してください。", flashMs: 4000 }
+          }));
+        }
         void emitter.emit({ replayId, type: "terminal_input", at, payload: { data: `${command}\n` }, visibility: "sensitive" });
         void emitter.emit({ replayId, type: "command_detected", at, payload: { command } });
         const special = classifyCommandEvent(command);
-        if (special) void emitter.emit({ replayId, type: special, at, payload: { command } });
+        if (special) void emitter.emit({ replayId, type: special, at, payload: commandEventPayload(command, special) });
       }
     });
     terminalRef.current = terminal;
@@ -356,13 +432,24 @@ export function App() {
         const blob = await new Promise<Blob | null>((resolve) => canvasRef.current!.toBlob(resolve, "image/webp", 0.85));
         if (blob) await api.uploadThumbnail(session.replayId, blob).catch(console.error);
       }
-      if (!finalized) await api.warmReplayVideo(session.replayId).catch(() => undefined);
-      await api.finishReplay(session.replayId).catch(console.error);
+      if (!finalized) {
+        const headOk = await fetch(`/api/replays/${encodeURIComponent(session.replayId)}/video`, { method: "HEAD" })
+          .then((response) => response.ok)
+          .catch(() => false);
+        if (!headOk) await api.assemblePartialReplayVideo(session.replayId).catch(() => undefined);
+      }
+      await api.finishReplay(session.replayId, {
+        userAgent: navigator.userAgent,
+        mimeType: recorderRef.current ? "video/webm" : undefined
+      }).catch(console.error);
     } else {
       recorderRef.current = null;
       finalizerRef.current = null;
       await offlineQueue.flush();
-      await api.finishReplay(session.replayId).catch(console.error);
+      await api.finishReplay(session.replayId, {
+        userAgent: navigator.userAgent,
+        mimeType: recorderRef.current ? "video/webm" : undefined
+      }).catch(console.error);
     }
     let resolved = false;
     if (mode === "resolve") {
@@ -412,6 +499,9 @@ export function App() {
         }
       }
       if (containsPoint(notificationBellRegion, point.x, point.y)) {
+        const unread = gameStateRef.current?.monitors.left.alerts.filter(
+          (alert) => !gameStateRef.current?.notifications.readAlertIds.includes(alert.id)
+        ) ?? [];
         patchGameStateRef((current) => toggleNotificationPanel(current));
         void emitter.emit({
           replayId,
@@ -419,6 +509,14 @@ export function App() {
           at: Math.round(elapsedMsRef.current),
           payload: { panel: "notifications" }
         });
+        for (const alert of unread) {
+          void emitter.emitOnce(`slack-read:${alert.id}`, {
+            replayId,
+            type: "slack_message_read",
+            at: Math.round(elapsedMsRef.current),
+            payload: { alertId: alert.id, message: alert.message }
+          });
+        }
         return;
       }
       if (containsPoint(devtoolsToggleRegion, point.x, point.y)) {
@@ -539,7 +637,10 @@ export function App() {
           <div class="scenario-list">
             {filteredScenarios.map((item) => (
               <button key={item.id} type="button" class="scenario-card" disabled={isStarting} onClick={() => createSessionForScenario(item.id)}>
-                <strong>{item.title}</strong>
+                <span class="scenario-card-main">
+                  <strong>{item.title}</strong>
+                  {item.id === TUTORIAL_SCENARIO_ID && <span class="tutorial-badge">チュートリアル</span>}
+                </span>
                 <span>{item.timeLimitMinutes}分</span>
               </button>
             ))}

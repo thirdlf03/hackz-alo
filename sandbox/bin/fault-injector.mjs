@@ -4,7 +4,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const DEFAULT_WORKSPACE = process.env.WORKSPACE_DIR ?? "/workspace";
-const USAGE = "usage: fault-injector.mjs process_stop|process_restore|disk_full|queue_backlog|unlang_batch_failure";
+const USAGE =
+  "usage: fault-injector.mjs process_stop|process_restore|disk_full|queue_backlog|unlang_batch_failure|janitor_power_pull|cable_jumprope|keyboard_spill|alert_spam|runbook_gaslight";
 
 export async function injectFault(fault, args = [], options = {}) {
   const workspace = options.workspace ?? DEFAULT_WORKSPACE;
@@ -103,6 +104,71 @@ export async function injectFault(fault, args = [], options = {}) {
     await injectFault("process_stop", [processId], { workspace });
     await appendFile(path.join(workspace, "logs", "app.log"), "composite restart loop injected\n");
     return "composite_restart_loop injected";
+  }
+
+  if (fault === "janitor_power_pull") {
+    const processId = args[0] ?? "api";
+    if (processId !== "api") throw new Error(`unsupported process ${processId}`);
+    const pulledAt = new Date().toISOString();
+    await writeFile(path.join(workspace, "run", "api.down"), pulledAt);
+    await writeFile(
+      path.join(workspace, "run", "janitor.power.pulled"),
+      JSON.stringify({ pulledAt, culprit: "janitor", redundantSystems: false })
+    );
+    await appendFile(path.join(workspace, "logs", "app.log"), "janitor unplugged api power during cleaning\n");
+    return "janitor_power_pull injected";
+  }
+
+  if (fault === "cable_jumprope") {
+    const hostsPath = normalizeWorkspacePath(args[0] ?? path.join(workspace, "run", "hosts.override"), workspace);
+    const disconnectedAt = new Date().toISOString();
+    await writeFile(hostsPath, "127.0.0.1 localhost-broken\n");
+    await writeFile(
+      path.join(workspace, "run", "network.jumprope"),
+      JSON.stringify({ sport: "jumprope", cable: "eth0", disconnectedAt })
+    );
+    await writeFile(path.join(workspace, "run", "api.down"), `cable jumprope ${disconnectedAt}`);
+    await appendFile(path.join(workspace, "logs", "app.log"), "LAN cable unplugged for jumprope session\n");
+    return "cable_jumprope injected";
+  }
+
+  if (fault === "keyboard_spill") {
+    const noise = args[0] ?? "べちゃっxべちゃっ";
+    const spilledAt = new Date().toISOString();
+    await writeFile(
+      path.join(workspace, "run", "keyboard.spill"),
+      JSON.stringify({ beverage: "fridge sake", noise, spilledAt })
+    );
+    await writeFile(path.join(workspace, "run", "terminal.noise"), noise.repeat(3));
+    await appendFile(path.join(workspace, "logs", "app.log"), "keyboard spill detected on operator terminal\n");
+    return "keyboard_spill injected";
+  }
+
+  if (fault === "alert_spam") {
+    const count = parseByteCount(args[0] ?? 24);
+    const alerts = Array.from({ length: count }, (_, index) => ({
+      id: `spam-${Date.now()}-${index}`,
+      severity: index % 3 === 0 ? "critical" : "warning",
+      message: index % 2 === 0 ? "CPU fan is dancing" : "Red Bull level below wing threshold"
+    }));
+    await writeFile(
+      path.join(workspace, "run", "alert.spam.json"),
+      JSON.stringify({ count, alerts, injectedAt: new Date().toISOString() })
+    );
+    for (const alert of alerts.slice(0, 5)) {
+      await appendFile(path.join(workspace, "logs", "app.log"), `noise alert: ${alert.message}\n`);
+    }
+    return `alert_spam injected (${count})`;
+  }
+
+  if (fault === "runbook_gaslight") {
+    const replacement = args[0] ?? "気合いで直す。根性。深呼吸。";
+    await writeFile(
+      path.join(workspace, "run", "runbook.gaslight.json"),
+      JSON.stringify({ replacement, gaslitAt: new Date().toISOString(), originalIntegrity: "compromised" })
+    );
+    await appendFile(path.join(workspace, "logs", "app.log"), "runbook content replaced with unhelpful advice\n");
+    return "runbook_gaslight injected";
   }
 
   throw usageError();

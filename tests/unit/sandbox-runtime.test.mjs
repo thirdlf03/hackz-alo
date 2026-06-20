@@ -31,6 +31,32 @@ test("unlang evaluates valid programs and reports structured runtime errors", ()
   );
 });
 
+test("fault injector writes silly phase-2 markers", async (t) => {
+  const workspace = await tempWorkspace();
+  t.after(() => rm(workspace, { recursive: true, force: true }));
+
+  assert.match(await injectFault("janitor_power_pull", [], { workspace }), /janitor_power_pull injected/);
+  assert.match(await readFile(path.join(workspace, "run", "janitor.power.pulled"), "utf8"), /"culprit":"janitor"/);
+  assert.match(await readFile(path.join(workspace, "run", "api.down"), "utf8"), /^\d{4}-\d{2}-\d{2}T/);
+
+  assert.match(await injectFault("cable_jumprope", [], { workspace }), /cable_jumprope injected/);
+  assert.match(await readFile(path.join(workspace, "run", "network.jumprope"), "utf8"), /"sport":"jumprope"/);
+  assert.match(await readFile(path.join(workspace, "run", "hosts.override"), "utf8"), /localhost-broken/);
+
+  assert.match(await injectFault("keyboard_spill", ["sticky-keys"], { workspace }), /keyboard_spill injected/);
+  assert.match(await readFile(path.join(workspace, "run", "keyboard.spill"), "utf8"), /sticky-keys/);
+  assert.equal(await readFile(path.join(workspace, "run", "terminal.noise"), "utf8"), "sticky-keys".repeat(3));
+
+  assert.match(await injectFault("alert_spam", ["6"], { workspace }), /alert_spam injected \(6\)/);
+  const spam = JSON.parse(await readFile(path.join(workspace, "run", "alert.spam.json"), "utf8"));
+  assert.equal(spam.count, 6);
+  assert.equal(spam.alerts.length, 6);
+
+  assert.match(await injectFault("runbook_gaslight", ["気合い"], { workspace }), /runbook_gaslight injected/);
+  const gaslight = JSON.parse(await readFile(path.join(workspace, "run", "runbook.gaslight.json"), "utf8"));
+  assert.equal(gaslight.replacement, "気合い");
+});
+
 test("fault injector keeps targets inside the workspace and writes exact byte counts", async (t) => {
   const workspace = await tempWorkspace();
   t.after(() => rm(workspace, { recursive: true, force: true }));

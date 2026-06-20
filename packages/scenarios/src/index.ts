@@ -9,6 +9,12 @@ import logBloat from "../data/log-bloat-001.json" with { type: "json" };
 import diskRestartLoop from "../data/disk-restart-loop-001.json" with { type: "json" };
 import monitorBlind from "../data/monitor-blind-001.json" with { type: "json" };
 import unlangMystery from "../data/unlang-mystery-001.json" with { type: "json" };
+import janitorPower from "../data/janitor-power-001.json" with { type: "json" };
+import cableJumprope from "../data/cable-jumprope-001.json" with { type: "json" };
+import keyboardSpill from "../data/keyboard-spill-001.json" with { type: "json" };
+import alertSpam from "../data/alert-spam-001.json" with { type: "json" };
+import runbookGaslight from "../data/runbook-gaslight-001.json" with { type: "json" };
+import chaoticNight from "../data/chaotic-night-001.json" with { type: "json" };
 
 export const scenarios = [
   processStop,
@@ -19,7 +25,13 @@ export const scenarios = [
   logBloat,
   diskRestartLoop,
   monitorBlind,
-  unlangMystery
+  unlangMystery,
+  janitorPower,
+  cableJumprope,
+  keyboardSpill,
+  alertSpam,
+  runbookGaslight,
+  chaoticNight
 ] as ScenarioDefinition[];
 
 export function listScenarios() {

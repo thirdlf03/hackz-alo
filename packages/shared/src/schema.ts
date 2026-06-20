@@ -15,7 +15,12 @@ const triggerTypes = new Set([
   "memory_leak",
   "dns_misconfig",
   "monitor_blind",
-  "composite_restart_loop"
+  "composite_restart_loop",
+  "janitor_power_pull",
+  "cable_jumprope",
+  "keyboard_spill",
+  "alert_spam",
+  "runbook_gaslight"
 ]);
 const navigationPanels = new Set(["metrics", "terminal", "runbook", "slack", "devtools"]);
 const alertSeverities = new Set(["info", "warning", "critical"]);
@@ -349,6 +354,26 @@ function validateTriggerParams(trigger: Record<string, unknown>, path: string, e
     requireAbsolutePath(trigger.params, "diskPath", errors, `${path}.params`);
     requirePositiveInteger(trigger.params, "bytes", errors, `${path}.params`);
     requireString(trigger.params, "processId", errors, `${path}.params`);
+  } else if (trigger.type === "janitor_power_pull") {
+    if (trigger.params.processId !== undefined) {
+      requireString(trigger.params, "processId", errors, `${path}.params`);
+    }
+  } else if (trigger.type === "cable_jumprope") {
+    if (trigger.params.hostsPath !== undefined) {
+      requireAbsolutePath(trigger.params, "hostsPath", errors, `${path}.params`);
+    }
+  } else if (trigger.type === "keyboard_spill") {
+    if (trigger.params.noise !== undefined) {
+      requireString(trigger.params, "noise", errors, `${path}.params`);
+    }
+  } else if (trigger.type === "alert_spam") {
+    if (trigger.params.count !== undefined) {
+      requirePositiveInteger(trigger.params, "count", errors, `${path}.params`);
+    }
+  } else if (trigger.type === "runbook_gaslight") {
+    if (trigger.params.replacement !== undefined) {
+      requireString(trigger.params, "replacement", errors, `${path}.params`);
+    }
   }
 }
 

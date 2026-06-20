@@ -1,0 +1,79 @@
+id: chaotic-night-001
+version: 1
+title: 混沌の深夜シフト
+difficulty: advanced
+timeLimitMinutes: 15
+service:
+  name: うん用 API
+  healthUrl: http://localhost:8080/health
+briefing:
+  - 掃除のおばちゃんが電源を抜き、アラートが鳴り、Runbook まで改ざんされる。
+  - 複数のマーカーを順に片付け、本当の復旧手順を見極める。
+  - disk 圧力と process down が重なる。容量確保を忘れない。
+startup:
+  - id: api
+    command: PORT=8080 node /workspace/services/unyoh-api/server.mjs
+    waitForPort: 8080
+  - id: fake-db
+    command: node /workspace/services/fake-db/server.mjs
+    waitForPort: 15432
+triggers:
+  - id: spam
+    atMs: 30000
+    type: alert_spam
+    params:
+      count: 16
+  - id: gaslight
+    atMs: 60000
+    type: runbook_gaslight
+    params: {}
+  - id: janitor
+    atMs: 90000
+    type: janitor_power_pull
+    params:
+      processId: api
+  - id: disk
+    atMs: 105000
+    type: disk_full
+    params:
+      path: /workspace/logs/debug.log
+      bytes: 67108864
+alerts:
+  - id: noise-a
+    atMs: 35000
+    severity: warning
+    message: CPU fan is dancing
+    source: monitor
+  - id: noise-b
+    atMs: 40000
+    severity: critical
+    message: Wing deployment detected
+    source: scenario
+  - id: power
+    atMs: 95000
+    severity: critical
+    message: うん用 API health check failed
+    source: monitor
+  - id: disk
+    atMs: 110000
+    severity: critical
+    message: Disk usage is above 90%
+    source: monitor
+successConditions:
+  - type: http_status
+    url: http://localhost:8080/health
+    status: 200
+  - type: disk_usage_below
+    path: /workspace
+    valuePercent: 85
+  - type: process_running
+    processId: api
+runbooks:
+  - id: runbook.chaos
+    title: 混沌シフト初動
+    body: 1. ノイズ alert を無視して HTTP 5xx を見る\n2. ls /workspace/run でマーカー一覧\n3. rm alert.spam.json runbook.gaslight.json janitor.power.pulled api.down\n4. debug.log を削除して df -h\n5. unctl restart api
+slackMessages:
+  - id: all-hands
+    atMs: 100000
+    from: 運用
+    body: 今夜は何もかもおかしい。落ち着いて一つずつ。

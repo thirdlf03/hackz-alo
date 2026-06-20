@@ -3,7 +3,7 @@
   "version": 1,
   "title": "API が寝落ちした夜",
   "difficulty": "beginner",
-  "timeLimitMinutes": 5,
+  "timeLimitMinutes": 10,
   "service": {
     "name": "うん用 API",
     "healthUrl": "http://localhost:8080/health"
@@ -78,8 +78,24 @@
     }
   ],
   "navigationSteps": [
-    { "id": "nav-metrics", "atMs": 0, "hint": "左の監視画面で HTTP 5xx と SERVICE HEALTH を確認する", "panel": "metrics" },
-    { "id": "nav-health", "atMs": 30000, "hint": "ターミナルで curl localhost:8080/health を実行する", "panel": "terminal", "suggestedCommand": "curl localhost:8080/health" },
-    { "id": "nav-runbook", "atMs": 60000, "hint": "右の Runbook で復旧手順を確認する", "panel": "runbook" }
+    {
+      "id": "nav-metrics",
+      "atMs": 0,
+      "hint": "左の監視画面で HTTP 5xx と SERVICE HEALTH を確認する",
+      "panel": "metrics"
+    },
+    {
+      "id": "nav-health",
+      "atMs": 30000,
+      "hint": "ターミナルで curl localhost:8080/health を実行する",
+      "panel": "terminal",
+      "suggestedCommand": "curl localhost:8080/health"
+    },
+    {
+      "id": "nav-runbook",
+      "atMs": 60000,
+      "hint": "右の Runbook で復旧手順を確認する",
+      "panel": "runbook"
+    }
   ]
 }

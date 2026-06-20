@@ -1,0 +1,65 @@
+id: janitor-power-001
+version: 1
+title: 掃除のおばちゃんが電源を抜いた夜
+difficulty: beginner
+timeLimitMinutes: 10
+service:
+  name: うん用 API
+  healthUrl: http://localhost:8080/health
+briefing:
+  - 深夜のデータセンターには掃除のおばちゃんが巡回している。
+  - 冗長系の片方を掃除中に抜かれると API が落ちる。
+  - app.log と run/ 配下のマーカーを確認してから復旧する。
+startup:
+  - id: api
+    command: PORT=8080 node /workspace/services/unyoh-api/server.mjs
+    waitForPort: 8080
+  - id: fake-db
+    command: node /workspace/services/fake-db/server.mjs
+    waitForPort: 15432
+triggers:
+  - id: janitor-pull
+    atMs: 60000
+    type: janitor_power_pull
+    params:
+      processId: api
+alerts:
+  - id: power-lost
+    atMs: 75000
+    severity: critical
+    message: うん用 API health check failed
+    source: monitor
+  - id: janitor-cam
+    atMs: 90000
+    severity: warning
+    message: Janitor camera detected unplugged cable
+    source: scenario
+successConditions:
+  - type: http_status
+    url: http://localhost:8080/health
+    status: 200
+  - type: process_running
+    processId: api
+runbooks:
+  - id: runbook.janitor
+    title: 掃除による電源断
+    body: 1. curl localhost:8080/health で影響確認\n2. ls /workspace/run で janitor.power.pulled を探す\n3. rm /workspace/run/janitor.power.pulled /workspace/run/api.down\n4. unctl restart api\n5. health で復旧確認
+slackMessages:
+  - id: janitor-sorry
+    atMs: 100000
+    from: 掃除のおばちゃん
+    body: ごめんなさい、掃除中に抜いちゃいました。
+navigationSteps:
+  - id: nav-health
+    atMs: 0
+    hint: SERVICE HEALTH が緑か確認する
+    panel: metrics
+  - id: nav-marker
+    atMs: 45000
+    hint: ls /workspace/run で怪しいマーカーを探す
+    panel: terminal
+    suggestedCommand: ls -la /workspace/run
+  - id: nav-runbook
+    atMs: 70000
+    hint: 掃除による電源断 Runbook を開く
+    panel: runbook

@@ -129,6 +129,41 @@ export type CompositeRestartLoopTrigger = {
   params: { diskPath: string; bytes: number; processId: string };
 };
 
+export type JanitorPowerPullTrigger = {
+  id: string;
+  atMs: number;
+  type: "janitor_power_pull";
+  params: { processId?: string };
+};
+
+export type CableJumpropeTrigger = {
+  id: string;
+  atMs: number;
+  type: "cable_jumprope";
+  params: { hostsPath?: string };
+};
+
+export type KeyboardSpillTrigger = {
+  id: string;
+  atMs: number;
+  type: "keyboard_spill";
+  params: { noise?: string };
+};
+
+export type AlertSpamTrigger = {
+  id: string;
+  atMs: number;
+  type: "alert_spam";
+  params: { count?: number };
+};
+
+export type RunbookGaslightTrigger = {
+  id: string;
+  atMs: number;
+  type: "runbook_gaslight";
+  params: { replacement?: string };
+};
+
 export type ScenarioTrigger =
   | ProcessStopTrigger
   | DiskFullTrigger
@@ -139,7 +174,12 @@ export type ScenarioTrigger =
   | MemoryLeakTrigger
   | DnsMisconfigTrigger
   | MonitorBlindTrigger
-  | CompositeRestartLoopTrigger;
+  | CompositeRestartLoopTrigger
+  | JanitorPowerPullTrigger
+  | CableJumpropeTrigger
+  | KeyboardSpillTrigger
+  | AlertSpamTrigger
+  | RunbookGaslightTrigger;
 
 export type NavigationPanel = "metrics" | "terminal" | "runbook" | "slack" | "devtools";
 
@@ -281,6 +321,15 @@ export type GameRenderState = {
   };
   openedRunbookIds: string[];
   alertFlashMs: number;
+  warning?: { message: string; flashMs: number };
+  world: {
+    narrativeHour: number;
+    janitorCameraActive: boolean;
+    fridgeCameraActive: boolean;
+    redBullPercent: number;
+    powerOutageFlashMs: number;
+    redBullFlyingMs: number;
+  };
   cursor: { x: number; y: number; visible: boolean };
   clickEffects: Array<{ id: string; x: number; y: number; ageMs: number }>;
   recording: {

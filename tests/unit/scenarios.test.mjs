@@ -10,7 +10,7 @@ const scenarioDataDir = path.join(rootDir, "packages/scenarios/data");
 
 test("all scenario data validates against shared contract", async () => {
   const scenarios = await loadScenarios();
-  assert.equal(scenarios.length, 9);
+  assert.equal(scenarios.length, 15);
 
   const ids = new Set();
   for (const { file, scenario } of scenarios) {

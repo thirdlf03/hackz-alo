@@ -1,0 +1,144 @@
+{
+  "id": "alert-spam-001",
+  "version": 1,
+  "title": "アラートがうるさすぎる夜",
+  "difficulty": "intermediate",
+  "timeLimitMinutes": 12,
+  "service": {
+    "name": "うん用 API",
+    "healthUrl": "http://localhost:8080/health"
+  },
+  "briefing": [
+    "ノイズアラートが大量に飛ぶと、本当に重要な障害を見落とす。",
+    "alert.spam.json を片付け、HTTP 5xx の本丸を探す。",
+    "監視パネルと app.log を併用して優先度を付ける。"
+  ],
+  "startup": [
+    {
+      "id": "api",
+      "command": "PORT=8080 node /workspace/services/unyoh-api/server.mjs",
+      "waitForPort": 8080
+    },
+    {
+      "id": "fake-db",
+      "command": "node /workspace/services/fake-db/server.mjs",
+      "waitForPort": 15432
+    }
+  ],
+  "triggers": [
+    {
+      "id": "spam",
+      "atMs": 45000,
+      "type": "alert_spam",
+      "params": {
+        "count": 32
+      }
+    },
+    {
+      "id": "real-stop",
+      "atMs": 120000,
+      "type": "process_stop",
+      "params": {
+        "processId": "api"
+      }
+    }
+  ],
+  "alerts": [
+    {
+      "id": "noise-1",
+      "atMs": 50000,
+      "severity": "warning",
+      "message": "CPU fan is dancing",
+      "source": "monitor"
+    },
+    {
+      "id": "noise-2",
+      "atMs": 52000,
+      "severity": "critical",
+      "message": "Red Bull level below wing threshold",
+      "source": "monitor"
+    },
+    {
+      "id": "noise-3",
+      "atMs": 54000,
+      "severity": "warning",
+      "message": "Janitor camera lens fogged",
+      "source": "monitor"
+    },
+    {
+      "id": "noise-4",
+      "atMs": 56000,
+      "severity": "warning",
+      "message": "Fridge door open for 3 minutes",
+      "source": "monitor"
+    },
+    {
+      "id": "noise-5",
+      "atMs": 58000,
+      "severity": "critical",
+      "message": "Wing deployment detected on operator",
+      "source": "scenario"
+    },
+    {
+      "id": "noise-6",
+      "atMs": 60000,
+      "severity": "warning",
+      "message": "Keyboard moisture sensor tripped",
+      "source": "monitor"
+    },
+    {
+      "id": "real-500",
+      "atMs": 125000,
+      "severity": "critical",
+      "message": "HTTP 500 rate is above threshold",
+      "source": "scenario"
+    }
+  ],
+  "successConditions": [
+    {
+      "type": "http_status",
+      "url": "http://localhost:8080/health",
+      "status": 200
+    },
+    {
+      "type": "process_running",
+      "processId": "api"
+    }
+  ],
+  "runbooks": [
+    {
+      "id": "runbook.alert-spam",
+      "title": "アラートスパム対応",
+      "body": "1. 左の監視で HTTP 5xx を優先\\n2. cat /workspace/run/alert.spam.json\\n3. rm /workspace/run/alert.spam.json\\n4. tail /workspace/logs/app.log で本物の障害を探す\\n5. 必要なら unctl restart api"
+    }
+  ],
+  "slackMessages": [
+    {
+      "id": "pager-duty",
+      "atMs": 70000,
+      "from": "Pager",
+      "body": "32件鳴ってます。全部見なくていいです。"
+    }
+  ],
+  "navigationSteps": [
+    {
+      "id": "nav-metrics",
+      "atMs": 0,
+      "hint": "HTTP 5xx と SERVICE HEALTH を先に見る",
+      "panel": "metrics"
+    },
+    {
+      "id": "nav-spam-file",
+      "atMs": 50000,
+      "hint": "alert.spam.json の中身を確認する",
+      "panel": "terminal",
+      "suggestedCommand": "cat /workspace/run/alert.spam.json"
+    },
+    {
+      "id": "nav-runbook",
+      "atMs": 90000,
+      "hint": "アラートスパム Runbook を開く",
+      "panel": "runbook"
+    }
+  ]
+}

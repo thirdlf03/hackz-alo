@@ -102,11 +102,17 @@ export class OfflineUploadQueue {
   }
 }
 
-export function installOfflineFlush(queue: OfflineUploadQueue) {
+export function installOfflineFlush(queue: OfflineUploadQueue, onPageHide?: () => void) {
   const flush = () => void queue.flush();
   window.addEventListener("online", flush);
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "hidden") flush();
+    if (document.visibilityState === "hidden") {
+      onPageHide?.();
+      flush();
+    }
   });
-  window.addEventListener("pagehide", flush);
+  window.addEventListener("pagehide", () => {
+    onPageHide?.();
+    flush();
+  });
 }
