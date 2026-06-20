@@ -53,6 +53,10 @@ type PendingTimer = {
   handle: ReturnType<typeof setTimeout>;
 };
 
+const SESSION_IDLE_TIMEOUT_MS = 3 * 60 * 1000;
+const BRIEFING_TIMEOUT_MS = 15 * 60 * 1000;
+const GAME_END_BUFFER_MS = 60 * 1000;
+
 export class SessionDurableObject implements DurableObject {
   private metricsCache?: MetricsSnapshot;
   private metricsCachedAt = 0;
@@ -61,6 +65,37 @@ export class SessionDurableObject implements DurableObject {
   private static readonly METRICS_TTL_MS = 3000;
 
   constructor(private state: DurableObjectState, private env: Bindings) {}
+
+  async alarm() {
+    try {
+      const session = await this.state.storage.get<StoredSession>("session");
+      if (!session) return;
+
+      if (session.status === "briefing") {
+        await this.deleteSession();
+        return;
+      }
+
+      if (session.status !== "running") return;
+
+      const scenario = requireScenario(session.scenarioId);
+      const timeLimitMs = scenario.timeLimitMinutes * 60 * 1000;
+      if (this.getGameTimeMs(session) >= timeLimitMs) {
+        await this.timeout();
+        return;
+      }
+
+      const lastActivity = (await this.state.storage.get<number>("lastClientActivityAt")) ?? 0;
+      if (this.sseClients.size === 0 && Date.now() - lastActivity >= SESSION_IDLE_TIMEOUT_MS) {
+        await this.timeout();
+        return;
+      }
+
+      await this.scheduleLifecycleAlarms(session, scenario);
+    } catch (error) {
+      console.error("[session-alarm]", messageFrom(error));
+    }
+  }
 
   async fetch(request: Request): Promise<Response> {
     try {
@@ -94,6 +129,9 @@ export class SessionDurableObject implements DurableObject {
   private async bootstrap(request: Request) {
     const session = await this.loadOrCreate(await readBootstrap(request));
     await this.persistSession(session);
+    if (session.status === "briefing") {
+      await this.state.storage.setAlarm(Date.now() + BRIEFING_TIMEOUT_MS);
+    }
     return jsonOk({ session: await this.snapshotFor(session) });
   }
 
@@ -136,6 +174,7 @@ export class SessionDurableObject implements DurableObject {
       scenarioId: scenario.id,
       startup
     });
+    await this.touchClientActivity();
     this.scheduleScenarioTimeline(running, scenario);
     return jsonOk({ session: await this.snapshotFor(running), startup });
   }
@@ -171,6 +210,7 @@ export class SessionDurableObject implements DurableObject {
   private async timeout() {
     const session = await this.requireSession();
     if (isTerminalStatus(session.status)) {
+      await destroySessionSandbox(this.env, session.sessionId);
       return jsonOk({ session: await this.snapshotFor(session) });
     }
     const finished = await this.finishSession(session, "failed", "timeout");
@@ -206,6 +246,7 @@ export class SessionDurableObject implements DurableObject {
     await this.state.storage.put("session", synced);
     const scenario = requireScenario(synced.scenarioId);
     this.rescheduleScenarioTimeline(synced, scenario);
+    await this.touchClientActivity();
     return jsonOk(this.clockPayload(synced));
   }
 
@@ -215,10 +256,12 @@ export class SessionDurableObject implements DurableObject {
     const stream = new ReadableStream<Uint8Array>({
       start: async (controller) => {
         this.sseClients.add(controller);
+        void this.touchClientActivity();
         request.signal.addEventListener(
           "abort",
           () => {
             this.sseClients.delete(controller);
+            void this.rescheduleIdleAlarm();
             try { controller.close(); } catch { /* ignore */ }
           },
           { once: true }
@@ -248,6 +291,7 @@ export class SessionDurableObject implements DurableObject {
 
   private async terminal(request: Request) {
     const session = await this.requireSession();
+    await this.touchClientActivity();
     return proxySessionTerminal(this.env, session.sessionId, request, {
       cols: this.terminalCols,
       rows: this.terminalRows
@@ -283,6 +327,7 @@ export class SessionDurableObject implements DurableObject {
     if (!metrics) throw new HttpError(502, "sandbox_unavailable", "failed to fetch sandbox metrics");
     this.metricsCache = metrics;
     this.metricsCachedAt = now;
+    await this.touchClientActivity();
     return jsonOk(metrics);
   }
 
@@ -386,6 +431,41 @@ export class SessionDurableObject implements DurableObject {
     this.pendingTimers = [];
   }
 
+  private async touchClientActivity() {
+    await this.state.storage.put("lastClientActivityAt", Date.now());
+    const session = await this.state.storage.get<StoredSession>("session");
+    if (session?.status === "running") {
+      await this.scheduleLifecycleAlarms(session, requireScenario(session.scenarioId));
+    }
+  }
+
+  private async rescheduleIdleAlarm() {
+    const session = await this.state.storage.get<StoredSession>("session");
+    if (session?.status === "running") {
+      await this.scheduleLifecycleAlarms(session, requireScenario(session.scenarioId));
+    }
+  }
+
+  private async scheduleLifecycleAlarms(session: StoredSession, scenario: ScenarioDefinition) {
+    if (session.status !== "running") return;
+
+    const timeLimitMs = scenario.timeLimitMinutes * 60 * 1000;
+    const remainingGameMs = Math.max(0, timeLimitMs - this.getGameTimeMs(session));
+    const wallMsUntilGameEnd = remainingGameMs / Math.max(session.gameSpeed, 0.1) + GAME_END_BUFFER_MS;
+    const gameDeadline = Date.now() + wallMsUntilGameEnd;
+
+    const lastActivity = (await this.state.storage.get<number>("lastClientActivityAt")) ?? Date.now();
+    const idleDeadline =
+      this.sseClients.size === 0 ? lastActivity + SESSION_IDLE_TIMEOUT_MS : Number.POSITIVE_INFINITY;
+
+    await this.state.storage.setAlarm(Math.ceil(Math.min(idleDeadline, gameDeadline)));
+  }
+
+  private async clearLifecycleAlarms() {
+    await this.state.storage.deleteAlarm();
+    await this.state.storage.delete("lastClientActivityAt");
+  }
+
   private rescheduleScenarioTimeline(session: StoredSession, scenario: ScenarioDefinition) {
     this.clearPendingTimers();
     if (session.status !== "running") return;
@@ -481,6 +561,7 @@ export class SessionDurableObject implements DurableObject {
   private async finishSession(session: StoredSession, status: SessionStatus, result: string) {
     this.clearPendingTimers();
     this.clearMetricsCache();
+    await this.clearLifecycleAlarms();
     const finished: StoredSession = {
       ...session,
       status,
@@ -489,9 +570,12 @@ export class SessionDurableObject implements DurableObject {
     };
     delete finished.gameClockWallMs;
     await this.state.storage.put("session", finished);
-    await this.persistSession(finished, result);
-    await this.persistReplayResult(finished, result);
-    await destroySessionSandbox(this.env, session.sessionId);
+    try {
+      await this.persistSession(finished, result);
+      await this.persistReplayResult(finished, result);
+    } finally {
+      await destroySessionSandbox(this.env, session.sessionId);
+    }
     return finished;
   }
 
@@ -515,6 +599,7 @@ export class SessionDurableObject implements DurableObject {
   }
 
   private async persistSession(session: StoredSession, result?: string) {
+    const dbResult = result === "timeout" ? "failed" : (result ?? null);
     await this.env.DB.prepare(
       `update play_sessions
        set status = ?, started_at = ?, finished_at = ?, result = ?, duration_ms = ?
@@ -524,7 +609,7 @@ export class SessionDurableObject implements DurableObject {
         session.status,
         session.startedAt ?? null,
         session.finishedAt ?? null,
-        result ?? null,
+        dbResult,
         session.finishedAt ? this.getGameTimeMs(session) : null,
         session.sessionId
       )

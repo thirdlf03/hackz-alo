@@ -10,13 +10,16 @@ binding = "ASSETS"
 not_found_handling = "single-page-application"
 run_worker_first = ["/api/*"]
 
+[triggers]
+crons = ["*/10 * * * *"]
+
 # Replace local-development IDs before the first remote deploy:
 #   npm run setup:cloudflare
 [[containers]]
 class_name = "Sandbox"
 image = "../../sandbox/container/Dockerfile"
 instance_type = "lite"
-max_instances = 1
+max_instances = 5
 
 [[d1_databases]]
 binding = "DB"

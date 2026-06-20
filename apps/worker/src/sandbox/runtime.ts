@@ -5,8 +5,10 @@ import { installSandboxAssets } from "./assets.js";
 
 export type SandboxRuntime = Sandbox;
 
+const SANDBOX_SLEEP_AFTER = "3m";
+
 export function getSessionSandbox(env: Bindings, sessionId: string): SandboxRuntime {
-  return getSandbox(env.Sandbox, sessionSandboxName(sessionId));
+  return getSandbox(env.Sandbox, sessionSandboxName(sessionId), { sleepAfter: SANDBOX_SLEEP_AFTER });
 }
 
 export function proxySessionTerminal(

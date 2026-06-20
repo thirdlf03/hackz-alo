@@ -222,6 +222,32 @@ export function App() {
   }, [screen]);
 
   useEffect(() => {
+    if (screen !== "play") return;
+    let hiddenSince: number | undefined;
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") {
+        if (hiddenSince === undefined) hiddenSince = Date.now();
+        return;
+      }
+      hiddenSince = undefined;
+    };
+    const timer = window.setInterval(() => {
+      if (finishingRef.current || tabBeaconSentRef.current || hiddenSince === undefined) return;
+      const activeSession = sessionRef.current;
+      if (!activeSession) return;
+      if (Date.now() - hiddenSince < 90_000) return;
+      hiddenSince = undefined;
+      tabBeaconSentRef.current = true;
+      api.notifySessionTimeout(activeSession.sessionId);
+    }, 5_000);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.clearInterval(timer);
+    };
+  }, [screen]);
+
+  useEffect(() => {
     if ((screen !== "play" && screen !== "result") || !canvasRef.current) return;
     const renderer = new CanvasRenderer(canvasRef.current);
     rendererRef.current = renderer;

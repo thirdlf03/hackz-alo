@@ -9,6 +9,7 @@ import {
   type ReplayEvent
 } from "@incident/shared";
 import { SessionDurableObject } from "./durable/SessionDurableObject.js";
+import { sweepStaleSessions } from "./sessionSweep.js";
 import {
   completeMultipartUpload,
   createMultipartUpload,
@@ -332,6 +333,9 @@ export default {
     const sandboxResponse = await proxyToSandbox(request, env);
     if (sandboxResponse) return sandboxResponse;
     return app.fetch(request, env, ctx);
+  },
+  async scheduled(_event: ScheduledEvent, env: Bindings, ctx: ExecutionContext) {
+    ctx.waitUntil(sweepStaleSessions(env));
   }
 };
 

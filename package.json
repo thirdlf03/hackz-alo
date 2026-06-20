@@ -20,6 +20,7 @@
     "build": "npm --workspaces --if-present run build",
     "setup:cloudflare": "node scripts/setup-cloudflare.mjs",
     "deploy": "node scripts/deploy.mjs",
+    "cleanup:sessions": "node scripts/cleanup-sessions.mjs",
     "db:migrate:remote": "npm --workspace apps/worker run db:migrate:remote",
     "dev:web": "npm --workspace apps/web run dev",
     "dev:worker": "npm --workspace apps/worker run dev",
