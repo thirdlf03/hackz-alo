@@ -7,7 +7,8 @@
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "build": "tsc -p ../../tsconfig.json --noEmit",
-    "db:migrate:local": "wrangler d1 migrations apply incident-training --local"
+    "db:migrate:local": "wrangler d1 migrations apply incident-training --local",
+    "db:migrate:remote": "wrangler d1 migrations apply incident-training --remote"
   },
   "dependencies": {
     "@cloudflare/sandbox": "latest",

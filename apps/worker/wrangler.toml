@@ -3,6 +3,15 @@ main = "src/index.ts"
 compatibility_date = "2026-06-20"
 compatibility_flags = ["nodejs_compat"]
 
+# Frontend (Vite build output). Run `npm run build` before deploy.
+[assets]
+directory = "../web/dist"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+run_worker_first = ["/api/*"]
+
+# Replace local-development IDs before the first remote deploy:
+#   npm run setup:cloudflare
 [[containers]]
 class_name = "Sandbox"
 image = "../../sandbox/container/Dockerfile"
@@ -12,7 +21,7 @@ max_instances = 1
 [[d1_databases]]
 binding = "DB"
 database_name = "incident-training"
-database_id = "local-development"
+database_id = "df62c8a7-8284-445d-af8f-70eee4db597a"
 migrations_dir = "../../migrations"
 
 [[r2_buckets]]
@@ -21,7 +30,7 @@ bucket_name = "incident-training-replays"
 
 [[kv_namespaces]]
 binding = "SCENARIO_KV"
-id = "local-development"
+id = "af8bab445e0646a190096563ebaad273"
 
 [[durable_objects.bindings]]
 name = "SESSION_DO"

@@ -26,3 +26,25 @@ npm install
 npm run dev:web
 npm run dev:worker
 ```
+
+## Deploy (Worker + static frontend)
+
+Production serves the Vite build from the same Worker as the API (`/api/*`).
+Local development still uses separate Vite and Worker dev servers.
+
+One-time Cloudflare setup:
+
+```sh
+wrangler login
+npm run setup:cloudflare
+npm run db:migrate:remote
+```
+
+Deploy:
+
+```sh
+npm run deploy
+```
+
+`npm run deploy` builds scenarios, builds `apps/web/dist`, then runs `wrangler deploy`.
+R2 bucket creation and container image upload are handled by Wrangler during deploy.

@@ -18,6 +18,9 @@
     "sync:sandbox-assets": "node scripts/sync-sandbox-assets.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "build": "npm --workspaces --if-present run build",
+    "setup:cloudflare": "node scripts/setup-cloudflare.mjs",
+    "deploy": "node scripts/deploy.mjs",
+    "db:migrate:remote": "npm --workspace apps/worker run db:migrate:remote",
     "dev:web": "npm --workspace apps/web run dev",
     "dev:worker": "npm --workspace apps/worker run dev",
     "worktrees:list": "git worktree list"
