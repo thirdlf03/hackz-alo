@@ -1,0 +1,28 @@
+{
+  "name": "incident-training-sim",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "npm@11.10.1",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "test": "node --test tests/unit/*.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build": "npm --workspaces --if-present run build",
+    "dev:web": "npm --workspace apps/web run dev",
+    "dev:worker": "npm --workspace apps/worker run dev",
+    "worktrees:list": "git worktree list"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "latest",
+    "@types/node": "latest",
+    "playwright": "latest",
+    "tsx": "latest",
+    "typescript": "latest",
+    "vite": "latest",
+    "wrangler": "latest"
+  }
+}

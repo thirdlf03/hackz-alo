@@ -1,0 +1,177 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  color: #e6edf3;
+  background: #080b10;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+#app {
+  min-height: 100vh;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+.app-shell {
+  min-height: 100vh;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  min-height: 56px;
+  padding: 0 18px;
+  border-bottom: 1px solid #202936;
+  background: #0d1117;
+}
+
+.topbar strong {
+  white-space: nowrap;
+}
+
+.topbar span {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  color: #b6c2cf;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.topbar button,
+.panel button,
+.input-dock button {
+  border: 1px solid #334155;
+  color: #f8fafc;
+  background: #1f2937;
+  border-radius: 6px;
+  padding: 8px 12px;
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.app-error {
+  width: min(100% - 36px, 880px);
+  margin: 18px auto 0;
+  border: 1px solid #7f1d1d;
+  border-radius: 6px;
+  padding: 10px 12px;
+  color: #fecaca;
+  background: #450a0a;
+}
+
+.panel {
+  max-width: 880px;
+  margin: 36px auto;
+  padding: 0 20px;
+}
+
+.scenario-list {
+  display: grid;
+  gap: 12px;
+}
+
+.scenario-button {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  text-align: left;
+}
+
+.scenario-button small {
+  color: #94a3b8;
+}
+
+.game-layout {
+  display: grid;
+  justify-items: center;
+  gap: 14px;
+  padding: 18px;
+  min-height: calc(100vh - 56px);
+}
+
+canvas {
+  display: block;
+  width: min(100%, 1280px);
+  max-height: calc(100vh - 150px);
+  aspect-ratio: 16 / 9;
+  border: 1px solid #263244;
+  background: #050609;
+}
+
+.input-dock {
+  display: flex;
+  width: min(100%, 1280px);
+  gap: 10px;
+  min-width: 0;
+}
+
+.input-dock input {
+  min-width: 0;
+  flex: 1;
+  border: 1px solid #334155;
+  color: #d1fae5;
+  background: #020617;
+  border-radius: 6px;
+  padding: 10px 12px;
+}
+
+.replay-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(260px, 1fr);
+  gap: 18px;
+  padding: 24px;
+}
+
+.replay-layout video {
+  width: 100%;
+  background: #000;
+}
+
+.timeline {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.timeline button {
+  width: 100%;
+  margin: 4px 0;
+  border: 1px solid #334155;
+  color: #dbeafe;
+  background: #0f172a;
+  border-radius: 6px;
+  padding: 8px;
+  text-align: left;
+}
+
+@media (max-width: 760px) {
+  .replay-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .topbar {
+    flex-wrap: wrap;
+    min-height: auto;
+    padding: 10px;
+  }
+
+  .topbar span {
+    flex-basis: 100%;
+    order: 3;
+  }
+
+  .input-dock {
+    display: grid;
+  }
+}

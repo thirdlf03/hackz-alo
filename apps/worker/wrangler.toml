@@ -1,0 +1,35 @@
+name = "incident-training-worker"
+main = "src/index.ts"
+compatibility_date = "2026-06-20"
+compatibility_flags = ["nodejs_compat"]
+
+[[containers]]
+class_name = "Sandbox"
+image = "../../sandbox/container/Dockerfile"
+instance_type = "lite"
+max_instances = 10
+
+[[d1_databases]]
+binding = "DB"
+database_name = "incident-training"
+database_id = "local-development"
+
+[[r2_buckets]]
+binding = "REPLAY_BUCKET"
+bucket_name = "incident-training-replays"
+
+[[kv_namespaces]]
+binding = "SCENARIO_KV"
+id = "local-development"
+
+[[durable_objects.bindings]]
+name = "SESSION_DO"
+class_name = "SessionDurableObject"
+
+[[durable_objects.bindings]]
+name = "Sandbox"
+class_name = "Sandbox"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["SessionDurableObject", "Sandbox"]

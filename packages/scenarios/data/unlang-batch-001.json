@@ -1,0 +1,79 @@
+{
+  "id": "unlang-batch-001",
+  "version": 1,
+  "title": "うんともすんとも言わないバッチ",
+  "difficulty": "beginner",
+  "timeLimitMinutes": 15,
+  "service": {
+    "name": "うん用 batch",
+    "healthUrl": "http://localhost:8080/health"
+  },
+  "briefing": [
+    "深夜バッチはうん言語で書かれている。",
+    "失敗時のログは不親切だが、仕様表を読むと原因が推測できる。",
+    "まず batch.log と対象ファイルを確認する。"
+  ],
+  "startup": [
+    {
+      "id": "api",
+      "command": "PORT=8080 node /workspace/services/unyoh-api/server.mjs",
+      "waitForPort": 8080
+    },
+    {
+      "id": "fake-db",
+      "command": "node /workspace/services/fake-db/server.mjs",
+      "waitForPort": 15432
+    }
+  ],
+  "triggers": [
+    {
+      "id": "break-sales-batch",
+      "atMs": 90000,
+      "type": "unlang_batch_failure",
+      "params": {
+        "jobId": "sales-nightly",
+        "path": "/workspace/services/batch/sales.un"
+      }
+    }
+  ],
+  "alerts": [
+    {
+      "id": "batch-failed",
+      "atMs": 120000,
+      "severity": "critical",
+      "message": "sales-nightly batch failed",
+      "source": "scenario"
+    }
+  ],
+  "successConditions": [
+    {
+      "type": "unlang_batch_ok",
+      "jobId": "sales-nightly"
+    },
+    {
+      "type": "log_absent",
+      "path": "/workspace/logs/batch.log",
+      "pattern": "うんともすんとも"
+    }
+  ],
+  "runbooks": [
+    {
+      "id": "runbook.unlang",
+      "title": "うん言語バッチ調査",
+      "body": "1. tail -n 50 /workspace/logs/batch.log を確認する\\n2. cat /workspace/services/batch/sales.un でコードを見る\\n3. うん言語仕様表で演算子を確認する\\n4. 値と演算子の組み合わせを直す、または対象ジョブを一時停止する\\n5. unlang run /workspace/services/batch/sales.un で確認する\\n6. 復旧後に /workspace/logs/batch.log から古い失敗行を退避する"
+    },
+    {
+      "id": "runbook.unlang-spec",
+      "title": "うん言語仕様表",
+      "body": "うんちく: コメント\\nうん <name> = <expr>: 変数定義\\nうんたす: 足し算\\nうんひく: 引き算\\nうんかけ: 掛け算\\nうんわり: 割り算\\nうんなし: 0 / false\\nうんあり: 1 / true\\nうんともすんとも: runtime error"
+    }
+  ],
+  "slackMessages": [
+    {
+      "id": "mystery-error",
+      "atMs": 130000,
+      "from": "経理",
+      "body": "売上集計が止まってるんですが、うんともすんとも言いません。"
+    }
+  ]
+}

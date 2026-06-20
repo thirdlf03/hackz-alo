@@ -1,0 +1,17 @@
+{
+  "name": "@incident/worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "build": "tsc -p ../../tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@cloudflare/sandbox": "latest",
+    "@incident/scenarios": "0.1.0",
+    "@incident/shared": "0.1.0",
+    "hono": "latest"
+  }
+}
