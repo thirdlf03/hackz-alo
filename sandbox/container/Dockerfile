@@ -1,12 +1,5 @@
-FROM node:24-slim
+FROM docker.io/cloudflare/sandbox:0.12.1
 
 WORKDIR /workspace
-COPY server.mjs /opt/incident-sandbox/server.mjs
 
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends curl procps \
-  && rm -rf /var/lib/apt/lists/* \
-  && mkdir -p /workspace /opt/incident-sandbox
-
-EXPOSE 3000
-CMD ["node", "/opt/incident-sandbox/server.mjs"]
+RUN mkdir -p /workspace/logs /workspace/run /workspace/services /workspace/bin

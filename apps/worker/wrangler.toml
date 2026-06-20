@@ -7,7 +7,7 @@ compatibility_flags = ["nodejs_compat"]
 class_name = "Sandbox"
 image = "../../sandbox/container/Dockerfile"
 instance_type = "lite"
-max_instances = 10
+max_instances = 1
 
 [[d1_databases]]
 binding = "DB"

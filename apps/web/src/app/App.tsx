@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
-import type { Difficulty, GameRenderState, ScenarioDefinition } from "@incident/shared";
+import { createReplayEvent, type Difficulty, type GameRenderState, type ScenarioDefinition } from "@incident/shared";
 import { createInitialGameState, advanceGameState } from "../game/state/gameState.js";
 import { CanvasRenderer } from "../game/render/canvasRenderer.js";
 import { inputDockRects } from "../game/render/canvasRenderer.js";
-import { TerminalMirror } from "../game/terminal/mirror.js";
+import { createEmptyTerminalMirror } from "../game/terminal/mirror.js";
+import { TerminalSession } from "../game/terminal/session.js";
 import { CanvasRecorder } from "../game/recording/recorder.js";
 import { ApiClient } from "../api/client.js";
 import { ReplayPage } from "../pages/ReplayPage.js";
+import "@xterm/xterm/css/xterm.css";
 
 type Screen = "select" | "briefing" | "play" | "result" | "replay";
 type ScenarioSummary = Pick<ScenarioDefinition, "id" | "title" | "difficulty" | "timeLimitMinutes">;
@@ -35,7 +37,8 @@ export function App() {
   const elapsedMsRef = useRef(0);
   const lastTickAtRef = useRef(0);
   const gameSpeedRef = useRef(1);
-  const terminalRef = useRef(new TerminalMirror(100, 30));
+  const terminalRef = useRef<TerminalSession | null>(null);
+  const sessionRef = useRef<{ sessionId: string; replayId: string } | undefined>(undefined);
   const [screen, setScreen] = useState<Screen>("select");
   const [scenarios, setScenarios] = useState<ScenarioSummary[]>([]);
   const [scenario, setScenario] = useState<ScenarioDefinition>();
@@ -51,6 +54,17 @@ export function App() {
       console.error(error);
       setAppError(toErrorMessage(error));
     });
+  }, []);
+
+  useEffect(() => {
+    sessionRef.current = session;
+  }, [session]);
+
+  useEffect(() => {
+    return () => {
+      terminalRef.current?.destroy();
+      terminalRef.current = null;
+    };
   }, []);
 
   useEffect(() => {
@@ -143,15 +157,17 @@ export function App() {
     setAppError(undefined);
     setIsStarting(true);
     try {
+      terminalRef.current?.destroy();
+      terminalRef.current = null;
       const created = await api.createSession(difficulty);
-      terminalRef.current = new TerminalMirror(100, 30);
+      api.resetEventSequence();
       elapsedMsRef.current = 0;
       lastTickAtRef.current = 0;
       setScenario(created.scenario);
       setSession(created);
       setTimeline([]);
       setGameState(
-        createInitialGameState(created.scenario, created.sessionId, created.replayId, terminalRef.current.snapshot(), {
+        createInitialGameState(created.scenario, created.sessionId, created.replayId, createEmptyTerminalMirror(), {
           speed: gameSpeed
         })
       );
@@ -164,17 +180,66 @@ export function App() {
     }
   }
 
+  function attachTerminalSession(activeSession: { sessionId: string; replayId: string }) {
+    terminalRef.current?.destroy();
+    const terminal = new TerminalSession({
+      sessionId: activeSession.sessionId,
+      onSnapshot: (snapshot) => {
+        setGameState((current) =>
+          current
+            ? {
+                ...current,
+                monitors: {
+                  ...current.monitors,
+                  center: { terminal: snapshot }
+                }
+              }
+            : current
+        );
+      },
+      onCommand: (command) => {
+        const replayId = sessionRef.current?.replayId;
+        if (!replayId) return;
+        const at = Math.round(elapsedMsRef.current);
+        const inputEvent = createReplayEvent({
+          replayId,
+          type: "terminal_input",
+          at,
+          actor: "player",
+          payload: { data: `${command}\n` }
+        });
+        const commandEvent = createReplayEvent({
+          replayId,
+          type: "command_detected",
+          at,
+          actor: "player",
+          payload: { command }
+        });
+        void api.uploadEvents(replayId, [inputEvent, commandEvent]).catch(console.error);
+        setTimeline((items) => [...items, { at: at / 1000, label: `command: ${command}` }]);
+      },
+      onConnectionChange: (state, error) => {
+        if (state === "connected") return;
+        if (state === "connecting") return;
+        if (error) setAppError(`Sandbox ターミナル接続エラー: ${error.message}`);
+      }
+    });
+    terminalRef.current = terminal;
+    terminal.connect();
+  }
+
   async function startPlay() {
     if (!session || !scenario || isStarting) return;
     setIsStarting(true);
     setAppError(undefined);
     try {
       await api.startSession(session.sessionId);
+      attachTerminalSession(session);
       elapsedMsRef.current = 0;
       lastTickAtRef.current = performance.now();
       setTimeline([{ at: 0, label: "シナリオ開始" }]);
       setGameState(
-        createInitialGameState(scenario, session.sessionId, session.replayId, terminalRef.current.snapshot(), {
+        createInitialGameState(scenario, session.sessionId, session.replayId, createEmptyTerminalMirror(), {
           sessionStatus: "running",
           recordingStatus: "initializing",
           speed: gameSpeed
@@ -191,6 +256,8 @@ export function App() {
 
   async function finishPlay() {
     if (!session) return;
+    terminalRef.current?.destroy();
+    terminalRef.current = null;
     setGameState((current) => updateRecordingStatus(current, "stopping"));
     await recorderRef.current?.stop().catch((error) => {
       console.error(error);
@@ -223,40 +290,21 @@ export function App() {
     setScreen("result");
   }
 
-  function handleTerminalInput(input: string) {
-    terminalRef.current.input(input);
-    syncTerminalSnapshot();
-  }
-
   function handleTerminalKey(event: KeyboardEvent) {
-    if (screen !== "play") return;
+    if (screen !== "play" || !terminalRef.current) return;
     if (event.metaKey || event.ctrlKey || event.altKey) return;
-    if (event.key === "Enter") {
-      event.preventDefault();
-      terminalRef.current.submitDraft();
-      syncTerminalSnapshot();
-      return;
-    }
-    if (event.key === "Backspace") {
-      event.preventDefault();
-      terminalRef.current.backspaceDraft();
-      syncTerminalSnapshot();
-      return;
-    }
-    if (event.key.length === 1) {
-      event.preventDefault();
-      terminalRef.current.appendDraft(event.key);
-      syncTerminalSnapshot();
-    }
+    const input = keyboardEventToTerminalInput(event);
+    if (!input) return;
+    event.preventDefault();
+    terminalRef.current.input(input);
   }
 
   function handleTerminalPaste(event: ClipboardEvent) {
-    if (screen !== "play") return;
+    if (screen !== "play" || !terminalRef.current) return;
     const text = event.clipboardData?.getData("text/plain");
     if (!text) return;
     event.preventDefault();
-    terminalRef.current.appendDraft(text);
-    syncTerminalSnapshot();
+    terminalRef.current.input(text);
   }
 
   function handleCanvasClick(event: MouseEvent) {
@@ -267,20 +315,6 @@ export function App() {
     if (containsPoint(inputDockRects.button, point.x, point.y)) {
       void finishPlay();
     }
-  }
-
-  function syncTerminalSnapshot() {
-    setGameState((current) =>
-      current
-        ? {
-            ...current,
-            monitors: {
-              ...current.monitors,
-              center: { terminal: terminalRef.current.snapshot() }
-            }
-          }
-        : current
-    );
   }
 
   return (
@@ -435,4 +469,16 @@ function formatDifficulty(difficulty: Difficulty) {
   if (difficulty === "beginner") return "初級";
   if (difficulty === "intermediate") return "中級";
   return "上級";
+}
+
+function keyboardEventToTerminalInput(event: KeyboardEvent) {
+  if (event.key === "Enter") return "\r";
+  if (event.key === "Backspace") return "\u007f";
+  if (event.key === "Tab") return "\t";
+  if (event.key === "ArrowUp") return "\u001b[A";
+  if (event.key === "ArrowDown") return "\u001b[B";
+  if (event.key === "ArrowRight") return "\u001b[C";
+  if (event.key === "ArrowLeft") return "\u001b[D";
+  if (event.key.length === 1) return event.key;
+  return null;
 }

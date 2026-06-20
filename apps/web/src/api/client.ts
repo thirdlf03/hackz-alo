@@ -1,6 +1,8 @@
 import type { ApiResult, Difficulty, ReplayEvent, ScenarioDefinition } from "@incident/shared";
 
 export class ApiClient {
+  private eventSeq = 0;
+
   async listScenarios() {
     return this.get<Array<Pick<ScenarioDefinition, "id" | "title" | "difficulty" | "timeLimitMinutes">>>("/api/scenarios");
   }
@@ -35,7 +37,16 @@ export class ApiClient {
   }
 
   async uploadEvents(replayId: string, events: ReplayEvent[]) {
-    return this.post(`/api/replays/${encodeURIComponent(replayId)}/events`, events);
+    const seq = this.eventSeq++;
+    return this.request(`/api/replays/${encodeURIComponent(replayId)}/events?seq=${seq}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(events)
+    });
+  }
+
+  resetEventSequence() {
+    this.eventSeq = 0;
   }
 
   async finishReplay(replayId: string) {

@@ -1,84 +1,44 @@
+import type { Terminal } from "@xterm/xterm";
 import type { TerminalMirrorState } from "@incident/shared";
 
-export class TerminalMirror {
-  private state: TerminalMirrorState;
+export function createEmptyTerminalMirror(cols = 100, rows = 30): TerminalMirrorState {
+  return {
+    cols,
+    rows,
+    lines: ["sandbox に接続しています..."],
+    cursor: { x: 0, y: 0, visible: true },
+    commandDraft: "",
+    commandHistory: []
+  };
+}
 
-  constructor(cols: number, rows: number) {
-    this.state = {
-      cols,
-      rows,
-      lines: ["$ curl localhost:8080/health", "{\"ok\":true}", "$ "],
-      cursor: { x: 2, y: 2, visible: true },
-      commandDraft: "",
-      commandHistory: []
-    };
+export function terminalToMirrorState(
+  terminal: Terminal,
+  commandHistory: TerminalMirrorState["commandHistory"] = []
+): TerminalMirrorState {
+  const buffer = terminal.buffer.active;
+  const lines: string[] = [];
+  for (let index = 0; index < buffer.length; index += 1) {
+    const line = buffer.getLine(index);
+    lines.push(line ? line.translateToString(true) : "");
   }
 
-  input(text: string) {
-    const normalized = text.replace(/\r/g, "");
-    const commands = normalized.split("\n").map((line) => line.trim()).filter(Boolean);
+  const firstVisible = Math.max(0, buffer.length - terminal.rows);
+  const visibleLines = lines.slice(firstVisible);
+  const relativeCursorY = buffer.cursorY - firstVisible;
+  const currentLine = buffer.getLine(buffer.cursorY);
+  const commandDraft = currentLine ? currentLine.translateToString(true) : "";
 
-    for (const command of commands) {
-      this.state.commandDraft = "";
-      this.state.commandHistory.push({ at: Date.now(), command });
-      this.write(`$ ${command}`);
-      this.write(this.simulateOutput(command));
-    }
-
-    this.write("$ ");
-  }
-
-  appendDraft(text: string) {
-    const next = `${this.state.commandDraft}${text.replace(/\r?\n/g, " ")}`;
-    this.state.commandDraft = next.slice(0, this.state.cols * 2);
-  }
-
-  backspaceDraft() {
-    this.state.commandDraft = this.state.commandDraft.slice(0, -1);
-  }
-
-  submitDraft() {
-    const command = this.state.commandDraft.trim();
-    if (!command) return;
-    this.input(`${command}\n`);
-  }
-
-  write(text: string) {
-    const appended = text.split("\n").flatMap((line) => this.wrapLine(line));
-    this.state.lines = [...this.state.lines, ...appended].slice(-this.state.rows);
-    const last = this.state.lines[this.state.lines.length - 1] ?? "";
-    this.state.cursor = {
-      x: Math.min(last.length, this.state.cols - 1),
-      y: Math.min(this.state.lines.length - 1, this.state.rows - 1),
+  return {
+    cols: terminal.cols,
+    rows: terminal.rows,
+    lines: visibleLines.length > 0 ? visibleLines : [""],
+    cursor: {
+      x: buffer.cursorX,
+      y: Math.max(0, Math.min(relativeCursorY, terminal.rows - 1)),
       visible: true
-    };
-  }
-
-  snapshot(): TerminalMirrorState {
-    return {
-      ...this.state,
-      cursor: { ...this.state.cursor },
-      lines: [...this.state.lines],
-      commandHistory: this.state.commandHistory.map((item) => ({ ...item }))
-    };
-  }
-
-  private wrapLine(line: string) {
-    if (line.length <= this.state.cols) return [line];
-    const wrapped: string[] = [];
-    for (let index = 0; index < line.length; index += this.state.cols) {
-      wrapped.push(line.slice(index, index + this.state.cols));
-    }
-    return wrapped;
-  }
-
-  private simulateOutput(command: string) {
-    if (command.includes("df")) return "Filesystem      Size Used Avail Use% Mounted on\nworkspace        1G  970M  54M  95% /workspace";
-    if (command.includes("ps")) return "unyoh-api  231  node /workspace/services/unyoh-api/server.mjs";
-    if (command.includes("tail")) return "2026-06-20T03:00:00Z critical: HTTP 500 rate is above threshold";
-    if (command.includes("unlang")) return "うんともすんとも";
-    if (command.includes("curl")) return "{\"ok\":false,\"reason\":\"scenario fault active\"}";
-    if (command.includes("unctl restart")) return "api restarted";
-    return "ok";
-  }
+    },
+    commandDraft,
+    commandHistory: commandHistory.map((item) => ({ ...item }))
+  };
 }
