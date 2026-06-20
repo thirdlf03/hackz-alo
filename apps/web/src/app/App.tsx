@@ -5,6 +5,8 @@ import { CanvasRenderer } from "../game/render/canvasRenderer.js";
 import { inputDockRects } from "../game/render/canvasRenderer.js";
 import { createEmptyTerminalMirror } from "../game/terminal/mirror.js";
 import { TerminalSession } from "../game/terminal/session.js";
+import { terminalDebug } from "../game/terminal/debug.js";
+import { keyboardEventToTerminalInput } from "../game/terminal/input.js";
 import { CanvasRecorder } from "../game/recording/recorder.js";
 import { ApiClient } from "../api/client.js";
 import { ReplayPage } from "../pages/ReplayPage.js";
@@ -48,6 +50,13 @@ export function App() {
   const [isStarting, setIsStarting] = useState(false);
   const [gameSpeed, setGameSpeed] = useState(1);
   const [appError, setAppError] = useState<string>();
+  const scenarioRef = useRef<ScenarioDefinition | undefined>(undefined);
+
+  function patchGameStateRef(updater: (state: GameRenderState) => GameRenderState) {
+    const current = gameStateRef.current;
+    if (!current) return;
+    gameStateRef.current = updater(current);
+  }
 
   useEffect(() => {
     api.listScenarios().then(setScenarios).catch((error) => {
@@ -72,8 +81,12 @@ export function App() {
   }, [gameState]);
 
   useEffect(() => {
+    scenarioRef.current = scenario;
+  }, [scenario]);
+
+  useEffect(() => {
     gameSpeedRef.current = gameSpeed;
-    setGameState((current) => current ? { ...current, clock: { ...current.clock, speed: gameSpeed } } : current);
+    patchGameStateRef((current) => ({ ...current, clock: { ...current.clock, speed: gameSpeed } }));
   }, [gameSpeed]);
 
   useEffect(() => {
@@ -132,18 +145,85 @@ export function App() {
     if (screen !== "play" || !scenario) return;
     if (lastTickAtRef.current === 0) lastTickAtRef.current = performance.now();
     const tick = () => {
+      const activeScenario = scenarioRef.current;
+      if (!activeScenario) return;
       const now = performance.now();
       const deltaMs = now - lastTickAtRef.current;
       lastTickAtRef.current = now;
       elapsedMsRef.current += deltaMs * gameSpeedRef.current;
-      setGameState((current) => current ? advanceGameState(current, elapsedMsRef.current, scenario, gameSpeedRef.current) : current);
+      patchGameStateRef((current) =>
+        advanceGameState(current, elapsedMsRef.current, activeScenario, gameSpeedRef.current)
+      );
     };
     tick();
-    const timer = window.setInterval(() => {
-      tick();
-    }, 500);
+    const timer = window.setInterval(tick, 500);
     return () => window.clearInterval(timer);
   }, [screen, scenario?.id]);
+
+  useEffect(() => {
+    if (screen !== "play" || !session) return;
+    let cancelled = false;
+    let inFlight = false;
+    let timer = 0;
+
+    const poll = async () => {
+      if (cancelled || inFlight || document.visibilityState === "hidden") return;
+      inFlight = true;
+      try {
+        const metrics = await api.getSessionMetrics(session.sessionId);
+        if (cancelled) return;
+        patchGameStateRef((current) => ({
+          ...current,
+          monitors: {
+            ...current.monitors,
+            left: {
+              ...current.monitors.left,
+              metrics,
+              metricsSource: "live"
+            }
+          }
+        }));
+      } catch (error) {
+        console.error(error);
+        if (cancelled) return;
+        patchGameStateRef((current) => ({
+          ...current,
+          monitors: {
+            ...current.monitors,
+            left: {
+              ...current.monitors.left,
+              metricsSource: "offline"
+            }
+          }
+        }));
+      } finally {
+        inFlight = false;
+      }
+    };
+
+    const schedule = () => {
+      window.clearInterval(timer);
+      if (document.visibilityState === "hidden") return;
+      void poll();
+      timer = window.setInterval(() => void poll(), 5000);
+    };
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        window.clearInterval(timer);
+        return;
+      }
+      schedule();
+    };
+
+    schedule();
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [screen, session?.sessionId]);
 
   const selectedScenarioTitle = useMemo(() => scenario?.title ?? "未選択", [scenario]);
   const canOpenReplay = Boolean(session && gameState?.recording.status === "ready");
@@ -185,17 +265,13 @@ export function App() {
     const terminal = new TerminalSession({
       sessionId: activeSession.sessionId,
       onSnapshot: (snapshot) => {
-        setGameState((current) =>
-          current
-            ? {
-                ...current,
-                monitors: {
-                  ...current.monitors,
-                  center: { terminal: snapshot }
-                }
-              }
-            : current
-        );
+        patchGameStateRef((current) => ({
+          ...current,
+          monitors: {
+            ...current.monitors,
+            center: { terminal: snapshot }
+          }
+        }));
       },
       onCommand: (command) => {
         const replayId = sessionRef.current?.replayId;
@@ -292,9 +368,17 @@ export function App() {
 
   function handleTerminalKey(event: KeyboardEvent) {
     if (screen !== "play" || !terminalRef.current) return;
-    if (event.metaKey || event.ctrlKey || event.altKey) return;
     const input = keyboardEventToTerminalInput(event);
     if (!input) return;
+    if (event.ctrlKey && event.key.toLowerCase() === "c") {
+      terminalDebug("keydown.ctrl-c", {
+        inputBytes: [...input].map((char) => char.charCodeAt(0))
+      });
+      const activeSession = sessionRef.current;
+      if (activeSession) {
+        void api.interruptTerminal(activeSession.sessionId).catch(() => {});
+      }
+    }
     event.preventDefault();
     terminalRef.current.input(input);
   }
@@ -469,16 +553,4 @@ function formatDifficulty(difficulty: Difficulty) {
   if (difficulty === "beginner") return "初級";
   if (difficulty === "intermediate") return "中級";
   return "上級";
-}
-
-function keyboardEventToTerminalInput(event: KeyboardEvent) {
-  if (event.key === "Enter") return "\r";
-  if (event.key === "Backspace") return "\u007f";
-  if (event.key === "Tab") return "\t";
-  if (event.key === "ArrowUp") return "\u001b[A";
-  if (event.key === "ArrowDown") return "\u001b[B";
-  if (event.key === "ArrowRight") return "\u001b[C";
-  if (event.key === "ArrowLeft") return "\u001b[D";
-  if (event.key.length === 1) return event.key;
-  return null;
 }

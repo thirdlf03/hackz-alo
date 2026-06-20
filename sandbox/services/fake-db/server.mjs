@@ -1,9 +1,18 @@
 import net from "node:net";
+import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-export function createFakeDbServer() {
-  return net.createServer((socket) => {
+const DEFAULT_WORKSPACE = process.env.WORKSPACE_DIR ?? "/workspace";
+
+export function createFakeDbServer(options = {}) {
+  const workspace = options.workspace ?? DEFAULT_WORKSPACE;
+  let connections = 0;
+
+  const server = net.createServer((socket) => {
+    connections += 1;
+    void writeStats(workspace, connections);
+
     socket.setEncoding("utf8");
     socket.write("fake-db ready\n");
 
@@ -18,10 +27,19 @@ export function createFakeDbServer() {
       }
     });
 
+    const onClose = () => {
+      connections = Math.max(0, connections - 1);
+      void writeStats(workspace, connections);
+    };
+
+    socket.on("close", onClose);
+    socket.on("end", onClose);
     socket.on("error", () => {
       socket.destroy();
     });
   });
+
+  return server;
 }
 
 export function handleCommand(input) {
@@ -30,6 +48,15 @@ export function handleCommand(input) {
   if (normalized === "select 1" || normalized === "select 1;") return "row 1\n";
   if (normalized === "quit" || normalized === "exit") return "bye\n";
   return `ok ${input}\n`;
+}
+
+async function writeStats(workspace, connections) {
+  const runDir = path.join(workspace, "run");
+  await mkdir(runDir, { recursive: true });
+  await writeFile(
+    path.join(runDir, "fake-db-stats.json"),
+    `${JSON.stringify({ connections, at: Date.now() })}\n`
+  );
 }
 
 function parsePort(value) {
@@ -42,7 +69,7 @@ function parsePort(value) {
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
   const port = parsePort(process.env.FAKE_DB_PORT ?? 15432);
-  const server = createFakeDbServer();
+  const server = createFakeDbServer({ workspace: process.env.WORKSPACE_DIR ?? DEFAULT_WORKSPACE });
   server.listen(port, () => {
     console.log(`fake-db listening on ${port}`);
   });

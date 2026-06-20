@@ -7,273 +7,42 @@ type SandboxAsset = {
 
 const assets: SandboxAsset[] = [
   {
-    path: "/workspace/services/unyoh-api/server.mjs",
-    content: String.raw`
-import http from "node:http";
-import { appendFile, mkdir, stat } from "node:fs/promises";
-import { existsSync } from "node:fs";
-import path from "node:path";
-
-const workspace = process.env.WORKSPACE_DIR ?? "/workspace";
-const logDir = path.join(workspace, "logs");
-const port = Number(process.env.PORT ?? 8080);
-
-await mkdir(logDir, { recursive: true });
-await mkdir(path.join(workspace, "run"), { recursive: true });
-
-const server = http.createServer(async (req, res) => {
-  const url = new URL(req.url ?? "/", "http://localhost");
-  const health = await getHealth();
-  let status = 404;
-  let payload = { error: "not_found" };
-  if (url.pathname === "/health") {
-    status = health.ok ? 200 : 500;
-    payload = health;
-  } else if (url.pathname === "/orders") {
-    status = health.ok ? 200 : 500;
-    payload = health.ok ? { orders: [{ id: "ord_001", amount: 1200 }] } : { error: health.reason };
-  } else if (url.pathname === "/metrics") {
-    status = 200;
-    payload = await getMetrics(health);
-  }
-  await appendFile(path.join(logDir, "access.log"), new Date().toISOString() + " " + req.method + " " + url.pathname + " " + status + "\n");
-  res.writeHead(status, { "content-type": "application/json; charset=utf-8" });
-  res.end(JSON.stringify(payload));
-});
-
-server.listen(port, () => console.log("unyoh-api listening on " + port));
-
-async function getHealth() {
-  if (existsSync(path.join(workspace, "run", "api.down"))) return { ok: false, reason: "process marker says api is down" };
-  const debugLog = path.join(logDir, "debug.log");
-  if (existsSync(debugLog) && (await stat(debugLog)).size > 50 * 1024 * 1024) {
-    return { ok: false, reason: "disk pressure from debug.log" };
-  }
-  return { ok: true };
-}
-
-async function getMetrics(health) {
-  let debugLogSize = 0;
-  try { debugLogSize = (await stat(path.join(logDir, "debug.log"))).size; } catch {}
-  const disk = Math.min(100, Math.round((debugLogSize / (60 * 1024 * 1024)) * 100));
-  return {
-    at: Date.now(),
-    cpu: health.ok ? 28 : 88,
-    memory: health.ok ? 44 : 71,
-    disk,
-    http5xxRate: health.ok ? 0 : 0.35,
-    latencyP95Ms: health.ok ? 120 : 1800,
-    rps: health.ok ? 42 : 3,
-    dbConnections: health.ok ? 6 : 0,
-    queueDepth: health.ok ? 2 : 34
-  };
-}
-`.trimStart()
+    "path": "/workspace/services/metrics/collector.mjs",
+    "content": "import { execFile } from \"node:child_process\";\nimport { readFile } from \"node:fs/promises\";\nimport { existsSync } from \"node:fs\";\nimport os from \"node:os\";\nimport path from \"node:path\";\nimport { promisify } from \"node:util\";\n\nconst execFileAsync = promisify(execFile);\n\nlet lastCpuSample = undefined;\n\nexport class RequestMetricsTracker {\n  constructor(windowMs = 60_000) {\n    this.windowMs = windowMs;\n    this.samples = [];\n  }\n\n  record(status, durationMs) {\n    const at = Date.now();\n    this.samples.push({ at, status, durationMs });\n    this.prune(at);\n  }\n\n  prune(now = Date.now()) {\n    const cutoff = now - this.windowMs;\n    this.samples = this.samples.filter((sample) => sample.at >= cutoff);\n  }\n\n  snapshot() {\n    this.prune();\n    const total = this.samples.length;\n    if (total === 0) {\n      return { http5xxRate: 0, latencyP95Ms: 0, rps: 0 };\n    }\n\n    const errors = this.samples.filter((sample) => sample.status >= 500).length;\n    const durations = this.samples.map((sample) => sample.durationMs).sort((left, right) => left - right);\n    const p95Index = Math.max(0, Math.ceil(durations.length * 0.95) - 1);\n\n    return {\n      http5xxRate: errors / total,\n      latencyP95Ms: durations[p95Index] ?? 0,\n      rps: Math.round(total / (this.windowMs / 1000))\n    };\n  }\n}\n\nexport async function readSystemMetrics(workspace = \"/workspace\") {\n  const [cpu, memory, disk] = await Promise.all([\n    readCpuPercent(),\n    readMemoryPercent(),\n    readDiskPercent(workspace)\n  ]);\n\n  return { cpu, memory, disk };\n}\n\nexport async function readServiceMetrics(workspace = \"/workspace\") {\n  const [dbConnections, queueDepth] = await Promise.all([\n    readDbConnections(workspace),\n    readQueueDepth(workspace)\n  ]);\n\n  return { dbConnections, queueDepth };\n}\n\nasync function readCpuPercent() {\n  const cgroup = await readCgroupCpuPercent();\n  if (cgroup !== undefined) return cgroup;\n\n  const load = os.loadavg()[0] ?? 0;\n  const cpus = Math.max(1, os.cpus().length);\n  return Math.min(100, Math.round((load / cpus) * 100));\n}\n\nasync function readCgroupCpuPercent() {\n  try {\n    const stat = await readFile(\"/sys/fs/cgroup/cpu.stat\", \"utf8\");\n    const usageUsec = Number(stat.match(/^usage_usec\\s+(\\d+)/m)?.[1] ?? NaN);\n    if (!Number.isFinite(usageUsec)) return undefined;\n\n    const now = Date.now();\n    if (lastCpuSample) {\n      const deltaUsageMs = (usageUsec - lastCpuSample.usageUsec) / 1000;\n      const deltaWallMs = Math.max(1, now - lastCpuSample.at);\n      const ratio = await readCpuQuotaRatio();\n      const allowedMs = Math.max(1, deltaWallMs * ratio);\n      lastCpuSample = { at: now, usageUsec };\n      return Math.min(100, Math.round((deltaUsageMs / allowedMs) * 100));\n    }\n\n    lastCpuSample = { at: now, usageUsec };\n    return 0;\n  } catch {\n    return undefined;\n  }\n}\n\nasync function readCpuQuotaRatio() {\n  try {\n    const raw = await readFile(\"/sys/fs/cgroup/cpu.max\", \"utf8\");\n    const [quota, period] = raw.trim().split(/\\s+/);\n    if (quota === \"max\") return 1;\n    const quotaUs = Number(quota);\n    const periodUs = Number(period);\n    if (!Number.isFinite(quotaUs) || !Number.isFinite(periodUs) || periodUs <= 0) return 1;\n    return quotaUs / periodUs;\n  } catch {\n    return 1;\n  }\n}\n\nasync function readMemoryPercent() {\n  try {\n    const [currentRaw, maxRaw] = await Promise.all([\n      readFile(\"/sys/fs/cgroup/memory.current\", \"utf8\"),\n      readFile(\"/sys/fs/cgroup/memory.max\", \"utf8\")\n    ]);\n    const current = Number(currentRaw.trim());\n    const max = Number(maxRaw.trim());\n    if (Number.isFinite(current) && Number.isFinite(max) && max > 0 && max < Number.MAX_SAFE_INTEGER) {\n      return Math.min(100, Math.round((current / max) * 100));\n    }\n  } catch {\n    // fall through\n  }\n\n  try {\n    const meminfo = await readFile(\"/proc/meminfo\", \"utf8\");\n    const totalKb = Number(meminfo.match(/MemTotal:\\s+(\\d+)/)?.[1] ?? 0);\n    const availableKb = Number(meminfo.match(/MemAvailable:\\s+(\\d+)/)?.[1] ?? 0);\n    if (totalKb > 0) {\n      return Math.min(100, Math.round(((totalKb - availableKb) / totalKb) * 100));\n    }\n  } catch {\n    // fall through\n  }\n\n  const { heapUsed, heapTotal } = process.memoryUsage();\n  if (heapTotal > 0) {\n    return Math.min(100, Math.round((heapUsed / heapTotal) * 100));\n  }\n\n  return 0;\n}\n\nasync function readDiskPercent(workspace) {\n  try {\n    const { stdout } = await execFileAsync(\"df\", [\"-P\", workspace]);\n    const line = stdout.trim().split(\"\\n\")[1];\n    const usePercent = Number(line?.split(/\\s+/)[4]?.replace(\"%\", \"\") ?? NaN);\n    if (Number.isFinite(usePercent)) return Math.min(100, Math.max(0, usePercent));\n  } catch {\n    // fall through\n  }\n\n  return 0;\n}\n\nasync function readDbConnections(workspace) {\n  const statsPath = path.join(workspace, \"run\", \"fake-db-stats.json\");\n  if (!existsSync(statsPath)) return 0;\n  try {\n    const payload = JSON.parse(await readFile(statsPath, \"utf8\"));\n    return Number.isFinite(payload.connections) ? Math.max(0, Math.round(payload.connections)) : 0;\n  } catch {\n    return 0;\n  }\n}\n\nasync function readQueueDepth(workspace) {\n  const queuePath = path.join(workspace, \"run\", \"job-queue.jsonl\");\n  if (!existsSync(queuePath)) return 0;\n  try {\n    const content = await readFile(queuePath, \"utf8\");\n    return content.split(\"\\n\").filter((line) => line.trim()).length;\n  } catch {\n    return 0;\n  }\n}\n"
   },
   {
-    path: "/workspace/services/fake-db/server.mjs",
-    content: String.raw`
-import net from "node:net";
-
-const port = Number(process.env.FAKE_DB_PORT ?? 15432);
-const server = net.createServer((socket) => {
-  socket.setEncoding("utf8");
-  socket.write("fake-db ready\n");
-  socket.on("data", (chunk) => {
-    for (const line of chunk.split(/\r?\n/u).map((item) => item.trim()).filter(Boolean)) {
-      const normalized = line.toLowerCase();
-      if (normalized === "ping") socket.write("pong\n");
-      else if (normalized === "select 1" || normalized === "select 1;") socket.write("row 1\n");
-      else if (normalized === "quit" || normalized === "exit") {
-        socket.write("bye\n");
-        socket.end();
-      } else socket.write("ok " + line + "\n");
-    }
-  });
-});
-server.listen(port, () => console.log("fake-db listening on " + port));
-`.trimStart()
+    "path": "/workspace/services/unyoh-api/server.mjs",
+    "content": "import http from \"node:http\";\nimport { appendFile, mkdir, readFile, stat } from \"node:fs/promises\";\nimport { existsSync } from \"node:fs\";\nimport path from \"node:path\";\nimport { fileURLToPath } from \"node:url\";\nimport {\n  RequestMetricsTracker,\n  readServiceMetrics,\n  readSystemMetrics\n} from \"../metrics/collector.mjs\";\n\nconst DEFAULT_WORKSPACE = process.env.WORKSPACE_DIR ?? \"/workspace\";\n\nexport async function prepareWorkspace(workspace = DEFAULT_WORKSPACE) {\n  await mkdir(path.join(workspace, \"logs\"), { recursive: true });\n  await mkdir(path.join(workspace, \"run\"), { recursive: true });\n}\n\nexport function createUnyohApiServer(options = {}) {\n  const workspace = options.workspace ?? DEFAULT_WORKSPACE;\n  const tracker = options.tracker ?? new RequestMetricsTracker();\n  const enableProbe = options.enableProbe ?? true;\n\n  const server = http.createServer(async (req, res) => {\n    const startedAt = performance.now();\n    const url = new URL(req.url ?? \"/\", `http://${req.headers.host ?? \"localhost\"}`);\n    let status = 404;\n    let payload = { error: \"not_found\" };\n\n    try {\n      if (url.pathname === \"/health\") {\n        const health = await getHealth(workspace);\n        status = health.ok ? 200 : 500;\n        payload = health;\n      } else if (url.pathname === \"/orders\") {\n        const health = await getHealth(workspace);\n        if (health.ok) {\n          status = 200;\n          payload = { orders: [{ id: \"ord_001\", amount: 1200 }] };\n        } else {\n          status = 500;\n          payload = { error: health.reason };\n        }\n      } else if (url.pathname === \"/metrics\") {\n        status = 200;\n        payload = await getMetrics(workspace, tracker);\n      }\n    } catch {\n      status = 500;\n      payload = { error: \"internal_error\" };\n    }\n\n    const durationMs = Math.round(performance.now() - startedAt);\n    tracker.record(status, durationMs);\n    await appendAccessLog(workspace, req.method ?? \"GET\", url.pathname, status);\n    res.writeHead(status, { \"content-type\": \"application/json; charset=utf-8\" });\n    res.end(JSON.stringify(payload));\n  });\n\n  if (enableProbe) {\n    server.on(\"listening\", () => {\n      const port = server.address()?.port;\n      if (!port) return;\n      const probe = async () => {\n        for (const pathname of [\"/health\", \"/orders\"]) {\n          const startedAt = performance.now();\n          try {\n            const response = await fetch(`http://127.0.0.1:${port}${pathname}`);\n            tracker.record(response.status, Math.round(performance.now() - startedAt));\n          } catch {\n            tracker.record(500, Math.round(performance.now() - startedAt));\n          }\n        }\n      };\n      const timer = setInterval(() => {\n        void probe();\n      }, 2000);\n      timer.unref();\n    });\n  }\n\n  return server;\n}\n\nasync function appendAccessLog(workspace, method, pathname, status) {\n  try {\n    await mkdir(path.join(workspace, \"logs\"), { recursive: true });\n    await appendFile(\n      path.join(workspace, \"logs\", \"access.log\"),\n      `${new Date().toISOString()} ${method} ${pathname} ${status}\\n`\n    );\n  } catch (error) {\n    console.error(`failed to append access log: ${error.message}`);\n  }\n}\n\nexport async function getHealth(workspace = DEFAULT_WORKSPACE) {\n  const logDir = path.join(workspace, \"logs\");\n  const downMarker = path.join(workspace, \"run\", \"api.down\");\n  if (existsSync(downMarker)) {\n    return { ok: false, reason: \"process marker says api is down\" };\n  }\n  const debugLog = path.join(logDir, \"debug.log\");\n  if (existsSync(debugLog)) {\n    const info = await stat(debugLog);\n    if (info.size > 50 * 1024 * 1024) {\n      return { ok: false, reason: \"disk pressure from debug.log\" };\n    }\n  }\n  return { ok: true };\n}\n\nexport async function getMetrics(workspace = DEFAULT_WORKSPACE, tracker = new RequestMetricsTracker()) {\n  const [system, service, traffic] = await Promise.all([\n    readSystemMetrics(workspace),\n    readServiceMetrics(workspace),\n    Promise.resolve(tracker.snapshot())\n  ]);\n\n  let appLogTail = \"\";\n  try {\n    const appLog = await readFile(path.join(workspace, \"logs\", \"app.log\"), \"utf8\");\n    appLogTail = appLog.split(\"\\n\").slice(-5).join(\"\\n\");\n  } catch {\n    appLogTail = \"\";\n  }\n\n  return {\n    at: Date.now(),\n    cpu: system.cpu,\n    memory: system.memory,\n    disk: system.disk,\n    http5xxRate: traffic.http5xxRate,\n    latencyP95Ms: traffic.latencyP95Ms,\n    rps: traffic.rps,\n    dbConnections: service.dbConnections,\n    queueDepth: service.queueDepth,\n    appLogTail\n  };\n}\n\nfunction parsePort(value) {\n  const port = Number(value);\n  if (!Number.isInteger(port) || port <= 0 || port > 65535) {\n    throw new Error(`invalid PORT: ${value}`);\n  }\n  return port;\n}\n\nif (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {\n  const port = parsePort(process.env.PORT ?? 8080);\n  await prepareWorkspace(DEFAULT_WORKSPACE);\n  const server = createUnyohApiServer({ workspace: DEFAULT_WORKSPACE });\n  server.listen(port, () => {\n    console.log(`unyoh-api listening on ${port}`);\n  });\n}\n"
   },
   {
-    path: "/workspace/bin/fault-injector.mjs",
-    content: String.raw`
-import { appendFile, mkdir, rm, stat, writeFile } from "node:fs/promises";
-import path from "node:path";
-
-const workspace = process.env.WORKSPACE_DIR ?? "/workspace";
-const [fault, ...args] = process.argv.slice(2);
-await mkdir(path.join(workspace, "logs"), { recursive: true });
-await mkdir(path.join(workspace, "run"), { recursive: true });
-
-if (fault === "process_stop") {
-  await writeFile(path.join(workspace, "run", "api.down"), new Date().toISOString());
-  await appendFile(path.join(workspace, "logs", "app.log"), "api process stopped by scenario\n");
-  console.log("process_stop injected");
-} else if (fault === "process_restore") {
-  await rm(path.join(workspace, "run", "api.down"), { force: true });
-  await appendFile(path.join(workspace, "logs", "app.log"), "api process restored\n");
-  console.log("process_restore injected");
-} else if (fault === "disk_full") {
-  const target = normalizeWorkspacePath(args[0] ?? "/workspace/logs/debug.log");
-  const bytes = Number(args[1] ?? 64 * 1024 * 1024);
-  if (!Number.isInteger(bytes) || bytes < 0) throw new Error("byte count must be a non-negative integer");
-  await mkdir(path.dirname(target), { recursive: true });
-  const chunk = Buffer.alloc(1024 * 1024, "x");
-  let remaining = bytes;
-  while (remaining > 0) {
-    const size = Math.min(remaining, chunk.length);
-    await appendFile(target, size === chunk.length ? chunk : chunk.subarray(0, size));
-    remaining -= size;
-  }
-  await appendFile(path.join(workspace, "logs", "app.log"), "debug log expanded to " + (await stat(target)).size + " bytes\n");
-  console.log("disk_full injected");
-} else if (fault === "unlang_batch_failure") {
-  const target = normalizeWorkspacePath(args[0] ?? "/workspace/services/batch/sales.un");
-  const jobId = args[1] ?? "sales-nightly";
-  await mkdir(path.dirname(target), { recursive: true });
-  await writeFile(target, "うんちく 売上集計バッチ\nうん x = 100\nうん y = うんなし\nうん z = x うんわり y\nうん！ z\n");
-  await appendFile(path.join(workspace, "logs", "batch.log"), jobId + ": うんともすんとも\n");
-  console.log("unlang_batch_failure injected");
-} else {
-  console.error("usage: fault-injector.mjs process_stop|process_restore|disk_full|unlang_batch_failure");
-  process.exit(1);
-}
-
-function normalizeWorkspacePath(value) {
-  const root = path.resolve(workspace);
-  const resolved = path.resolve(path.isAbsolute(value) ? value : path.join(root, value));
-  const relative = path.relative(root, resolved);
-  if (relative.startsWith("..") || path.isAbsolute(relative)) throw new Error("target path must stay inside workspace");
-  return resolved;
-}
-`.trimStart()
+    "path": "/workspace/services/fake-db/server.mjs",
+    "content": "import net from \"node:net\";\nimport { mkdir, writeFile } from \"node:fs/promises\";\nimport path from \"node:path\";\nimport { fileURLToPath } from \"node:url\";\n\nconst DEFAULT_WORKSPACE = process.env.WORKSPACE_DIR ?? \"/workspace\";\n\nexport function createFakeDbServer(options = {}) {\n  const workspace = options.workspace ?? DEFAULT_WORKSPACE;\n  let connections = 0;\n\n  const server = net.createServer((socket) => {\n    connections += 1;\n    void writeStats(workspace, connections);\n\n    socket.setEncoding(\"utf8\");\n    socket.write(\"fake-db ready\\n\");\n\n    socket.on(\"data\", (chunk) => {\n      for (const input of chunk.split(/\\r?\\n/u).map((line) => line.trim()).filter(Boolean)) {\n        const output = handleCommand(input);\n        socket.write(output);\n        if (output === \"bye\\n\") {\n          socket.end();\n          break;\n        }\n      }\n    });\n\n    const onClose = () => {\n      connections = Math.max(0, connections - 1);\n      void writeStats(workspace, connections);\n    };\n\n    socket.on(\"close\", onClose);\n    socket.on(\"end\", onClose);\n    socket.on(\"error\", () => {\n      socket.destroy();\n    });\n  });\n\n  return server;\n}\n\nexport function handleCommand(input) {\n  const normalized = input.toLowerCase();\n  if (normalized === \"ping\") return \"pong\\n\";\n  if (normalized === \"select 1\" || normalized === \"select 1;\") return \"row 1\\n\";\n  if (normalized === \"quit\" || normalized === \"exit\") return \"bye\\n\";\n  return `ok ${input}\\n`;\n}\n\nasync function writeStats(workspace, connections) {\n  const runDir = path.join(workspace, \"run\");\n  await mkdir(runDir, { recursive: true });\n  await writeFile(\n    path.join(runDir, \"fake-db-stats.json\"),\n    `${JSON.stringify({ connections, at: Date.now() })}\\n`\n  );\n}\n\nfunction parsePort(value) {\n  const port = Number(value);\n  if (!Number.isInteger(port) || port <= 0 || port > 65535) {\n    throw new Error(`invalid FAKE_DB_PORT: ${value}`);\n  }\n  return port;\n}\n\nif (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {\n  const port = parsePort(process.env.FAKE_DB_PORT ?? 15432);\n  const server = createFakeDbServer({ workspace: process.env.WORKSPACE_DIR ?? DEFAULT_WORKSPACE });\n  server.listen(port, () => {\n    console.log(`fake-db listening on ${port}`);\n  });\n}\n"
   },
   {
-    path: "/workspace/bin/unctl.mjs",
-    content: String.raw`
-import { access, mkdir, rm, writeFile } from "node:fs/promises";
-import path from "node:path";
-
-const workspace = process.env.WORKSPACE_DIR ?? "/workspace";
-const [command, service] = process.argv.slice(2);
-const runDir = path.join(workspace, "run");
-const marker = path.join(runDir, "api.down");
-await mkdir(runDir, { recursive: true });
-if (service !== "api" || !["status", "restart", "stop"].includes(command)) {
-  console.error("usage: unctl <status|restart|stop> api");
-  process.exit(1);
-}
-if (command === "status") console.log((await exists(marker)) ? "api stopped" : "api running");
-if (command === "restart") {
-  await rm(marker, { force: true });
-  console.log("api restarted");
-}
-if (command === "stop") {
-  await writeFile(marker, new Date().toISOString());
-  console.log("api stopped");
-}
-async function exists(file) {
-  try { await access(file); return true; } catch { return false; }
-}
-`.trimStart()
+    "path": "/workspace/bin/fault-injector.mjs",
+    "content": "#!/usr/bin/env node\nimport { appendFile, mkdir, rm, stat, writeFile } from \"node:fs/promises\";\nimport path from \"node:path\";\nimport { fileURLToPath } from \"node:url\";\n\nconst DEFAULT_WORKSPACE = process.env.WORKSPACE_DIR ?? \"/workspace\";\nconst USAGE = \"usage: fault-injector.mjs process_stop|process_restore|disk_full|queue_backlog|unlang_batch_failure\";\n\nexport async function injectFault(fault, args = [], options = {}) {\n  const workspace = options.workspace ?? DEFAULT_WORKSPACE;\n\n  await mkdir(path.join(workspace, \"logs\"), { recursive: true });\n  await mkdir(path.join(workspace, \"run\"), { recursive: true });\n\n  if (fault === \"process_stop\") {\n    const processId = args[0] ?? \"api\";\n    if (processId !== \"api\") throw new Error(`unsupported process ${processId}`);\n    await writeFile(path.join(workspace, \"run\", \"api.down\"), new Date().toISOString());\n    await appendFile(path.join(workspace, \"logs\", \"app.log\"), \"api process stopped by scenario\\n\");\n    return \"process_stop injected\";\n  }\n\n  if (fault === \"process_restore\") {\n    await rm(path.join(workspace, \"run\", \"api.down\"), { force: true });\n    await appendFile(path.join(workspace, \"logs\", \"app.log\"), \"api process restored\\n\");\n    return \"process_restore injected\";\n  }\n\n  if (fault === \"disk_full\") {\n    const target = args[0] ?? path.join(workspace, \"logs\", \"debug.log\");\n    const bytes = parseByteCount(args[1] ?? 64 * 1024 * 1024);\n    const safeTarget = normalizeWorkspacePath(target, workspace);\n    await mkdir(path.dirname(safeTarget), { recursive: true });\n    await appendExactBytes(safeTarget, bytes);\n    const totalBytes = (await stat(safeTarget)).size;\n    await appendFile(path.join(workspace, \"logs\", \"app.log\"), `debug log expanded to ${totalBytes} bytes\\n`);\n    return \"disk_full injected\";\n  }\n\n  if (fault === \"queue_backlog\") {\n    const count = parseByteCount(args[0] ?? 32);\n    const lines = Array.from({ length: count }, (_, index) =>\n      JSON.stringify({ id: `backlog-${Date.now()}-${index}`, status: \"pending\" })\n    ).join(\"\\n\");\n    await appendFile(path.join(workspace, \"run\", \"job-queue.jsonl\"), `${lines}\\n`);\n    return `queue_backlog injected (${count})`;\n  }\n\n  if (fault === \"unlang_batch_failure\") {\n    const target = normalizeWorkspacePath(args[0] ?? path.join(workspace, \"services\", \"batch\", \"sales.un\"), workspace);\n    const jobId = args[1] ?? \"sales-nightly\";\n    await mkdir(path.dirname(target), { recursive: true });\n    await writeFile(target, \"うんちく 売上集計バッチ\\nうん x = 100\\nうん y = うんなし\\nうん z = x うんわり y\\nうん！ z\\n\");\n    await appendFile(path.join(workspace, \"logs\", \"batch.log\"), `${jobId}: うんともすんとも\\n`);\n    await appendFile(\n      path.join(workspace, \"run\", \"job-queue.jsonl\"),\n      `${JSON.stringify({ id: jobId, status: \"failed\" })}\\n`\n    );\n    return \"unlang_batch_failure injected\";\n  }\n\n  throw usageError();\n}\n\nexport function normalizeWorkspacePath(value, workspace = DEFAULT_WORKSPACE) {\n  const root = path.resolve(workspace);\n  const resolved = path.resolve(path.isAbsolute(value) ? value : path.join(root, value));\n  const relative = path.relative(root, resolved);\n  if (relative.startsWith(\"..\") || path.isAbsolute(relative)) {\n    throw new Error(\"target path must stay inside workspace\");\n  }\n  return resolved;\n}\n\nasync function appendExactBytes(file, bytes) {\n  const chunk = Buffer.alloc(1024 * 1024, \"x\");\n  let remaining = bytes;\n  while (remaining > 0) {\n    const size = Math.min(remaining, chunk.length);\n    await appendFile(file, size === chunk.length ? chunk : chunk.subarray(0, size));\n    remaining -= size;\n  }\n}\n\nfunction parseByteCount(value) {\n  const bytes = Number(value);\n  if (!Number.isInteger(bytes) || bytes < 0) {\n    throw new Error(\"byte count must be a non-negative integer\");\n  }\n  return bytes;\n}\n\nfunction usageError() {\n  const error = new Error(USAGE);\n  error.code = \"USAGE\";\n  return error;\n}\n\nif (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {\n  const [fault, ...args] = process.argv.slice(2);\n  try {\n    console.log(await injectFault(fault, args));\n  } catch (error) {\n    console.error(error.code === \"USAGE\" ? USAGE : error.message);\n    process.exit(1);\n  }\n}\n"
   },
   {
-    path: "/workspace/bin/unlang.mjs",
-    content: String.raw`
-import { readFile } from "node:fs/promises";
-
-function runUnlang(source) {
-  const env = new Map();
-  let lastValue = 0;
-  for (const [index, rawLine] of source.split(/\r?\n/).entries()) {
-    const line = rawLine.trim();
-    if (!line || line.startsWith("うんちく")) continue;
-    if (line.startsWith("うん！")) {
-      const expr = line.slice("うん！".length).trim();
-      return expr ? evaluate(expr, env, index + 1) : lastValue;
-    }
-    const match = line.match(/^うん\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*=\s*(.+)$/u);
-    if (match) {
-      const value = evaluate(match[2], env, index + 1);
-      env.set(match[1], value);
-      lastValue = value;
-      continue;
-    }
-    throw runtimeError("SYNTAX_ERROR", index + 1);
-  }
-  return lastValue;
-}
-
-function evaluate(expression, env, line) {
-  const tokens = expression.match(/\(|\)|[^\s()]+/gu) ?? [];
-  let index = 0;
-  const parseExpression = () => {
-    let value = parseTerm();
-    while (tokens[index] === "うんたす" || tokens[index] === "うんひく") {
-      const op = tokens[index++];
-      const right = parseTerm();
-      value = op === "うんたす" ? value + right : value - right;
-    }
-    return value;
-  };
-  const parseTerm = () => {
-    let value = parseFactor();
-    while (tokens[index] === "うんかけ" || tokens[index] === "うんわり") {
-      const op = tokens[index++];
-      const right = parseFactor();
-      if (op === "うんわり" && right === 0) throw runtimeError("DIVISION_BY_ZERO", line);
-      value = op === "うんかけ" ? value * right : value / right;
-    }
-    return value;
-  };
-  const parseFactor = () => {
-    const token = tokens[index++];
-    if (token === "(") {
-      const value = parseExpression();
-      if (tokens[index++] !== ")") throw runtimeError("SYNTAX_ERROR", line);
-      return value;
-    }
-    if (token === "うんなし") return 0;
-    if (token === "うんあり") return 1;
-    if (/^-?\d+(\.\d+)?$/u.test(token ?? "")) return Number(token);
-    if (token && env.has(token)) return env.get(token);
-    throw runtimeError("UNDEFINED_VARIABLE", line);
-  };
-  const value = parseExpression();
-  if (index !== tokens.length) throw runtimeError("SYNTAX_ERROR", line);
-  return value;
-}
-
-function runtimeError(code, line) {
-  const error = new Error("うんともすんとも");
-  error.code = code;
-  error.line = line;
-  return error;
-}
-
-const [command, file] = process.argv.slice(2);
-if ((command !== "run" && command !== "check") || !file) {
-  console.error("usage: unlang <run|check> <file>");
-  process.exit(1);
-}
-try {
-  const result = runUnlang(await readFile(file, "utf8"));
-  console.log(command === "run" ? result : "ok");
-} catch {
-  console.error("うんともすんとも");
-  process.exit(1);
-}
-`.trimStart()
+    "path": "/workspace/bin/unctl.mjs",
+    "content": "#!/usr/bin/env node\nimport { access, mkdir, rm, writeFile } from \"node:fs/promises\";\nimport path from \"node:path\";\nimport { fileURLToPath } from \"node:url\";\n\nconst DEFAULT_WORKSPACE = process.env.WORKSPACE_DIR ?? \"/workspace\";\nconst USAGE = \"usage: unctl <status|restart|stop> api\";\n\nexport async function runUnctl(command, service, options = {}) {\n  const workspace = options.workspace ?? DEFAULT_WORKSPACE;\n  if (![\"status\", \"restart\", \"stop\"].includes(command) || service !== \"api\") {\n    throw usageError();\n  }\n\n  const runDir = path.join(workspace, \"run\");\n  const downMarker = path.join(runDir, \"api.down\");\n  await mkdir(runDir, { recursive: true });\n\n  if (command === \"status\") {\n    return (await exists(downMarker)) ? \"api stopped\" : \"api running\";\n  }\n\n  if (command === \"restart\") {\n    await rm(downMarker, { force: true });\n    return \"api restarted\";\n  }\n\n  await writeFile(downMarker, new Date().toISOString());\n  return \"api stopped\";\n}\n\nasync function exists(file) {\n  try {\n    await access(file);\n    return true;\n  } catch {\n    return false;\n  }\n}\n\nfunction usageError() {\n  const error = new Error(USAGE);\n  error.code = \"USAGE\";\n  return error;\n}\n\nif (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {\n  const [command, service] = process.argv.slice(2);\n  try {\n    console.log(await runUnctl(command, service));\n  } catch (error) {\n    console.error(error.code === \"USAGE\" ? USAGE : error.message);\n    process.exit(1);\n  }\n}\n"
   },
   {
-    path: "/workspace/services/batch/sales.un",
-    content: "うんちく 売上集計バッチ\nうん x = 100\nうん y = うんあり\nうん z = x うんわり y\nうん！ z\n"
+    "path": "/workspace/bin/unlang.mjs",
+    "content": "#!/usr/bin/env node\nimport { readFile } from \"node:fs/promises\";\nimport path from \"node:path\";\nimport { fileURLToPath } from \"node:url\";\n\nexport function runUnlang(source) {\n  const env = new Map();\n  const lines = source.split(/\\r?\\n/);\n  let lastValue = 0;\n\n  for (let index = 0; index < lines.length; index += 1) {\n    const raw = lines[index].trim();\n    if (!raw || raw.startsWith(\"うんちく\")) continue;\n\n    if (raw.startsWith(\"うん！\")) {\n      const expr = raw.slice(\"うん！\".length).trim();\n      return expr ? evaluate(expr, env, index + 1) : lastValue;\n    }\n\n    if (raw.startsWith(\"うん \")) {\n      const match = raw.match(/^うん\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*=\\s*(.+)$/u);\n      if (!match) throw runtimeError(\"SYNTAX_ERROR\", index + 1);\n      const value = evaluate(match[2], env, index + 1);\n      env.set(match[1], value);\n      lastValue = value;\n      continue;\n    }\n\n    if (raw.startsWith(\"うーん \")) {\n      lastValue = evaluate(raw.slice(\"うーん \".length), env, index + 1);\n      continue;\n    }\n\n    throw runtimeError(\"SYNTAX_ERROR\", index + 1);\n  }\n\n  return lastValue;\n}\n\nfunction evaluate(expression, env, line) {\n  const tokens = tokenize(expression);\n  let index = 0;\n\n  function parseExpression() {\n    let value = parseTerm();\n    while (tokens[index] === \"うんたす\" || tokens[index] === \"うんひく\") {\n      const op = tokens[index++];\n      const right = parseTerm();\n      value = op === \"うんたす\" ? value + right : value - right;\n    }\n    return value;\n  }\n\n  function parseTerm() {\n    let value = parseFactor();\n    while (tokens[index] === \"うんかけ\" || tokens[index] === \"うんわり\") {\n      const op = tokens[index++];\n      const right = parseFactor();\n      if (op === \"うんわり\" && right === 0) throw runtimeError(\"DIVISION_BY_ZERO\", line);\n      value = op === \"うんかけ\" ? value * right : value / right;\n    }\n    return value;\n  }\n\n  function parseFactor() {\n    const token = tokens[index++];\n    if (token === undefined) throw runtimeError(\"SYNTAX_ERROR\", line);\n    if (token === \"(\") {\n      const value = parseExpression();\n      if (tokens[index++] !== \")\") throw runtimeError(\"SYNTAX_ERROR\", line);\n      return value;\n    }\n    if (token === \"うんなし\") return 0;\n    if (token === \"うんあり\") return 1;\n    if (/^-?\\d+(\\.\\d+)?$/u.test(token)) return Number(token);\n    if (env.has(token)) return env.get(token);\n    throw runtimeError(\"UNDEFINED_VARIABLE\", line);\n  }\n\n  const value = parseExpression();\n  if (index !== tokens.length) throw runtimeError(\"SYNTAX_ERROR\", line);\n  return value;\n}\n\nfunction tokenize(expression) {\n  const tokens = [];\n  let current = \"\";\n  for (const char of expression) {\n    if (/\\s/u.test(char)) {\n      pushCurrent();\n    } else if (char === \"(\" || char === \")\") {\n      pushCurrent();\n      tokens.push(char);\n    } else {\n      current += char;\n    }\n  }\n  pushCurrent();\n  return tokens;\n\n  function pushCurrent() {\n    if (current) {\n      tokens.push(current);\n      current = \"\";\n    }\n  }\n}\n\nfunction runtimeError(code, line) {\n  const error = new Error(\"うんともすんとも\");\n  error.code = code;\n  error.line = line;\n  error.column = 1;\n  return error;\n}\n\nif (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {\n  const [command, file] = process.argv.slice(2);\n  if ((command !== \"run\" && command !== \"check\") || !file) {\n    console.error(\"usage: unlang <run|check> <file>\");\n    process.exit(1);\n  }\n\n  try {\n    const source = await readFile(file, \"utf8\");\n    const result = runUnlang(source);\n    if (command === \"run\") console.log(result);\n    else console.log(\"ok\");\n  } catch (error) {\n    console.error(\"うんともすんとも\");\n    process.exit(1);\n  }\n}\n"
+  },
+  {
+    "path": "/workspace/services/batch/sales.un",
+    "content": "うんちく 売上集計バッチ\nうん x = 100\nうん y = うんあり\nうん z = x うんわり y\nうん！ z\n"
   }
 ];
 
 export async function installSandboxAssets(sandbox: SandboxRuntime) {
-  await sandbox.exec("mkdir -p /workspace/services/unyoh-api /workspace/services/fake-db /workspace/services/batch /workspace/bin /workspace/logs /workspace/run");
+  await sandbox.exec("mkdir -p /workspace/services/metrics /workspace/services/unyoh-api /workspace/services/fake-db /workspace/services/batch /workspace/bin /workspace/logs /workspace/run");
   for (const asset of assets) {
     await sandbox.writeFile(asset.path, asset.content);
   }
+  await sandbox.writeFile(
+    "/workspace/run/job-queue.jsonl",
+    '{"id":"job-001","status":"pending"}\n{"id":"job-002","status":"pending"}\n'
+  );
 }

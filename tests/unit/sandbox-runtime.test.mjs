@@ -10,7 +10,8 @@ import { runUnlang } from "../../sandbox/bin/unlang.mjs";
 import { injectFault, normalizeWorkspacePath } from "../../sandbox/bin/fault-injector.mjs";
 import { runUnctl } from "../../sandbox/bin/unctl.mjs";
 import { createFakeDbServer, handleCommand } from "../../sandbox/services/fake-db/server.mjs";
-import { createUnyohApiServer, prepareWorkspace } from "../../sandbox/services/unyoh-api/server.mjs";
+import { createUnyohApiServer, getMetrics, prepareWorkspace } from "../../sandbox/services/unyoh-api/server.mjs";
+import { RequestMetricsTracker } from "../../sandbox/services/metrics/collector.mjs";
 
 test("unlang evaluates valid programs and reports structured runtime errors", () => {
   assert.equal(
@@ -64,7 +65,7 @@ test("unyoh-api reflects marker health, metrics, and access log statuses", async
   t.after(() => rm(workspace, { recursive: true, force: true }));
   await prepareWorkspace(workspace);
 
-  const server = createUnyohApiServer({ workspace });
+  const server = createUnyohApiServer({ workspace, enableProbe: false });
   const baseUrl = await listenHttp(server);
   t.after(() => closeServer(server));
 
@@ -86,8 +87,12 @@ test("unyoh-api reflects marker health, metrics, and access log statuses", async
   response = await fetch(`${baseUrl}/metrics`);
   assert.equal(response.status, 200);
   const metrics = await response.json();
-  assert.equal(metrics.http5xxRate, 0.35);
+  assert.equal(metrics.http5xxRate, 1 / 3);
+  assert.equal(typeof metrics.cpu, "number");
+  assert.equal(typeof metrics.memory, "number");
+  assert.equal(typeof metrics.disk, "number");
   assert.equal(metrics.dbConnections, 0);
+  assert.equal(metrics.queueDepth, 0);
 
   const accessLog = await readFile(path.join(workspace, "logs", "access.log"), "utf8");
   assert.match(accessLog, /GET \/health 200/);
@@ -96,11 +101,36 @@ test("unyoh-api reflects marker health, metrics, and access log statuses", async
   assert.match(accessLog, /GET \/metrics 200/);
 });
 
+test("getMetrics uses request tracker and service state files", async (t) => {
+  const workspace = await tempWorkspace();
+  t.after(() => rm(workspace, { recursive: true, force: true }));
+  await prepareWorkspace(workspace);
+  await mkdir(path.join(workspace, "run"), { recursive: true });
+  await writeFile(
+    path.join(workspace, "run", "job-queue.jsonl"),
+    '{"id":"job-001","status":"pending"}\n{"id":"job-002","status":"pending"}\n'
+  );
+  await writeFile(path.join(workspace, "run", "fake-db-stats.json"), '{"connections":3}\n');
+
+  const tracker = new RequestMetricsTracker();
+  tracker.record(200, 40);
+  tracker.record(500, 120);
+  tracker.record(500, 180);
+
+  const metrics = await getMetrics(workspace, tracker);
+  assert.equal(metrics.queueDepth, 2);
+  assert.equal(metrics.dbConnections, 3);
+  assert.equal(metrics.http5xxRate, 2 / 3);
+  assert.equal(metrics.latencyP95Ms, 180);
+});
+
 test("fake-db answers basic health and query commands", async (t) => {
   assert.equal(handleCommand("PING"), "pong\n");
   assert.equal(handleCommand("select 1;"), "row 1\n");
 
-  const server = createFakeDbServer();
+  const workspace = await tempWorkspace();
+  t.after(() => rm(workspace, { recursive: true, force: true }));
+  const server = createFakeDbServer({ workspace });
   const address = await listenTcp(server);
   t.after(() => closeServer(server));
 

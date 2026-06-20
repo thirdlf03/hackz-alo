@@ -3,6 +3,11 @@ import { appendFile, mkdir, readFile, stat } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  RequestMetricsTracker,
+  readServiceMetrics,
+  readSystemMetrics
+} from "../metrics/collector.mjs";
 
 const DEFAULT_WORKSPACE = process.env.WORKSPACE_DIR ?? "/workspace";
 
@@ -13,8 +18,11 @@ export async function prepareWorkspace(workspace = DEFAULT_WORKSPACE) {
 
 export function createUnyohApiServer(options = {}) {
   const workspace = options.workspace ?? DEFAULT_WORKSPACE;
+  const tracker = options.tracker ?? new RequestMetricsTracker();
+  const enableProbe = options.enableProbe ?? true;
 
-  return http.createServer(async (req, res) => {
+  const server = http.createServer(async (req, res) => {
+    const startedAt = performance.now();
     const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
     let status = 404;
     let payload = { error: "not_found" };
@@ -35,17 +43,43 @@ export function createUnyohApiServer(options = {}) {
         }
       } else if (url.pathname === "/metrics") {
         status = 200;
-        payload = await getMetrics(workspace, await getHealth(workspace));
+        payload = await getMetrics(workspace, tracker);
       }
     } catch {
       status = 500;
       payload = { error: "internal_error" };
     }
 
+    const durationMs = Math.round(performance.now() - startedAt);
+    tracker.record(status, durationMs);
     await appendAccessLog(workspace, req.method ?? "GET", url.pathname, status);
     res.writeHead(status, { "content-type": "application/json; charset=utf-8" });
     res.end(JSON.stringify(payload));
   });
+
+  if (enableProbe) {
+    server.on("listening", () => {
+      const port = server.address()?.port;
+      if (!port) return;
+      const probe = async () => {
+        for (const pathname of ["/health", "/orders"]) {
+          const startedAt = performance.now();
+          try {
+            const response = await fetch(`http://127.0.0.1:${port}${pathname}`);
+            tracker.record(response.status, Math.round(performance.now() - startedAt));
+          } catch {
+            tracker.record(500, Math.round(performance.now() - startedAt));
+          }
+        }
+      };
+      const timer = setInterval(() => {
+        void probe();
+      }, 2000);
+      timer.unref();
+    });
+  }
+
+  return server;
 }
 
 async function appendAccessLog(workspace, method, pathname, status) {
@@ -76,35 +110,31 @@ export async function getHealth(workspace = DEFAULT_WORKSPACE) {
   return { ok: true };
 }
 
-export async function getMetrics(workspace = DEFAULT_WORKSPACE, health = undefined) {
-  const currentHealth = health ?? (await getHealth(workspace));
-  const logDir = path.join(workspace, "logs");
-  let debugLogSize = 0;
-  try {
-    debugLogSize = (await stat(path.join(logDir, "debug.log"))).size;
-  } catch {
-    debugLogSize = 0;
-  }
+export async function getMetrics(workspace = DEFAULT_WORKSPACE, tracker = new RequestMetricsTracker()) {
+  const [system, service, traffic] = await Promise.all([
+    readSystemMetrics(workspace),
+    readServiceMetrics(workspace),
+    Promise.resolve(tracker.snapshot())
+  ]);
 
   let appLogTail = "";
   try {
-    const appLog = await readFile(path.join(logDir, "app.log"), "utf8");
+    const appLog = await readFile(path.join(workspace, "logs", "app.log"), "utf8");
     appLogTail = appLog.split("\n").slice(-5).join("\n");
   } catch {
     appLogTail = "";
   }
 
-  const disk = Math.min(100, Math.round((debugLogSize / (60 * 1024 * 1024)) * 100));
   return {
     at: Date.now(),
-    cpu: currentHealth.ok ? 28 : 88,
-    memory: currentHealth.ok ? 44 : 71,
-    disk,
-    http5xxRate: currentHealth.ok ? 0 : 0.35,
-    latencyP95Ms: currentHealth.ok ? 120 : 1800,
-    rps: currentHealth.ok ? 42 : 3,
-    dbConnections: currentHealth.ok ? 6 : 0,
-    queueDepth: currentHealth.ok ? 2 : 34,
+    cpu: system.cpu,
+    memory: system.memory,
+    disk: system.disk,
+    http5xxRate: traffic.http5xxRate,
+    latencyP95Ms: traffic.latencyP95Ms,
+    rps: traffic.rps,
+    dbConnections: service.dbConnections,
+    queueDepth: service.queueDepth,
     appLogTail
   };
 }

@@ -32,6 +32,16 @@ const difficulties = new Set<Difficulty>(["beginner", "intermediate", "advanced"
 
 app.use("/api/*", devAuth);
 
+app.post("/api/dev/terminal-debug", async (c) => {
+  const body = (await c.req.json().catch(() => ({}))) as {
+    event?: string;
+    detail?: Record<string, unknown>;
+    at?: number;
+  };
+  console.log("[terminal-debug]", body.event ?? "unknown", JSON.stringify(body.detail ?? {}));
+  return c.json(ok({ logged: true }));
+});
+
 app.get("/api/scenarios", (c) => c.json(ok(listScenarios())));
 
 app.get("/api/scenarios/:scenarioId", (c) => {
@@ -108,7 +118,9 @@ app.post("/api/sessions/:sessionId/start", async (c) => {
 app.post("/api/sessions/:sessionId/resolve", async (c) => proxySession(c, "resolve"));
 app.post("/api/sessions/:sessionId/retire", async (c) => proxySession(c, "retire"));
 app.get("/api/sessions/:sessionId/events", async (c) => proxySession(c, "events"));
+app.get("/api/sessions/:sessionId/metrics", async (c) => proxySession(c, "metrics"));
 app.get("/api/sessions/:sessionId/ws/terminal", async (c) => proxySession(c, "terminal"));
+app.post("/api/sessions/:sessionId/terminal/interrupt", async (c) => proxySession(c, "terminal-interrupt"));
 
 app.post("/api/replays/:replayId/chunks", async (c) => {
   const replay = await getOwnedReplay(c.env, c.get("user"), c.req.param("replayId"));

@@ -4,13 +4,16 @@ import {
   type ApiResult,
   type ReplayEvent,
   type ScenarioDefinition,
-  type SessionStatus
+  type SessionStatus,
+  type MetricsSnapshot
 } from "@incident/shared";
 import { getScenario } from "@incident/scenarios";
 import type { Bindings } from "../types.js";
 import {
   evaluateSuccessCondition,
+  fetchSessionMetrics,
   injectFault,
+  interruptSessionTerminal,
   proxySessionTerminal,
   startScenarioSandbox
 } from "../sandbox/runtime.js";
@@ -37,6 +40,10 @@ type SuccessCheck = {
 };
 
 export class SessionDurableObject implements DurableObject {
+  private metricsCache?: MetricsSnapshot;
+  private metricsCachedAt = 0;
+  private static readonly METRICS_TTL_MS = 3000;
+
   constructor(private state: DurableObjectState, private env: Bindings) {}
 
   async fetch(request: Request): Promise<Response> {
@@ -50,7 +57,9 @@ export class SessionDurableObject implements DurableObject {
       if (request.method === "POST" && action === "resolve") return this.resolve();
       if (request.method === "POST" && action === "retire") return this.retire();
       if (request.method === "GET" && action === "events") return this.events();
+      if (request.method === "GET" && action === "metrics") return this.metrics();
       if (request.method === "GET" && action === "terminal") return this.terminal(request);
+      if (request.method === "POST" && action === "terminal-interrupt") return this.terminalInterrupt();
       if (request.method === "GET") return jsonOk(await this.snapshot());
 
       return jsonErr("not_found", "session action not found", 404);
@@ -131,6 +140,7 @@ export class SessionDurableObject implements DurableObject {
     await this.state.storage.put("session", finished);
     await this.persistSession(finished, resolved ? "resolved" : "failed");
     await this.persistReplayResult(finished, resolved ? "resolved" : "failed");
+    this.clearMetricsCache();
     finished = await this.emit(
       finished,
       resolved ? "incident_resolved" : "session_end",
@@ -151,6 +161,7 @@ export class SessionDurableObject implements DurableObject {
     await this.state.storage.put("session", retired);
     await this.persistSession(retired, "retired");
     await this.persistReplayResult(retired, "retired");
+    this.clearMetricsCache();
     retired = await this.emit(retired, "session_end", this.elapsedMs(retired), "player", { result: "retired" });
     return jsonOk({ session: await this.snapshotFor(retired) });
   }
@@ -178,6 +189,36 @@ export class SessionDurableObject implements DurableObject {
   private async terminal(request: Request) {
     const session = await this.requireSession();
     return proxySessionTerminal(this.env, session.sessionId, request, { cols: 100, rows: 30 });
+  }
+
+  private async terminalInterrupt() {
+    const session = await this.requireSession();
+    if (session.status !== "running") {
+      throw new HttpError(409, "invalid_state", "terminal interrupt is only available while the session is running");
+    }
+    await interruptSessionTerminal(this.env, session.sessionId);
+    return jsonOk({ interrupted: true });
+  }
+
+  private async metrics() {
+    const session = await this.requireSession();
+    if (session.status !== "running") {
+      throw new HttpError(409, "invalid_state", "metrics are only available while the session is running");
+    }
+    const now = Date.now();
+    if (this.metricsCache && now - this.metricsCachedAt < SessionDurableObject.METRICS_TTL_MS) {
+      return jsonOk(this.metricsCache);
+    }
+    const metrics = await fetchSessionMetrics(this.env, session.sessionId);
+    if (!metrics) throw new HttpError(502, "sandbox_unavailable", "failed to fetch sandbox metrics");
+    this.metricsCache = metrics;
+    this.metricsCachedAt = now;
+    return jsonOk(metrics);
+  }
+
+  private clearMetricsCache() {
+    delete this.metricsCache;
+    this.metricsCachedAt = 0;
   }
 
   private async snapshot() {

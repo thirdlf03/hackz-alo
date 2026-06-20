@@ -137,6 +137,8 @@ export type MetricsSnapshot = {
   queueDepth: number;
 };
 
+export type MetricsSource = "loading" | "live" | "offline";
+
 export type TerminalMirrorState = {
   cols: number;
   rows: number;
@@ -164,6 +166,8 @@ export type GameRenderState = {
   monitors: {
     left: {
       metrics: MetricsSnapshot;
+      metricsHistory: MetricsSnapshot[];
+      metricsSource: MetricsSource;
       alerts: AlertDefinition[];
     };
     center: {

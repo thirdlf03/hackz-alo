@@ -33,15 +33,17 @@ export function createInitialGameState(
       left: {
         metrics: {
           at: 0,
-          cpu: 24,
-          memory: 42,
-          disk: scenario.id === "disk-full-001" ? 70 : 38,
+          cpu: 0,
+          memory: 0,
+          disk: 0,
           http5xxRate: 0,
-          latencyP95Ms: 120,
-          rps: 44,
-          dbConnections: 6,
-          queueDepth: 2
+          latencyP95Ms: 0,
+          rps: 0,
+          dbConnections: 0,
+          queueDepth: 0
         },
+        metricsHistory: [],
+        metricsSource: "loading",
         alerts: []
       },
       center: { terminal },
@@ -65,21 +67,6 @@ export function advanceGameState(
   scenario?: ScenarioDefinition,
   speed = state.clock.speed
 ): GameRenderState {
-  const progress = Math.min(1, elapsedMs / state.clock.timeLimitMs);
-  const firstTriggerAt = scenario?.triggers.reduce<number | undefined>((earliest, trigger) => {
-    if (earliest === undefined) return trigger.atMs;
-    return Math.min(earliest, trigger.atMs);
-  }, undefined);
-  const activeTrigger = scenario?.triggers.find((trigger) => elapsedMs >= trigger.atMs);
-  const failureProgress =
-    activeTrigger || firstTriggerAt !== undefined
-      ? Math.min(1, Math.max(0, (elapsedMs - (firstTriggerAt ?? elapsedMs)) / Math.max(1, state.clock.timeLimitMs - (firstTriggerAt ?? 0))))
-      : 0;
-  const failing = Boolean(activeTrigger) || elapsedMs >= 90000;
-  const disk =
-    activeTrigger?.type === "disk_full" || state.session.scenarioId === "disk-full-001"
-      ? Math.max(state.monitors.left.metrics.disk, 70 + failureProgress * 30)
-      : state.monitors.left.metrics.disk;
   const alerts = scenario
     ? scenario.alerts.filter((alert) => alert.atMs <= elapsedMs)
     : state.monitors.left.alerts;
@@ -97,16 +84,6 @@ export function advanceGameState(
       ...state.monitors,
       left: {
         ...state.monitors.left,
-        metrics: {
-          ...state.monitors.left.metrics,
-          at: elapsedMs,
-          cpu: failing ? 84 : 24 + Math.round(progress * 10),
-          memory: failing ? 71 : 42,
-          disk: Math.round(disk),
-          http5xxRate: failing ? 0.25 : 0,
-          latencyP95Ms: failing ? 1400 : 120,
-          rps: failing ? 8 : 44
-        },
         alerts
       },
       right: {

@@ -4,7 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const DEFAULT_WORKSPACE = process.env.WORKSPACE_DIR ?? "/workspace";
-const USAGE = "usage: fault-injector.mjs process_stop|process_restore|disk_full|unlang_batch_failure";
+const USAGE = "usage: fault-injector.mjs process_stop|process_restore|disk_full|queue_backlog|unlang_batch_failure";
 
 export async function injectFault(fault, args = [], options = {}) {
   const workspace = options.workspace ?? DEFAULT_WORKSPACE;
@@ -37,12 +37,25 @@ export async function injectFault(fault, args = [], options = {}) {
     return "disk_full injected";
   }
 
+  if (fault === "queue_backlog") {
+    const count = parseByteCount(args[0] ?? 32);
+    const lines = Array.from({ length: count }, (_, index) =>
+      JSON.stringify({ id: `backlog-${Date.now()}-${index}`, status: "pending" })
+    ).join("\n");
+    await appendFile(path.join(workspace, "run", "job-queue.jsonl"), `${lines}\n`);
+    return `queue_backlog injected (${count})`;
+  }
+
   if (fault === "unlang_batch_failure") {
     const target = normalizeWorkspacePath(args[0] ?? path.join(workspace, "services", "batch", "sales.un"), workspace);
     const jobId = args[1] ?? "sales-nightly";
     await mkdir(path.dirname(target), { recursive: true });
     await writeFile(target, "うんちく 売上集計バッチ\nうん x = 100\nうん y = うんなし\nうん z = x うんわり y\nうん！ z\n");
     await appendFile(path.join(workspace, "logs", "batch.log"), `${jobId}: うんともすんとも\n`);
+    await appendFile(
+      path.join(workspace, "run", "job-queue.jsonl"),
+      `${JSON.stringify({ id: jobId, status: "failed" })}\n`
+    );
     return "unlang_batch_failure injected";
   }
 

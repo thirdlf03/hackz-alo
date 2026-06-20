@@ -1,4 +1,4 @@
-import type { ApiResult, Difficulty, ReplayEvent, ScenarioDefinition } from "@incident/shared";
+import type { ApiResult, Difficulty, MetricsSnapshot, ReplayEvent, ScenarioDefinition } from "@incident/shared";
 
 export class ApiClient {
   private eventSeq = 0;
@@ -18,6 +18,17 @@ export class ApiClient {
 
   async startSession(sessionId: string) {
     return this.post(`/api/sessions/${encodeURIComponent(sessionId)}/start`, {});
+  }
+
+  async getSessionMetrics(sessionId: string) {
+    return this.get<MetricsSnapshot>(`/api/sessions/${encodeURIComponent(sessionId)}/metrics`);
+  }
+
+  async interruptTerminal(sessionId: string) {
+    return this.post<{ interrupted: true }>(
+      `/api/sessions/${encodeURIComponent(sessionId)}/terminal/interrupt`,
+      {}
+    );
   }
 
   async resolveSession(sessionId: string) {
