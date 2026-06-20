@@ -159,6 +159,7 @@ export type GameRenderState = {
   clock: {
     elapsedMs: number;
     timeLimitMs: number;
+    speed: number;
   };
   monitors: {
     left: {

@@ -4,8 +4,10 @@
 
 body {
   margin: 0;
-  color: #e6edf3;
-  background: #080b10;
+  color: #eef2f6;
+  background:
+    linear-gradient(180deg, rgba(20, 26, 34, 0.96), rgba(7, 10, 14, 1)),
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.035) 0 1px, transparent 1px 96px);
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
@@ -25,14 +27,16 @@ input {
 .topbar {
   display: flex;
   align-items: center;
-  gap: 18px;
-  min-height: 56px;
-  padding: 0 18px;
-  border-bottom: 1px solid #202936;
-  background: #0d1117;
+  gap: 14px;
+  min-height: 64px;
+  padding: 0 20px;
+  border-bottom: 1px solid #26313f;
+  background: rgba(9, 13, 18, 0.94);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28);
 }
 
 .topbar strong {
+  letter-spacing: 0;
   white-space: nowrap;
 }
 
@@ -40,19 +44,26 @@ input {
   min-width: 0;
   flex: 1;
   overflow: hidden;
-  color: #b6c2cf;
+  color: #b6c6d8;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .topbar button,
 .panel button {
-  border: 1px solid #334155;
+  min-height: 38px;
+  border: 1px solid #3a4758;
   color: #f8fafc;
-  background: #1f2937;
+  background: #182230;
   border-radius: 6px;
-  padding: 8px 12px;
+  padding: 8px 13px;
   cursor: pointer;
+}
+
+.topbar button:hover,
+.panel button:hover,
+.speed-control button:hover {
+  border-color: #6f8198;
 }
 
 button:disabled {
@@ -76,20 +87,185 @@ button:disabled {
   padding: 0 20px;
 }
 
-.scenario-list {
+.select-screen {
+  width: min(100% - 40px, 1120px);
+  margin: 0 auto;
+  padding: 54px 0 40px;
+}
+
+.select-header {
   display: grid;
+  gap: 10px;
+  max-width: 680px;
+  margin-bottom: 28px;
+}
+
+.select-header h1,
+.panel h1 {
+  margin: 0;
+  font-size: clamp(32px, 5vw, 56px);
+  line-height: 1.02;
+  letter-spacing: 0;
+}
+
+.select-header p,
+.panel p,
+.difficulty-card small {
+  color: #aab7c7;
+}
+
+.select-header p {
+  margin: 0;
+  font-size: 17px;
+  line-height: 1.7;
+}
+
+.eyebrow {
+  margin: 0;
+  color: #65d6ad;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.difficulty-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.difficulty-card {
+  display: grid;
+  grid-template-rows: auto auto 1fr auto;
   gap: 12px;
-}
-
-.scenario-button {
-  display: grid;
-  gap: 4px;
+  min-height: 240px;
   width: 100%;
+  border: 1px solid #344154;
+  border-radius: 8px;
+  padding: 20px;
+  color: #f8fafc;
+  background: #101821;
   text-align: left;
+  cursor: pointer;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 18px 34px rgba(0, 0, 0, 0.24);
 }
 
-.scenario-button small {
-  color: #94a3b8;
+.difficulty-card:hover:not(:disabled) {
+  transform: translateY(-1px);
+  border-color: #77869c;
+}
+
+.difficulty-card.green {
+  border-top: 4px solid #36d399;
+}
+
+.difficulty-card.amber {
+  border-top: 4px solid #f2b84b;
+}
+
+.difficulty-card.red {
+  border-top: 4px solid #f87171;
+}
+
+.difficulty-label,
+.difficulty-status,
+.briefing-meta span {
+  width: max-content;
+  border: 1px solid #3b485a;
+  border-radius: 999px;
+  padding: 5px 9px;
+  color: #c7d2df;
+  background: #121b27;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.difficulty-card strong {
+  font-size: 44px;
+  line-height: 1;
+  letter-spacing: 0;
+}
+
+.difficulty-card small {
+  min-height: 56px;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.difficulty-status {
+  color: #d8f3e7;
+  background: #123226;
+  border-color: #23694e;
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin-top: 18px;
+  border: 1px solid #303c4d;
+  border-radius: 8px;
+  padding: 16px;
+  background: rgba(12, 18, 25, 0.86);
+}
+
+.settings-row h2 {
+  margin: 4px 0 0;
+  font-size: 22px;
+  letter-spacing: 0;
+}
+
+.speed-control {
+  display: inline-grid;
+  grid-template-columns: repeat(4, 64px);
+  gap: 4px;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  padding: 4px;
+  background: #0b1119;
+}
+
+.speed-control.compact {
+  grid-template-columns: repeat(4, 52px);
+}
+
+.speed-control button {
+  min-height: 32px;
+  border: 0;
+  border-radius: 5px;
+  color: #aebace;
+  background: transparent;
+  cursor: pointer;
+}
+
+.speed-control button.active {
+  color: #06110d;
+  background: #65d6ad;
+}
+
+.briefing-panel {
+  display: grid;
+  gap: 16px;
+  margin-top: 50px;
+  border: 1px solid #303c4d;
+  border-radius: 8px;
+  padding: 28px;
+  background: rgba(12, 18, 25, 0.9);
+}
+
+.briefing-panel ul {
+  margin: 0;
+  padding-left: 20px;
+  color: #d7dee8;
+  line-height: 1.75;
+}
+
+.briefing-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .game-layout {
@@ -137,6 +313,26 @@ canvas {
 }
 
 @media (max-width: 760px) {
+  .select-screen {
+    width: min(100% - 24px, 1120px);
+    padding-top: 28px;
+  }
+
+  .difficulty-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .speed-control,
+  .speed-control.compact {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    width: 100%;
+  }
+
   .replay-layout {
     grid-template-columns: 1fr;
   }
@@ -149,6 +345,10 @@ canvas {
 
   .topbar span {
     flex-basis: 100%;
+    order: 4;
+  }
+
+  .topbar .speed-control {
     order: 3;
   }
 }

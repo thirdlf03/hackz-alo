@@ -1,10 +1,11 @@
 import { proxyToSandbox } from "@cloudflare/sandbox";
 import { Hono } from "hono";
 import type { Context } from "hono";
-import { listScenarios, getScenario } from "@incident/scenarios";
+import { listScenarios, getScenario, getRandomScenarioByDifficulty } from "@incident/scenarios";
 import {
   replayThumbnailKey,
   type ApiResult,
+  type Difficulty,
   type ReplayEvent,
   type ReplayVisibility
 } from "@incident/shared";
@@ -27,6 +28,7 @@ const app = new Hono<{ Bindings: Bindings; Variables: AppVariables }>();
 type WorkerContext = Context<{ Bindings: Bindings; Variables: AppVariables }>;
 
 const replayVisibilities = new Set<ReplayVisibility>(["private", "self", "unlisted", "team", "public"]);
+const difficulties = new Set<Difficulty>(["beginner", "intermediate", "advanced"]);
 
 app.use("/api/*", devAuth);
 
@@ -40,9 +42,9 @@ app.get("/api/scenarios/:scenarioId", (c) => {
 
 app.post("/api/sessions", async (c) => {
   const user = c.get("user");
-  const body = (await c.req.json().catch(() => ({}))) as { scenarioId?: string };
-  const scenario = body.scenarioId ? getScenario(body.scenarioId) : undefined;
-  if (!scenario) return c.json(err("bad_request", "scenarioId is required"), 400);
+  const body = (await c.req.json().catch(() => ({}))) as { scenarioId?: string; difficulty?: string };
+  const scenario = resolveRequestedScenario(body);
+  if (!scenario) return c.json(err("bad_request", "difficulty is required"), 400);
 
   const sessionId = `sess_${crypto.randomUUID().replaceAll("-", "")}`;
   const replayId = `repl_${crypto.randomUUID().replaceAll("-", "")}`;
@@ -78,6 +80,17 @@ app.post("/api/sessions", async (c) => {
 
   return c.json(ok({ sessionId, replayId, scenario }));
 });
+
+function resolveRequestedScenario(body: { scenarioId?: string; difficulty?: string }) {
+  if (body.scenarioId) return getScenario(body.scenarioId);
+  if (!body.difficulty || !difficulties.has(body.difficulty as Difficulty)) return undefined;
+  return getRandomScenarioByDifficulty(body.difficulty as Difficulty, randomFloat);
+}
+
+function randomFloat() {
+  const values = crypto.getRandomValues(new Uint32Array(1));
+  return (values[0] ?? 0) / 0x100000000;
+}
 
 app.get("/api/sessions/:sessionId", async (c) => proxySession(c, "snapshot"));
 app.post("/api/sessions/:sessionId/start", async (c) => {

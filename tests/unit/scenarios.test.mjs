@@ -21,6 +21,14 @@ test("all scenario data validates against shared contract", async () => {
   }
 });
 
+test("scenario data exposes only configured difficulty time limits", async () => {
+  const scenarios = await loadScenarios();
+  const byDifficulty = new Map(scenarios.map(({ scenario }) => [scenario.difficulty, scenario.timeLimitMinutes]));
+  assert.equal(byDifficulty.get("beginner"), 5);
+  assert.equal(byDifficulty.get("intermediate"), 10);
+  assert.equal(byDifficulty.get("advanced"), 15);
+});
+
 test("scenario validator rejects incomplete success conditions", () => {
   const scenario = validScenario({
     successConditions: [{ type: "http_status", url: "http://localhost:8080/health" }]

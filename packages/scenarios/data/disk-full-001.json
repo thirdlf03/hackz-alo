@@ -2,8 +2,8 @@
   "id": "disk-full-001",
   "version": 1,
   "title": "ログが世界を埋め尽くす夜",
-  "difficulty": "beginner",
-  "timeLimitMinutes": 12,
+  "difficulty": "intermediate",
+  "timeLimitMinutes": 10,
   "service": {
     "name": "うん用 API",
     "healthUrl": "http://localhost:8080/health"

@@ -3,6 +3,7 @@ import type { GameRenderState, ScenarioDefinition, TerminalMirrorState } from "@
 type InitialGameStateOptions = {
   sessionStatus?: GameRenderState["session"]["status"];
   recordingStatus?: GameRenderState["recording"]["status"];
+  speed?: number;
 };
 
 export function createInitialGameState(
@@ -25,7 +26,8 @@ export function createInitialGameState(
     },
     clock: {
       elapsedMs: 0,
-      timeLimitMs: scenario.timeLimitMinutes * 60 * 1000
+      timeLimitMs: scenario.timeLimitMinutes * 60 * 1000,
+      speed: options.speed ?? 1
     },
     monitors: {
       left: {
@@ -57,7 +59,12 @@ export function createInitialGameState(
   };
 }
 
-export function advanceGameState(state: GameRenderState, elapsedMs: number, scenario?: ScenarioDefinition): GameRenderState {
+export function advanceGameState(
+  state: GameRenderState,
+  elapsedMs: number,
+  scenario?: ScenarioDefinition,
+  speed = state.clock.speed
+): GameRenderState {
   const progress = Math.min(1, elapsedMs / state.clock.timeLimitMs);
   const firstTriggerAt = scenario?.triggers.reduce<number | undefined>((earliest, trigger) => {
     if (earliest === undefined) return trigger.atMs;
@@ -85,7 +92,7 @@ export function advanceGameState(state: GameRenderState, elapsedMs: number, scen
   return {
     ...state,
     session: { ...state.session, status: nextStatus },
-    clock: { ...state.clock, elapsedMs },
+    clock: { ...state.clock, elapsedMs, speed },
     monitors: {
       ...state.monitors,
       left: {

@@ -2,7 +2,7 @@
   "id": "unlang-batch-001",
   "version": 1,
   "title": "うんともすんとも言わないバッチ",
-  "difficulty": "beginner",
+  "difficulty": "advanced",
   "timeLimitMinutes": 15,
   "service": {
     "name": "うん用 batch",

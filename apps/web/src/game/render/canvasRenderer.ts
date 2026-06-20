@@ -50,7 +50,11 @@ export class CanvasRenderer {
     this.ctx.fillText(state.session.scenarioTitle, 70, 70);
     this.ctx.font = "22px system-ui, sans-serif";
     this.ctx.fillStyle = "#9fb0c0";
-    this.ctx.fillText(`${state.session.difficulty} / ${formatTime(state.clock.elapsedMs)} / ${formatTime(state.clock.timeLimitMs)}`, 70, 108);
+    this.ctx.fillText(
+      `${formatDifficulty(state.session.difficulty)} / ${formatTime(state.clock.elapsedMs)} / ${formatTime(state.clock.timeLimitMs)} / ${state.clock.speed}x`,
+      70,
+      108
+    );
     this.ctx.fillStyle = state.recording.status === "recording" ? "#ff3b30" : "#64748b";
     this.ctx.beginPath();
     this.ctx.arc(1770, 70, 12, 0, Math.PI * 2);
@@ -328,4 +332,10 @@ function formatRecordingStatus(status: GameRenderState["recording"]["status"]) {
     case "idle":
       return "IDLE";
   }
+}
+
+function formatDifficulty(difficulty: GameRenderState["session"]["difficulty"]) {
+  if (difficulty === "beginner") return "初級";
+  if (difficulty === "intermediate") return "中級";
+  return "上級";
 }

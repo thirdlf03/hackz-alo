@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
-import type { GameRenderState, ScenarioDefinition } from "@incident/shared";
+import type { Difficulty, GameRenderState, ScenarioDefinition } from "@incident/shared";
 import { createInitialGameState, advanceGameState } from "../game/state/gameState.js";
 import { CanvasRenderer } from "../game/render/canvasRenderer.js";
 import { inputDockRects } from "../game/render/canvasRenderer.js";
@@ -9,6 +9,21 @@ import { ApiClient } from "../api/client.js";
 import { ReplayPage } from "../pages/ReplayPage.js";
 
 type Screen = "select" | "briefing" | "play" | "result" | "replay";
+type ScenarioSummary = Pick<ScenarioDefinition, "id" | "title" | "difficulty" | "timeLimitMinutes">;
+
+const difficultyOptions: Array<{
+  difficulty: Difficulty;
+  label: string;
+  minutes: number;
+  tone: string;
+  summary: string;
+}> = [
+  { difficulty: "beginner", label: "初級", minutes: 5, tone: "green", summary: "監視とログを順番に追う短い初動訓練" },
+  { difficulty: "intermediate", label: "中級", minutes: 10, tone: "amber", summary: "原因候補を絞り込みながら復旧まで進める訓練" },
+  { difficulty: "advanced", label: "上級", minutes: 15, tone: "red", summary: "少ない手掛かりから仮説を立てて完走する訓練" }
+];
+
+const speedOptions = [0.5, 1, 1.5, 2] as const;
 
 const api = new ApiClient();
 
@@ -17,15 +32,18 @@ export function App() {
   const rendererRef = useRef<CanvasRenderer | null>(null);
   const recorderRef = useRef<CanvasRecorder | null>(null);
   const gameStateRef = useRef<GameRenderState | undefined>(undefined);
-  const playStartedAtRef = useRef(0);
+  const elapsedMsRef = useRef(0);
+  const lastTickAtRef = useRef(0);
+  const gameSpeedRef = useRef(1);
   const terminalRef = useRef(new TerminalMirror(100, 30));
   const [screen, setScreen] = useState<Screen>("select");
-  const [scenarios, setScenarios] = useState<Array<Pick<ScenarioDefinition, "id" | "title" | "difficulty" | "timeLimitMinutes">>>([]);
+  const [scenarios, setScenarios] = useState<ScenarioSummary[]>([]);
   const [scenario, setScenario] = useState<ScenarioDefinition>();
   const [session, setSession] = useState<{ sessionId: string; replayId: string }>();
   const [gameState, setGameState] = useState<GameRenderState>();
   const [timeline, setTimeline] = useState<Array<{ at: number; label: string }>>([]);
   const [isStarting, setIsStarting] = useState(false);
+  const [gameSpeed, setGameSpeed] = useState(1);
   const [appError, setAppError] = useState<string>();
 
   useEffect(() => {
@@ -38,6 +56,11 @@ export function App() {
   useEffect(() => {
     gameStateRef.current = gameState;
   }, [gameState]);
+
+  useEffect(() => {
+    gameSpeedRef.current = gameSpeed;
+    setGameState((current) => current ? { ...current, clock: { ...current.clock, speed: gameSpeed } } : current);
+  }, [gameSpeed]);
 
   useEffect(() => {
     if ((screen !== "play" && screen !== "result") || !canvasRef.current) return;
@@ -93,36 +116,51 @@ export function App() {
 
   useEffect(() => {
     if (screen !== "play" || !scenario) return;
-    if (playStartedAtRef.current === 0) playStartedAtRef.current = performance.now();
+    if (lastTickAtRef.current === 0) lastTickAtRef.current = performance.now();
     const tick = () => {
-      const elapsedMs = performance.now() - playStartedAtRef.current;
-      setGameState((current) => current ? advanceGameState(current, elapsedMs, scenario) : current);
+      const now = performance.now();
+      const deltaMs = now - lastTickAtRef.current;
+      lastTickAtRef.current = now;
+      elapsedMsRef.current += deltaMs * gameSpeedRef.current;
+      setGameState((current) => current ? advanceGameState(current, elapsedMsRef.current, scenario, gameSpeedRef.current) : current);
     };
     tick();
     const timer = window.setInterval(() => {
       tick();
-    }, 1000);
+    }, 500);
     return () => window.clearInterval(timer);
   }, [screen, scenario?.id]);
 
   const selectedScenarioTitle = useMemo(() => scenario?.title ?? "未選択", [scenario]);
   const canOpenReplay = Boolean(session && gameState?.recording.status === "ready");
+  const availableDifficulties = useMemo(() => {
+    const values = new Set<Difficulty>();
+    scenarios.forEach((item) => values.add(item.difficulty));
+    return values;
+  }, [scenarios]);
 
-  async function selectScenario(id: string) {
+  async function assignRandomScenario(difficulty: Difficulty) {
     setAppError(undefined);
+    setIsStarting(true);
     try {
-      const fullScenario = await api.getScenario(id);
-      const created = await api.createSession(id);
+      const created = await api.createSession(difficulty);
       terminalRef.current = new TerminalMirror(100, 30);
-      playStartedAtRef.current = 0;
-      setScenario(fullScenario);
+      elapsedMsRef.current = 0;
+      lastTickAtRef.current = 0;
+      setScenario(created.scenario);
       setSession(created);
       setTimeline([]);
-      setGameState(createInitialGameState(fullScenario, created.sessionId, created.replayId, terminalRef.current.snapshot()));
+      setGameState(
+        createInitialGameState(created.scenario, created.sessionId, created.replayId, terminalRef.current.snapshot(), {
+          speed: gameSpeed
+        })
+      );
       setScreen("briefing");
     } catch (error) {
       console.error(error);
       setAppError(toErrorMessage(error));
+    } finally {
+      setIsStarting(false);
     }
   }
 
@@ -132,12 +170,14 @@ export function App() {
     setAppError(undefined);
     try {
       await api.startSession(session.sessionId);
-      playStartedAtRef.current = performance.now();
+      elapsedMsRef.current = 0;
+      lastTickAtRef.current = performance.now();
       setTimeline([{ at: 0, label: "シナリオ開始" }]);
       setGameState(
         createInitialGameState(scenario, session.sessionId, session.replayId, terminalRef.current.snapshot(), {
           sessionStatus: "running",
-          recordingStatus: "initializing"
+          recordingStatus: "initializing",
+          speed: gameSpeed
         })
       );
       setScreen("play");
@@ -248,6 +288,19 @@ export function App() {
       <header class="topbar">
         <strong>障害対応訓練</strong>
         <span>{selectedScenarioTitle}</span>
+        <div class="speed-control compact" aria-label="ゲーム速度">
+          {speedOptions.map((speed) => (
+            <button
+              type="button"
+              class={speed === gameSpeed ? "active" : ""}
+              aria-pressed={speed === gameSpeed}
+              onClick={() => setGameSpeed(speed)}
+              key={speed}
+            >
+              {speed}x
+            </button>
+          ))}
+        </div>
         <button type="button" onClick={() => setScreen("select")} disabled={screen === "play" || isStarting}>Scenario</button>
         {canOpenReplay && <button type="button" onClick={() => setScreen("replay")}>Replay</button>}
       </header>
@@ -255,22 +308,64 @@ export function App() {
       {appError && <p class="app-error" role="alert">{appError}</p>}
 
       {screen === "select" && (
-        <section class="panel">
-          <h1>初級シナリオ</h1>
-          <div class="scenario-list">
-            {scenarios.map((item) => (
-              <button class="scenario-button" type="button" onClick={() => selectScenario(item.id)} key={item.id}>
-                <span>{item.title}</span>
-                <small>{item.difficulty} / {item.timeLimitMinutes} min</small>
-              </button>
-            ))}
+        <section class="select-screen">
+          <div class="select-header">
+            <p class="eyebrow">Incident Drill</p>
+            <h1>難易度だけを選ぶ</h1>
+            <p>具体的な障害シナリオは開始準備時にランダムで割り当てます。</p>
+          </div>
+
+          <div class="difficulty-grid">
+            {difficultyOptions.map((option) => {
+              const enabled = availableDifficulties.has(option.difficulty);
+              return (
+                <button
+                  class={`difficulty-card ${option.tone}`}
+                  type="button"
+                  onClick={() => assignRandomScenario(option.difficulty)}
+                  disabled={!enabled || isStarting}
+                  key={option.difficulty}
+                >
+                  <span class="difficulty-label">{option.label}</span>
+                  <strong>{option.minutes}分</strong>
+                  <small>{option.summary}</small>
+                  <span class="difficulty-status">{enabled ? "ランダム割り当て" : "準備中"}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          <div class="settings-row">
+            <div>
+              <p class="eyebrow">Speed</p>
+              <h2>ゲーム速度</h2>
+            </div>
+            <div class="speed-control" aria-label="ゲーム速度">
+              {speedOptions.map((speed) => (
+                <button
+                  type="button"
+                  class={speed === gameSpeed ? "active" : ""}
+                  aria-pressed={speed === gameSpeed}
+                  onClick={() => setGameSpeed(speed)}
+                  key={speed}
+                >
+                  {speed}x
+                </button>
+              ))}
+            </div>
           </div>
         </section>
       )}
 
       {screen === "briefing" && scenario && (
-        <section class="panel">
+        <section class="panel briefing-panel">
+          <p class="eyebrow">Assigned Scenario</p>
           <h1>{scenario.title}</h1>
+          <div class="briefing-meta">
+            <span>{formatDifficulty(scenario.difficulty)}</span>
+            <span>{scenario.timeLimitMinutes}分</span>
+            <span>{gameSpeed}x</span>
+          </div>
           <ul>
             {scenario.briefing.map((line) => <li key={line}>{line}</li>)}
           </ul>
@@ -334,4 +429,10 @@ function toLogicalCanvasPoint(event: MouseEvent, canvas: HTMLCanvasElement) {
 
 function containsPoint(rect: { x: number; y: number; width: number; height: number }, x: number, y: number) {
   return x >= rect.x && x <= rect.x + rect.width && y >= rect.y && y <= rect.y + rect.height;
+}
+
+function formatDifficulty(difficulty: Difficulty) {
+  if (difficulty === "beginner") return "初級";
+  if (difficulty === "intermediate") return "中級";
+  return "上級";
 }

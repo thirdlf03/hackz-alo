@@ -1,4 +1,4 @@
-import type { ApiResult, ReplayEvent, ScenarioDefinition } from "@incident/shared";
+import type { ApiResult, Difficulty, ReplayEvent, ScenarioDefinition } from "@incident/shared";
 
 export class ApiClient {
   async listScenarios() {
@@ -9,9 +9,9 @@ export class ApiClient {
     return this.get<ScenarioDefinition>(`/api/scenarios/${encodeURIComponent(id)}`);
   }
 
-  async createSession(scenarioId: string) {
-    const data = await this.post<{ sessionId: string; replayId: string; scenario: ScenarioDefinition }>("/api/sessions", { scenarioId });
-    return { sessionId: data.sessionId, replayId: data.replayId };
+  async createSession(difficulty: Difficulty) {
+    const data = await this.post<{ sessionId: string; replayId: string; scenario: ScenarioDefinition }>("/api/sessions", { difficulty });
+    return { sessionId: data.sessionId, replayId: data.replayId, scenario: data.scenario };
   }
 
   async startSession(sessionId: string) {

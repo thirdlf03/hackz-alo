@@ -9,6 +9,7 @@
     "packages/*"
   ],
   "scripts": {
+    "dev": "node scripts/dev.mjs",
     "test": "node --test tests/unit/*.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "build": "npm --workspaces --if-present run build",
