@@ -1,6 +1,7 @@
-import type { GameRenderState, MetricsSnapshot, MetricsSource } from "@incident/shared";
+import type { GameRenderState, MetricsSnapshot, MetricsSource, ScenarioDefinition } from "@incident/shared";
 import { mergedSlackMessages, unreadNotificationCount } from "../state/gameState.js";
 import { parseAnsiLine, stripAnsi, type AnsiSpan } from "../terminal/ansi.js";
+import officeMonitorBackdropUrl from "../../assets/office-monitor-backdrop.avif";
 import {
   gamePalette as palette,
   toneColor,
@@ -130,10 +131,19 @@ export const monitorMagnifyRegions = monitorLayouts.map((monitor) => ({
   height: 44
 }));
 
+const monitorPoses: Record<MonitorId, { scaleX: number }> = {
+  metrics: { scaleX: 0.958 },
+  terminal: { scaleX: 1 },
+  runbook: { scaleX: 0.958 }
+};
+
 export class CanvasRenderer {
   private ctx: CanvasRenderingContext2D;
   private staticCanvas: HTMLCanvasElement;
   private staticCtx: CanvasRenderingContext2D;
+  private roomBackdrop: HTMLImageElement;
+  private roomBackdropLoaded = false;
+  private lastRendered?: { state: GameRenderState; scenario?: ScenarioDefinition };
   private terminalLineCache = new Map<string, { spans: AnsiSpan[]; plain: string }>();
 
   constructor(private canvas: HTMLCanvasElement) {
@@ -148,10 +158,18 @@ export class CanvasRenderer {
     const staticCtx = this.staticCanvas.getContext("2d");
     if (!staticCtx) throw new Error("2d canvas is required");
     this.staticCtx = staticCtx;
+    this.roomBackdrop = new Image();
+    this.roomBackdrop.onload = () => {
+      this.roomBackdropLoaded = true;
+      this.drawStaticLayer();
+      if (this.lastRendered) this.draw(this.lastRendered.state, this.lastRendered.scenario);
+    };
+    this.roomBackdrop.src = officeMonitorBackdropUrl;
     this.drawStaticLayer();
   }
 
-  draw(state: GameRenderState, scenario?: import("@incident/shared").ScenarioDefinition) {
+  draw(state: GameRenderState, scenario?: ScenarioDefinition) {
+    this.lastRendered = scenario ? { state, scenario } : { state };
     const ctx = this.ctx;
     ctx.save();
     try {
@@ -160,10 +178,12 @@ export class CanvasRenderer {
       ctx.drawImage(this.staticCanvas, 0, 0);
       this.drawHeader(state);
       for (const monitor of monitorLayouts) {
-        this.drawMonitor(monitor.x, monitor.y, monitor.width, monitor.height, monitor.title, (content) => {
-          if (monitor.id === "metrics") this.drawMetricsPanel(state.monitors.left);
-          else if (monitor.id === "terminal") this.drawTerminal(state, content.width);
-          else this.drawRightPanel(state, scenario);
+        this.withMonitorPose(monitor, () => {
+          this.drawMonitor(monitor.x, monitor.y, monitor.width, monitor.height, monitor.title, (content) => {
+            if (monitor.id === "metrics") this.drawMetricsPanel(state.monitors.left);
+            else if (monitor.id === "terminal") this.drawTerminal(state, content.width);
+            else this.drawRightPanel(state, scenario);
+          });
         });
       }
       this.drawMonitorMagnifyIcons();
@@ -188,22 +208,50 @@ export class CanvasRenderer {
     try {
       this.ctx.clearRect(0, 0, logicalWidth, logicalHeight);
       this.drawRoom();
-      this.drawMonitorFrame(70, 140, 540, 620, "METRICS");
-      this.drawMonitorFrame(690, 140, 540, 620, "TERMINAL");
-      this.drawMonitorFrame(1310, 140, 540, 620, "RUNBOOK / SLACK");
+      for (const monitor of monitorLayouts) {
+        this.withMonitorPose(monitor, () => {
+          this.drawMonitorFrame(monitor.x, monitor.y, monitor.width, monitor.height, monitor.title);
+        });
+      }
     } finally {
       this.ctx = previous;
     }
   }
 
   private drawRoom() {
-    const gradient = this.ctx.createLinearGradient(0, 0, 0, logicalHeight);
-    gradient.addColorStop(0, palette.bgRoomTop);
-    gradient.addColorStop(1, palette.bgRoomBottom);
-    this.ctx.fillStyle = gradient;
+    this.ctx.fillStyle = palette.bgRoomBottom;
     this.ctx.fillRect(0, 0, logicalWidth, logicalHeight);
+
+    if (this.roomBackdropLoaded) {
+      drawCoverImage(this.ctx, this.roomBackdrop, 0, 0, logicalWidth, 840);
+      this.ctx.fillStyle = "rgba(5, 6, 9, 0.38)";
+      this.ctx.fillRect(0, 0, logicalWidth, 840);
+    } else {
+      this.ctx.fillStyle = palette.bgRoomTop;
+      this.ctx.fillRect(0, 0, logicalWidth, 840);
+    }
+
     this.ctx.fillStyle = palette.bgDesk;
     this.ctx.fillRect(0, 840, logicalWidth, 240);
+    this.ctx.fillStyle = "rgba(255, 255, 255, 0.035)";
+    this.ctx.fillRect(0, 838, logicalWidth, 2);
+  }
+
+  private withMonitorPose(monitor: (typeof monitorLayouts)[number], draw: () => void) {
+    const pose = monitorPoses[monitor.id];
+    if (pose.scaleX === 1) {
+      draw();
+      return;
+    }
+
+    const centerX = monitor.x + monitor.width / 2;
+    const centerY = monitor.y + monitor.height / 2 + 36;
+    this.ctx.save();
+    this.ctx.translate(centerX, centerY);
+    this.ctx.scale(pose.scaleX, 1);
+    this.ctx.translate(-centerX, -centerY);
+    draw();
+    this.ctx.restore();
   }
 
   private drawHeader(state: GameRenderState) {
@@ -414,8 +462,12 @@ export class CanvasRenderer {
   }
 
   private drawMonitorMagnifyIcons() {
-    for (const region of monitorMagnifyRegions) {
-      drawMagnifyIcon(this.ctx, region.x + 10, region.y + 10, 24);
+    for (const monitor of monitorLayouts) {
+      const region = monitorMagnifyRegions.find((item) => item.id === monitor.id);
+      if (!region) continue;
+      this.withMonitorPose(monitor, () => {
+        drawMagnifyIcon(this.ctx, region.x + 10, region.y + 10, 24);
+      });
     }
   }
 
@@ -433,7 +485,7 @@ export class CanvasRenderer {
     this.ctx.fillRect(0, 0, logicalWidth, logicalHeight);
 
     const layout = expandedMonitorLayout;
-    this.drawMonitorFrame(layout.x, layout.y, layout.width, layout.height, monitor.title);
+    this.drawMonitorFrame(layout.x, layout.y, layout.width, layout.height, monitor.title, { stand: false });
     this.drawMonitor(layout.x, layout.y, layout.width, layout.height, monitor.title, (content) => {
       if (monitorId === "metrics") this.drawMetricsPanel(state.monitors.left);
       else if (monitorId === "terminal") this.drawTerminal(state, content.width);
@@ -445,7 +497,18 @@ export class CanvasRenderer {
     this.ctx.fillText("背景をクリックで閉じる", layout.x + layout.width - 168, layout.y + 28);
   }
 
-  private drawMonitorFrame(x: number, y: number, width: number, height: number, title: string) {
+  private drawMonitorFrame(
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    title: string,
+    options: { stand?: boolean } = {}
+  ) {
+    if (options.stand ?? true) {
+      this.drawMonitorStand(x, y, width, height);
+    }
+
     this.ctx.fillStyle = palette.bgMonitor;
     roundRect(this.ctx, x - 16, y - 16, width + 32, height + 32, 8);
     this.ctx.fill();
@@ -458,6 +521,39 @@ export class CanvasRenderer {
     this.ctx.fillStyle = palette.textLink;
     this.ctx.font = monoFont(18);
     this.ctx.fillText(title, x + 22, y + 36);
+  }
+
+  private drawMonitorStand(x: number, y: number, width: number, height: number) {
+    const frameBottom = y + height + 16;
+    const centerX = x + width / 2;
+    const postWidth = 34;
+    const postHeight = 54;
+    const postTop = frameBottom - 1;
+    const baseTop = postTop + postHeight - 3;
+    const baseWidth = 164;
+    const baseHeight = 18;
+
+    this.ctx.save();
+
+    this.ctx.fillStyle = "rgba(0, 0, 0, 0.22)";
+    roundRect(this.ctx, centerX - baseWidth / 2 + 12, baseTop + 10, baseWidth - 24, 10, 5);
+    this.ctx.fill();
+
+    this.ctx.fillStyle = palette.bgMonitor;
+    roundRect(this.ctx, centerX - postWidth / 2, postTop, postWidth, postHeight, 3);
+    this.ctx.fill();
+    this.ctx.strokeStyle = palette.borderMuted;
+    this.ctx.lineWidth = 2;
+    this.ctx.stroke();
+
+    this.ctx.fillStyle = palette.bgMonitor;
+    roundRect(this.ctx, centerX - baseWidth / 2, baseTop, baseWidth, baseHeight, 4);
+    this.ctx.fill();
+    this.ctx.strokeStyle = palette.borderMuted;
+    this.ctx.lineWidth = 2;
+    this.ctx.stroke();
+
+    this.ctx.restore();
   }
 
   private drawMetricsPanel(left: GameRenderState["monitors"]["left"]) {
@@ -1257,6 +1353,32 @@ function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, width: n
   ctx.lineTo(x, y + radius);
   ctx.quadraticCurveTo(x, y, x + radius, y);
   ctx.closePath();
+}
+
+function drawCoverImage(
+  ctx: CanvasRenderingContext2D,
+  image: CanvasImageSource & { width: number; height: number },
+  x: number,
+  y: number,
+  width: number,
+  height: number
+) {
+  const imageRatio = image.width / image.height;
+  const targetRatio = width / height;
+  let sourceX = 0;
+  let sourceY = 0;
+  let sourceWidth = image.width;
+  let sourceHeight = image.height;
+
+  if (imageRatio > targetRatio) {
+    sourceWidth = sourceHeight * targetRatio;
+    sourceX = (image.width - sourceWidth) / 2;
+  } else {
+    sourceHeight = sourceWidth / targetRatio;
+    sourceY = (image.height - sourceHeight) / 2;
+  }
+
+  ctx.drawImage(image, sourceX, sourceY, sourceWidth, sourceHeight, x, y, width, height);
 }
 
 function normalizeMultilineText(text: string) {
