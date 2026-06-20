@@ -292,7 +292,7 @@ button:disabled {
 
 .speed-control {
   display: inline-grid;
-  grid-template-columns: repeat(4, var(--touch-speed));
+  grid-template-columns: repeat(6, var(--touch-speed));
   gap: 6px;
   border: 1px solid var(--border-subtle);
   border-radius: 8px;
@@ -331,6 +331,10 @@ button:disabled {
   border-radius: 8px;
   padding: 28px;
   background: var(--surface-overlay);
+}
+
+.briefing-panel .panel-back-button {
+  margin: -4px 0 0 -10px;
 }
 
 .briefing-panel ul {
@@ -414,6 +418,25 @@ canvas:focus-visible {
   gap: 12px;
   min-width: 0;
   align-content: start;
+}
+
+.replay-side {
+  grid-template-rows: auto minmax(0, 1fr);
+  max-height: min(960px, calc(100vh - 48px));
+}
+
+.replay-panel-scroll {
+  min-height: 0;
+  max-height: min(720px, calc(100vh - 220px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 4px;
+  scrollbar-gutter: stable;
+}
+
+.replay-panel-scroll:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
 }
 
 .replay-meta {
@@ -500,23 +523,59 @@ canvas:focus-visible {
   line-height: var(--line-height-body);
 }
 
+.scenario-list-panel {
+  display: grid;
+  gap: 4px;
+}
+
+.panel .panel-back-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  align-self: start;
+  margin: 0 0 12px -18px;
+  min-height: 52px;
+  min-width: auto;
+  padding: 12px 24px;
+  border: 1px solid rgba(94, 236, 192, 0.4);
+  border-radius: 8px;
+  color: var(--text-accent);
+  background: rgba(94, 236, 192, 0.1);
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  box-shadow: 0 4px 18px rgba(94, 236, 192, 0.08);
+}
+
+.panel .panel-back-button:hover {
+  border-color: var(--accent-primary);
+  background: rgba(94, 236, 192, 0.16);
+  color: var(--text-primary);
+}
+
 .scenario-list {
   display: grid;
-  gap: 10px;
-  margin-top: 16px;
+  gap: 14px;
+  margin-top: 20px;
 }
 
 .scenario-card {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  min-height: var(--touch-min);
+  gap: 16px;
+  min-height: calc(var(--touch-min) + 24px);
   border: 1px solid var(--border-subtle);
-  border-radius: 8px;
-  padding: 14px 16px;
+  border-radius: 10px;
+  padding: 20px 24px;
   color: var(--text-primary);
   background: var(--surface-input);
   cursor: pointer;
+}
+
+.scenario-card strong {
+  font-size: 18px;
+  line-height: 1.35;
 }
 
 .scenario-card-main {
@@ -586,6 +645,10 @@ canvas:focus-visible {
   border-top: 1px solid var(--border-subtle);
 }
 
+.result-replay-panel .replay-panel-scroll {
+  max-height: min(420px, 50vh);
+}
+
 .result-replay-panel h2 {
   margin: 0 0 12px;
   font-size: 18px;
@@ -613,15 +676,19 @@ canvas:focus-visible {
 
 .timeline {
   margin: 0;
-  padding-left: 0;
+  padding: 0;
   color: var(--text-link);
-  list-style-position: inside;
+  list-style: none;
+}
+
+.timeline li + li {
+  margin-top: 8px;
 }
 
 .timeline button,
 .timeline span {
   width: 100%;
-  margin: 4px 0 8px;
+  margin: 0;
   border: 1px solid var(--border-subtle);
   color: var(--text-link);
   background: var(--surface-input);
@@ -668,7 +735,7 @@ canvas:focus-visible {
   .speed-control {
     width: auto;
     max-width: 100%;
-    grid-template-columns: repeat(4, minmax(var(--touch-speed), 1fr));
+    grid-template-columns: repeat(3, minmax(var(--touch-speed), 1fr));
   }
 
   .replay-layout,

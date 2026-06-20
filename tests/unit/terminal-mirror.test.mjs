@@ -10,14 +10,14 @@ test("createEmptyTerminalMirror provides a connecting placeholder", () => {
   assert.equal(mirror.commandHistory.length, 0);
 });
 
-test("terminalToMirrorState reads only the visible xterm page", () => {
+test("terminalToMirrorState reads only the visible xterm viewport", () => {
   const requested = [];
   const terminal = {
     cols: 80,
     rows: 3,
     buffer: {
       active: {
-        baseY: 100,
+        viewportY: 100,
         cursorX: 4,
         cursorY: 1,
         length: 103,
@@ -46,6 +46,7 @@ test("terminalToMirrorState keeps typed trailing spaces without xterm row paddin
     buffer: {
       active: {
         baseY: 0,
+        viewportY: 0,
         cursorX: 10,
         cursorY: 0,
         length: 1,
@@ -71,6 +72,7 @@ test("terminalToMirrorState preserves current-line spaces up to the cursor", () 
     buffer: {
       active: {
         baseY: 0,
+        viewportY: 0,
         cursorX: 12,
         cursorY: 0,
         length: 1,

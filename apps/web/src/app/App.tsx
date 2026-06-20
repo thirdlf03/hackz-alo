@@ -4,10 +4,12 @@ import {
   advanceGameState,
   applyLiveMetrics,
   activateSlackCompose,
+  blurCommandInput,
   createInitialGameState,
   decayWorldOverlays,
   deactivateSlackCompose,
   dismissNavigationStep,
+  focusCommandInput,
   mergedSlackMessages,
   setActiveRunbook,
   setDevtoolsTab,
@@ -30,6 +32,7 @@ import {
   slackComposeAt
 } from "../game/render/canvasRenderer.js";
 import { createEmptyTerminalMirror } from "../game/terminal/mirror.js";
+import { defaultTerminalDimensions, expandedTerminalDimensions } from "../game/terminal/layout.js";
 import { TerminalSession } from "../game/terminal/session.js";
 import { terminalDebug } from "../game/terminal/debug.js";
 import { keyboardEventToTerminalInput } from "../game/terminal/input.js";
@@ -59,7 +62,7 @@ const difficultyOptions: Array<{ difficulty: Difficulty; label: string; tone: st
   { difficulty: "intermediate", label: "中級", tone: "amber", summary: "原因候補を絞り込みながら復旧まで進める訓練" },
   { difficulty: "advanced", label: "上級", tone: "red", summary: "少ない手掛かりから仮説を立てて完走する訓練" }
 ];
-const speedOptions = [0.5, 1, 1.5, 2] as const;
+const speedOptions = [0.5, 1, 1.5, 2, 4, 8] as const;
 
 const api = new ApiClient();
 const offlineQueue = new OfflineUploadQueue(api);
@@ -257,10 +260,13 @@ export function App() {
     const draw = () => {
       const latest = gameStateRef.current;
       const scenario = scenarioRef.current;
-      if (latest && (latest !== lastState || scenario !== lastScenario)) {
+      const animate = Boolean(latest?.commandInputFocused);
+      if (latest && (animate || latest !== lastState || scenario !== lastScenario)) {
         renderer.draw(latest, scenario);
-        lastState = latest;
-        lastScenario = scenario;
+        if (!animate) {
+          lastState = latest;
+          lastScenario = scenario;
+        }
       }
       frame = requestAnimationFrame(draw);
     };
@@ -478,10 +484,17 @@ export function App() {
     }
   }
 
-  function attachTerminalSession(activeSession: { sessionId: string; replayId: string }) {
+  async function attachTerminalSession(activeSession: { sessionId: string; replayId: string }) {
     terminalRef.current?.destroy();
+    const { cols, rows } = defaultTerminalDimensions();
+    await api.resizeTerminal(activeSession.sessionId, cols, rows);
     const terminal = new TerminalSession({
       sessionId: activeSession.sessionId,
+      cols,
+      rows,
+      onResize: (nextCols, nextRows) => {
+        void api.resizeTerminal(activeSession.sessionId, nextCols, nextRows).catch(console.error);
+      },
       onSnapshot: (snapshot) => patchGameStateRef((current) => ({ ...current, monitors: { ...current.monitors, center: { ...current.monitors.center, terminal: snapshot } } })),
       onOutput: (summary) => {
         const replayId = sessionRef.current?.replayId;
@@ -516,6 +529,19 @@ export function App() {
     terminal.connect();
   }
 
+  function syncTerminalViewport() {
+    const terminal = terminalRef.current;
+    if (!terminal || screen !== "play") return;
+    const expanded = gameStateRef.current?.world.expandedMonitor;
+    const { cols, rows } = expanded === "terminal" ? expandedTerminalDimensions() : defaultTerminalDimensions();
+    terminal.resize(cols, rows);
+  }
+
+  useEffect(() => {
+    if (screen !== "play") return;
+    syncTerminalViewport();
+  }, [screen, gameState?.world.expandedMonitor]);
+
   async function startPlay() {
     if (!session || !scenario || isStarting || !recordingConsent) return;
     localStorage.setItem(CONSENT_KEY, "1");
@@ -524,7 +550,7 @@ export function App() {
     setIsStarting(true);
     try {
       await api.startSession(session.sessionId);
-      attachTerminalSession(session);
+      await attachTerminalSession(session);
       elapsedMsRef.current = 0;
       lastTickAtRef.current = performance.now();
       setTimeline([]);
@@ -633,6 +659,11 @@ export function App() {
       void emitter.emit({ replayId, type: "ui_click", at, payload: { x: point.x, y: point.y } });
       if (containsPoint(inputDockRects.button, point.x, point.y)) return void endSession("resolve");
       if (containsPoint(inputDockRects.retire, point.x, point.y)) return void endSession("retire");
+      if (containsPoint(inputDockRects.input, point.x, point.y)) {
+        patchGameStateRef((current) => focusCommandInput(deactivateSlackCompose(current)));
+        return;
+      }
+      patchGameStateRef((current) => blurCommandInput(current));
       const activeScenario = scenarioRef.current;
       if (activeScenario) {
         const difficulty = gameStateRef.current?.session.difficulty ?? "beginner";
@@ -779,14 +810,19 @@ export function App() {
       return;
     }
     if (!terminalRef.current) return;
+    if (!gameStateRef.current?.commandInputFocused) {
+      patchGameStateRef((current) => focusCommandInput(current));
+    }
     const input = keyboardEventToTerminalInput(event);
     if (!input) return;
+    event.preventDefault();
     if (event.ctrlKey && event.key.toLowerCase() === "c") {
-      terminalDebug("keydown.ctrl-c", { inputBytes: [...input].map((char) => char.charCodeAt(0)) });
+      terminalDebug("keydown.ctrl-c", { interruptOnly: true });
       const activeSession = sessionRef.current;
       if (activeSession) void api.interruptTerminal(activeSession.sessionId).catch(() => {});
+      return;
     }
-    event.preventDefault();
+    if (terminalRef.current.getConnectionState() !== "connected") return;
     terminalRef.current.input(input);
   }
 
@@ -882,7 +918,9 @@ export function App() {
 
       {screen === "scenario-list" && selectedDifficulty && (
         <section class="panel scenario-list-panel" aria-labelledby="scenario-list-heading">
-          <button type="button" aria-label="難易度選択に戻る" onClick={() => setScreen("select")}>戻る</button>
+          <button type="button" class="panel-back-button" aria-label="難易度選択に戻る" onClick={() => setScreen("select")}>
+            ← 戻る
+          </button>
           <h1 id="scenario-list-heading">{formatDifficulty(selectedDifficulty)}シナリオ</h1>
           <div class="scenario-list">
             {filteredScenarios.map((item) => (
@@ -900,6 +938,15 @@ export function App() {
 
       {screen === "briefing" && scenario && (
         <section class="panel briefing-panel" aria-labelledby="briefing-heading">
+          <button
+            type="button"
+            class="panel-back-button"
+            aria-label="シナリオ選択に戻る"
+            disabled={isStarting}
+            onClick={() => setScreen("scenario-list")}
+          >
+            ← 戻る
+          </button>
           <h1 id="briefing-heading">{scenario.title}</h1>
           <ul>{scenario.briefing.map((line) => <li key={line}>{line}</li>)}</ul>
           <fieldset>

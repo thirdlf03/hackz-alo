@@ -40,7 +40,7 @@ runbooks:
   - id: runbook.unlang
     title: うん言語バッチ調査
     body: |-
-      sales-nightly 復旧手順（この Runbook だけで完結）
+      sales-nightly 復旧手順
 
       1. ログ確認
       tail -n 50 /workspace/logs/batch.log
@@ -54,6 +54,10 @@ runbooks:
       右タブ「うん言語仕様表」を開く（拡大表示推奨）
 
       4. 修正
+      vim /workspace/services/batch/sales.un
+      → うん y = うんなし を うん y = うんあり に直して :wq
+
+      または
       sed -i 's/うん y = うんなし/うん y = うんあり/' /workspace/services/batch/sales.un
 
       5. 動作確認

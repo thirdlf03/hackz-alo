@@ -216,6 +216,7 @@ export function ReplayPage({ replayId, timeline }: Props) {
             </button>
           ))}
         </div>
+        <div class="replay-panel-scroll" tabIndex={0}>
         {tab === "timeline" && (
           isVideoTimingReady ? (
             <ol
@@ -281,6 +282,11 @@ export function ReplayPage({ replayId, timeline }: Props) {
                 </li>
               ))}
             </ul>
+          </section>
+        )}
+        </div>
+        {tab === "comments" && (
+          <section class="replay-comments" aria-label="コメント入力">
             <label for="replay-comment-draft">この時刻へのコメント</label>
             <textarea
               id="replay-comment-draft"

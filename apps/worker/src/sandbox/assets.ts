@@ -42,6 +42,10 @@ export async function installSandboxAssets(sandbox: SandboxRuntime) {
     await sandbox.writeFile(asset.path, asset.content);
   }
   await sandbox.exec("chmod +x /workspace/bin/*.mjs && ln -sf /workspace/bin/unctl.mjs /usr/local/bin/unctl && ln -sf /workspace/bin/unlang.mjs /usr/local/bin/unlang");
+  await sandbox.exec(
+    "if ! command -v vim >/dev/null 2>&1; then if command -v apt-get >/dev/null 2>&1; then apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends vim && rm -rf /var/lib/apt/lists/*; elif command -v apk >/dev/null 2>&1; then apk add --no-cache vim; fi; fi",
+    { cwd: "/workspace" }
+  );
   await sandbox.writeFile(
     "/workspace/run/job-queue.jsonl",
     '{"id":"job-001","status":"pending"}\n{"id":"job-002","status":"pending"}\n'

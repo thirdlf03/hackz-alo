@@ -332,6 +332,7 @@ export type GameRenderState = {
     powerOutageFlashMs: number;
     redBullFlyingMs: number;
   };
+  commandInputFocused: boolean;
   cursor: { x: number; y: number; visible: boolean };
   clickEffects: Array<{ id: string; x: number; y: number; ageMs: number }>;
   recording: {

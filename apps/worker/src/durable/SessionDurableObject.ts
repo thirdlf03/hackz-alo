@@ -236,7 +236,7 @@ export class SessionDurableObject implements DurableObject {
       throw new HttpError(409, "invalid_state", "clock updates require a running session");
     }
     const body = (await request.json().catch(() => ({}))) as { speed?: number };
-    const speed = typeof body.speed === "number" && body.speed > 0 && body.speed <= 4 ? body.speed : session.gameSpeed;
+    const speed = typeof body.speed === "number" && body.speed > 0 && body.speed <= 8 ? body.speed : session.gameSpeed;
     const synced: StoredSession = {
       ...session,
       gameTimeMs: this.getGameTimeMs(session),
@@ -286,8 +286,8 @@ export class SessionDurableObject implements DurableObject {
     });
   }
 
-  private terminalCols = 100;
-  private terminalRows = 30;
+  private terminalCols = 80;
+  private terminalRows = 24;
 
   private async terminal(request: Request) {
     const session = await this.requireSession();

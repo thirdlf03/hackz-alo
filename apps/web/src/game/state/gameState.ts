@@ -70,6 +70,7 @@ export function createInitialGameState(
     openedRunbookIds: activeRunbook ? [activeRunbook.id] : [],
     alertFlashMs: 0,
     world: defaultWorld(),
+    commandInputFocused: false,
     cursor: { x: 960, y: 540, visible: true },
     clickEffects: [],
     recording: {
@@ -283,8 +284,19 @@ export function toggleNotificationPanel(state: GameRenderState): GameRenderState
 export function activateSlackCompose(state: GameRenderState): GameRenderState {
   return {
     ...state,
+    commandInputFocused: false,
     slackCompose: { ...state.slackCompose, active: true }
   };
+}
+
+export function focusCommandInput(state: GameRenderState): GameRenderState {
+  if (state.commandInputFocused) return state;
+  return { ...state, commandInputFocused: true };
+}
+
+export function blurCommandInput(state: GameRenderState): GameRenderState {
+  if (!state.commandInputFocused) return state;
+  return { ...state, commandInputFocused: false };
 }
 
 export function deactivateSlackCompose(state: GameRenderState): GameRenderState {

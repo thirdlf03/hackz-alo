@@ -686,28 +686,36 @@ export class CanvasRenderer {
     this.ctx.fillStyle = palette.textPrimary;
     this.ctx.font = uiFont(16);
     this.ctx.fillText("SERVICE HEALTH", 28, 18);
-    this.ctx.fillStyle = palette.textSecondary;
-    this.ctx.font = monoFont(14);
-    this.ctx.fillText(health.detail, 28, 33);
 
     const badge = health.label;
+    const sourceLabel = source === "live" ? "LIVE" : source === "loading" ? "SYNC" : "OFFLINE";
+    const sourceColor = source === "live" ? palette.statusLive : source === "loading" ? palette.statusLoading : palette.statusError;
+    this.ctx.font = monoFont(14);
     const badgeWidth = this.ctx.measureText(badge).width + 20;
+    const sourceWidth = this.ctx.measureText(sourceLabel).width;
+    const badgeX = panelWidth - badgeWidth - 10;
+    const sourceX = badgeX - 10 - sourceWidth;
+    const dotX = sourceX - 12;
+
+    this.ctx.fillStyle = palette.textSecondary;
+    this.ctx.font = monoFont(14);
+    const detailMaxWidth = Math.max(72, dotX - 30);
+    this.ctx.fillText(truncateToWidth(this.ctx, health.detail, detailMaxWidth), 28, 33);
+
     this.ctx.fillStyle = palette.bgInput;
-    roundRect(this.ctx, panelWidth - badgeWidth - 10, 8, badgeWidth, 24, 6);
+    roundRect(this.ctx, badgeX, 8, badgeWidth, 24, 6);
     this.ctx.fill();
     this.ctx.fillStyle = health.color;
     this.ctx.font = monoFont(14);
-    this.ctx.fillText(badge, panelWidth - badgeWidth + 2, 24);
+    this.ctx.fillText(badge, badgeX + 10, 24);
 
-    const sourceLabel = source === "live" ? "LIVE" : source === "loading" ? "SYNC" : "OFFLINE";
-    const sourceColor = source === "live" ? palette.statusLive : source === "loading" ? palette.statusLoading : palette.statusError;
     this.ctx.fillStyle = sourceColor;
     this.ctx.beginPath();
-    this.ctx.arc(panelWidth - badgeWidth - 24, 20, 4, 0, Math.PI * 2);
+    this.ctx.arc(dotX, 20, 4, 0, Math.PI * 2);
     this.ctx.fill();
     this.ctx.fillStyle = palette.textSecondary;
     this.ctx.font = monoFont(14);
-    this.ctx.fillText(sourceLabel, panelWidth - badgeWidth - 42, 23);
+    this.ctx.fillText(sourceLabel, sourceX, 23);
   }
 
   private drawMetricCard(
@@ -759,8 +767,8 @@ export class CanvasRenderer {
     const contentHeight = 540;
     const lineHeight = 22;
     this.ctx.font = monoFont(18);
-    const terminalColumns = Math.max(12, Math.floor(contentWidth / this.ctx.measureText("M").width));
-    const visualLines = this.layoutTerminalLines(terminal.lines, terminalColumns);
+    const cellWidth = this.ctx.measureText("M").width;
+    const visualLines = this.layoutTerminalLines(terminal.lines);
     const cursorVisualLine = findTerminalCursorVisualLine(visualLines, terminal.cursor.y, terminal.cursor.x);
     const effectiveCursorLine = cursorVisualLine >= 0 ? cursorVisualLine : Math.max(0, visualLines.length - 1);
     const maxLines = Math.floor(contentHeight / lineHeight);
@@ -792,18 +800,17 @@ export class CanvasRenderer {
       const line = visibleLines[cursorLine];
       if (!line) return;
       this.ctx.font = monoFont(18);
-      const cursorText = line.plain.slice(0, Math.max(0, terminal.cursor.x - line.startColumn));
-      const cursorX = this.ctx.measureText(cursorText).width;
+      const cursorX = Math.max(0, terminal.cursor.x - line.startColumn) * cellWidth;
       this.ctx.fillStyle = palette.textTerminal;
-      this.ctx.fillRect(cursorX, baseY + cursorLine * lineHeight - 16, 10, 20);
+      this.ctx.fillRect(cursorX, baseY + cursorLine * lineHeight - 16, Math.max(2, cellWidth * 0.6), 20);
     }
   }
 
-  private layoutTerminalLines(lines: string[], maxColumns: number): TerminalVisualLine[] {
+  private layoutTerminalLines(lines: string[]): TerminalVisualLine[] {
     const visualLines: TerminalVisualLine[] = [];
     for (let sourceIndex = 0; sourceIndex < lines.length; sourceIndex += 1) {
       const cached = this.getCachedTerminalLine(lines[sourceIndex] ?? "");
-      visualLines.push(...layoutTerminalLine(cached.spans, cached.plain, sourceIndex, maxColumns));
+      visualLines.push(mirrorTerminalVisualLine(cached.spans, cached.plain, sourceIndex));
     }
     return visualLines.length > 0 ? visualLines : [emptyTerminalVisualLine(0)];
   }
@@ -1109,7 +1116,9 @@ export class CanvasRenderer {
     const input = inputDockRects.input;
     const button = inputDockRects.button;
     const enabled = state.session.status === "running";
+    const focused = state.commandInputFocused;
     const typed = extractTypedCommand(state.monitors.center.terminal.commandDraft);
+    const caretVisible = enabled && focused && Math.floor(performance.now() / 530) % 2 === 0;
 
     this.ctx.fillStyle = palette.bgPanelDark;
     this.ctx.fillRect(0, 850, logicalWidth, 170);
@@ -1121,22 +1130,24 @@ export class CanvasRenderer {
     this.ctx.fillStyle = palette.bgTerminal;
     roundRect(this.ctx, input.x, input.y, input.width, input.height, 8);
     this.ctx.fill();
-    this.ctx.strokeStyle = enabled ? palette.borderDefault : palette.bgCard;
+    this.ctx.strokeStyle = enabled && focused ? palette.borderFocus : enabled ? palette.borderDefault : palette.bgCard;
     this.ctx.lineWidth = 2;
     this.ctx.stroke();
 
     const inputTextY = input.y + Math.round(input.height / 2) + 8;
     this.ctx.font = monoFont(22);
+    const textStartX = input.x + 20;
     if (typed) {
       this.ctx.fillStyle = palette.textTerminal;
-      this.ctx.fillText(typed, input.x + 20, inputTextY);
-      if (enabled) {
-        const textWidth = this.ctx.measureText(typed).width;
-        this.ctx.fillRect(input.x + 20 + textWidth + 4, inputTextY - 22, 10, 28);
-      }
-    } else {
+      this.ctx.fillText(typed, textStartX, inputTextY);
+    } else if (!focused) {
       this.ctx.fillStyle = palette.textMuted;
-      this.ctx.fillText(enabled ? "コマンドを入力…" : "セッション開始後に入力できます", input.x + 20, inputTextY);
+      this.ctx.fillText(enabled ? "コマンドを入力…" : "セッション開始後に入力できます", textStartX, inputTextY);
+    }
+    if (caretVisible) {
+      const caretX = typed ? textStartX + this.ctx.measureText(typed).width + 2 : textStartX;
+      this.ctx.fillStyle = palette.textTerminal;
+      this.ctx.fillRect(caretX, inputTextY - 20, 2, 24);
     }
 
     this.ctx.fillStyle = enabled ? palette.bgInput : palette.bgCardDark;
@@ -1489,26 +1500,14 @@ function drawMagnifyIcon(ctx: CanvasRenderingContext2D, x: number, y: number, si
   ctx.restore();
 }
 
-function layoutTerminalLine(spans: AnsiSpan[], plain: string, sourceIndex: number, maxColumns: number): TerminalVisualLine[] {
-  if (plain.length === 0) return [emptyTerminalVisualLine(sourceIndex)];
-
-  const breakColumns = terminalPromptBreakColumns(plain);
-  const lines: TerminalVisualLine[] = [];
-  for (let index = 0; index < breakColumns.length - 1; index += 1) {
-    const rangeStart = breakColumns[index] ?? 0;
-    const rangeEnd = breakColumns[index + 1] ?? plain.length;
-    for (let start = rangeStart; start < rangeEnd; start += maxColumns) {
-      const end = Math.min(rangeEnd, start + maxColumns);
-      lines.push({
-        sourceIndex,
-        startColumn: start,
-        endColumn: end,
-        plain: plain.slice(start, end),
-        spans: sliceAnsiSpans(spans, start, end)
-      });
-    }
-  }
-  return lines.length > 0 ? lines : [emptyTerminalVisualLine(sourceIndex)];
+function mirrorTerminalVisualLine(spans: AnsiSpan[], plain: string, sourceIndex: number): TerminalVisualLine {
+  return {
+    sourceIndex,
+    startColumn: 0,
+    endColumn: plain.length,
+    plain,
+    spans
+  };
 }
 
 function findTerminalCursorVisualLine(lines: TerminalVisualLine[], sourceIndex: number, cursorColumn: number) {
@@ -1520,35 +1519,18 @@ function findTerminalCursorVisualLine(lines: TerminalVisualLine[], sourceIndex: 
   return -1;
 }
 
-function terminalPromptBreakColumns(plain: string) {
-  const columns = [0];
-  const promptPattern = /root@[^:\s]+:[^#\n]+# /g;
-  for (const match of plain.matchAll(promptPattern)) {
-    if (match.index > 0) columns.push(match.index);
-  }
-  columns.push(plain.length);
-  return [...new Set(columns)].sort((left, right) => left - right);
-}
-
-function sliceAnsiSpans(spans: AnsiSpan[], startColumn: number, endColumn: number): AnsiSpan[] {
-  const sliced: AnsiSpan[] = [];
-  let cursor = 0;
-  for (const span of spans) {
-    const spanStart = cursor;
-    const spanEnd = cursor + span.text.length;
-    cursor = spanEnd;
-    if (spanEnd <= startColumn || spanStart >= endColumn) continue;
-    const text = span.text.slice(
-      Math.max(0, startColumn - spanStart),
-      Math.min(span.text.length, endColumn - spanStart)
-    );
-    if (text) sliced.push({ ...span, text });
-  }
-  return sliced.length > 0 ? sliced : [{ text: "" }];
-}
-
 function emptyTerminalVisualLine(sourceIndex: number): TerminalVisualLine {
   return { sourceIndex, startColumn: 0, endColumn: 0, plain: "", spans: [{ text: "" }] };
+}
+
+function truncateToWidth(ctx: CanvasRenderingContext2D, text: string, maxWidth: number) {
+  if (ctx.measureText(text).width <= maxWidth) return text;
+  const ellipsis = "…";
+  let trimmed = text;
+  while (trimmed.length > 0 && ctx.measureText(`${trimmed}${ellipsis}`).width > maxWidth) {
+    trimmed = trimmed.slice(0, -1);
+  }
+  return trimmed ? `${trimmed}${ellipsis}` : ellipsis;
 }
 
 function centeredText(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, width: number, height: number) {

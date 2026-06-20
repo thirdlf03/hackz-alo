@@ -156,23 +156,25 @@ export function ReplayMediaPanel({
         <p class="result-replay-note">録画は保存されていません。イベントログのタイムラインのみ表示しています。</p>
       )}
       {isVideoTimingReady ? (
-        <ol class="timeline">
-          {visibleTimeline.map((event) => (
-            <li key={event.id}>
-              {canSeek ? (
-                <button
-                  type="button"
-                  aria-current={activeTimelineId === event.id ? "time" : undefined}
-                  onClick={() => seekGameTime(event.at, event.id)}
-                >
-                  {formatSeconds(timelineDisplaySeconds(event.at, true, effectiveVideoDuration, durationMs ?? 0, recordingStartMs))} {event.label}
-                </button>
-              ) : (
-                <span>{formatSeconds(timelineDisplaySeconds(event.at, effectiveVideoDuration > 0, effectiveVideoDuration, durationMs ?? 0, recordingStartMs))} {event.label}</span>
-              )}
-            </li>
-          ))}
-        </ol>
+        <div class="replay-panel-scroll" tabIndex={0}>
+          <ol class="timeline">
+            {visibleTimeline.map((event) => (
+              <li key={event.id}>
+                {canSeek ? (
+                  <button
+                    type="button"
+                    aria-current={activeTimelineId === event.id ? "time" : undefined}
+                    onClick={() => seekGameTime(event.at, event.id)}
+                  >
+                    {formatSeconds(timelineDisplaySeconds(event.at, true, effectiveVideoDuration, durationMs ?? 0, recordingStartMs))} {event.label}
+                  </button>
+                ) : (
+                  <span>{formatSeconds(timelineDisplaySeconds(event.at, effectiveVideoDuration > 0, effectiveVideoDuration, durationMs ?? 0, recordingStartMs))} {event.label}</span>
+                )}
+              </li>
+            ))}
+          </ol>
+        </div>
       ) : (
         <p class="result-replay-note">タイムラインの時間を計算中です…</p>
       )}

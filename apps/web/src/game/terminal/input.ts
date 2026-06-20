@@ -14,6 +14,7 @@ export function keyboardEventToTerminalInput(event: KeyboardEvent) {
   if (event.key === "ArrowDown") return "\u001b[B";
   if (event.key === "ArrowRight") return "\u001b[C";
   if (event.key === "ArrowLeft") return "\u001b[D";
+  if (event.key === "Escape") return "\u001b";
   if (event.key.length === 1) return event.key;
   return null;
 }

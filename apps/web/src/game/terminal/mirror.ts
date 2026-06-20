@@ -1,7 +1,7 @@
 import type { Terminal } from "@xterm/xterm";
 import type { TerminalMirrorState } from "@incident/shared";
 
-export function createEmptyTerminalMirror(cols = 100, rows = 30): TerminalMirrorState {
+export function createEmptyTerminalMirror(cols = 80, rows = 24): TerminalMirrorState {
   return {
     cols,
     rows,
@@ -17,18 +17,19 @@ export function terminalToMirrorState(
   commandHistory: TerminalMirrorState["commandHistory"] = []
 ): TerminalMirrorState {
   const buffer = terminal.buffer.active;
+  const viewportY = buffer.viewportY;
   const lines: string[] = [];
-  const firstVisible = Math.max(0, buffer.baseY);
-  const lastVisible = Math.min(buffer.length, firstVisible + terminal.rows);
-  const cursorY = Math.max(0, Math.min(buffer.cursorY, terminal.rows - 1));
-  const cursorLineIndex = firstVisible + cursorY;
+  const cursorLineIndex = viewportY + buffer.cursorY;
   let commandDraft = "";
-  for (let index = firstVisible; index < lastVisible; index += 1) {
+
+  for (let row = 0; row < terminal.rows; row += 1) {
+    const index = viewportY + row;
     const line = buffer.getLine(index);
+    const isCursorLine = index === cursorLineIndex;
     const text = line
-      ? mirrorLineText(line, index === cursorLineIndex ? buffer.cursorX : undefined)
+      ? mirrorLineText(line, isCursorLine ? buffer.cursorX : undefined)
       : "";
-    if (index === cursorLineIndex) commandDraft = text;
+    if (isCursorLine) commandDraft = text;
     lines.push(text);
   }
 
@@ -38,7 +39,7 @@ export function terminalToMirrorState(
     lines: lines.length > 0 ? lines : [""],
     cursor: {
       x: buffer.cursorX,
-      y: cursorY,
+      y: buffer.cursorY,
       visible: true
     },
     commandDraft,

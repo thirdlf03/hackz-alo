@@ -26,5 +26,6 @@ test("keyboardEventToTerminalInput ignores other modifier combinations", () => {
 test("keyboardEventToTerminalInput maps navigation and printable keys", () => {
   assert.equal(keyboardEventToTerminalInput(keyboardEvent({ key: "Enter" })), "\r");
   assert.equal(keyboardEventToTerminalInput(keyboardEvent({ key: "ArrowUp" })), "\u001b[A");
+  assert.equal(keyboardEventToTerminalInput(keyboardEvent({ key: "Escape" })), "\u001b");
   assert.equal(keyboardEventToTerminalInput(keyboardEvent({ key: "a" })), "a");
 });
