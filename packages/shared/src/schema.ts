@@ -134,6 +134,9 @@ export function validateScenarioDefinition(input: unknown): ValidationResult<Sce
     rememberUnique(runbookIds, item.id, `${path}.id`, errors);
     requireString(item, "title", errors, path);
     requireString(item, "body", errors, path);
+    if (item.availableAtMs !== undefined) {
+      requireNonNegativeInteger(item, "availableAtMs", errors, path);
+    }
   });
   requireNonEmptyArray(value, "runbooks", errors);
 
@@ -337,6 +340,9 @@ function validateTriggerParams(trigger: Record<string, unknown>, path: string, e
   } else if (trigger.type === "unlang_batch_failure") {
     requireString(trigger.params, "jobId", errors, `${path}.params`);
     requireAbsolutePath(trigger.params, "path", errors, `${path}.params`);
+    if (trigger.params.specInComments !== undefined && typeof trigger.params.specInComments !== "boolean") {
+      errors.push(`${path}.params.specInComments must be a boolean`);
+    }
   } else if (trigger.type === "queue_backlog") {
     requirePositiveInteger(trigger.params, "count", errors, `${path}.params`);
   } else if (trigger.type === "bad_deploy") {

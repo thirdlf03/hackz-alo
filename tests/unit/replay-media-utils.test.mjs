@@ -4,7 +4,9 @@ import {
   buildTimelineFromEvents,
   gameTimeToVideoSeekSeconds,
   inferRecordingStartedAtGameMs,
-  isTimelineEventType
+  isTimelineEventType,
+  parseRecordingClockSegments,
+  timelineDisplaySeconds
 } from "../../apps/web/src/replay/replayMediaUtils.ts";
 
 test("isTimelineEventType excludes noisy recording and duplicate command events", () => {
@@ -34,6 +36,46 @@ test("gameTimeToVideoSeekSeconds scales game clock to video duration", () => {
   assert.equal(gameTimeToVideoSeekSeconds(21, 15, 21_000, 6_000), 15);
   assert.equal(gameTimeToVideoSeekSeconds(11, 15, 21_000, 6_000), 5);
   assert.equal(gameTimeToVideoSeekSeconds(6, 15, 21_000, 6_000), 0);
+});
+
+test("gameTimeToVideoSeekSeconds follows recorded speed-change segments", () => {
+  const segments = [
+    { gameMs: 0, videoMs: 0, speed: 8 },
+    { gameMs: 16_000, videoMs: 2_000, speed: 2 }
+  ];
+
+  assert.equal(gameTimeToVideoSeekSeconds(8, 6, 24_000, 0, segments), 1);
+  assert.equal(gameTimeToVideoSeekSeconds(16, 6, 24_000, 0, segments), 2);
+  assert.equal(gameTimeToVideoSeekSeconds(20, 6, 24_000, 0, segments), 4);
+  assert.equal(gameTimeToVideoSeekSeconds(24, 6, 24_000, 0, segments), 6);
+  assert.equal(gameTimeToVideoSeekSeconds(28, 6, 24_000, 0, segments), 6);
+});
+
+test("parseRecordingClockSegments ignores malformed metadata", () => {
+  assert.equal(parseRecordingClockSegments(undefined), undefined);
+  assert.equal(parseRecordingClockSegments({ recordingClockSegments: [] }), undefined);
+  assert.equal(parseRecordingClockSegments({ recordingClockSegments: [{ gameMs: 0, videoMs: 0, speed: 0 }] }), undefined);
+  assert.deepEqual(
+    parseRecordingClockSegments({
+      recordingClockSegments: [
+        { gameMs: 16_000, videoMs: 2_000, speed: 2 },
+        { gameMs: 0, videoMs: 0, speed: 8 },
+        { gameMs: -1, videoMs: 0, speed: 8 }
+      ]
+    }),
+    [
+      { gameMs: 0, videoMs: 0, speed: 8 },
+      { gameMs: 16_000, videoMs: 2_000, speed: 2 }
+    ]
+  );
+});
+
+test("timelineDisplaySeconds maps timeline labels to video time when video is available", () => {
+  assert.equal(timelineDisplaySeconds(11, true, 15, 21_000, 6_000), 5);
+  assert.equal(timelineDisplaySeconds(11, true, 15, 21_000, 6_000, [
+    { gameMs: 7_000, videoMs: 0, speed: 2 }
+  ]), 2);
+  assert.equal(timelineDisplaySeconds(11, false, 0, 21_000, 6_000), 11);
 });
 
 test("inferRecordingStartedAtGameMs estimates late recorder start", () => {

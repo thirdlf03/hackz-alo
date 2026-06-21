@@ -1,8 +1,6 @@
-import type { AlertDefinition, EditorPanelState, GameRenderState, MetricsSnapshot, ScenarioDefinition, TerminalMirrorState } from "@incident/shared";
+import type { AlertDefinition, EditorPanelState, GameRenderState, MetricsSnapshot, RunbookDefinition, ScenarioDefinition, TerminalMirrorState } from "@incident/shared";
 
 const METRICS_HISTORY_LIMIT = 30;
-const RED_BULL_FLYING_MS = 2800;
-const RED_BULL_FLYING_THRESHOLD = 65;
 
 type InitialGameStateOptions = {
   sessionStatus?: GameRenderState["session"]["status"];
@@ -31,6 +29,10 @@ function defaultEditor(): EditorPanelState {
   };
 }
 
+export function visibleRunbooks(scenario: ScenarioDefinition, elapsedMs: number): RunbookDefinition[] {
+  return scenario.runbooks.filter((runbook) => (runbook.availableAtMs ?? 0) <= elapsedMs);
+}
+
 export function createInitialGameState(
   scenario: ScenarioDefinition,
   sessionId: string,
@@ -38,7 +40,8 @@ export function createInitialGameState(
   terminal: TerminalMirrorState,
   options: InitialGameStateOptions = {}
 ): GameRenderState {
-  const activeRunbook = scenario.runbooks[0];
+  const runbooks = visibleRunbooks(scenario, 0);
+  const activeRunbook = runbooks[0];
 
   return {
     session: {
@@ -68,8 +71,7 @@ export function createInitialGameState(
       },
       right: {
         activePanelTab: "runbook",
-        ...(activeRunbook ? { activeRunbook } : {}),
-        activeRunbookIndex: 0,
+        ...(activeRunbook ? { activeRunbook, activeRunbookIndex: 0 } : { activeRunbookIndex: 0 }),
         slackMessages: []
       }
     },
@@ -80,7 +82,7 @@ export function createInitialGameState(
     slackCompose: { active: false, draft: "" },
     openedRunbookIds: activeRunbook ? [activeRunbook.id] : [],
     alertFlashMs: 0,
-    world: defaultWorld(),
+    world: { expandedMonitor: null },
     commandInputFocused: false,
     cursor: { x: 960, y: 540, visible: true },
     clickEffects: [],
@@ -108,6 +110,10 @@ export function advanceGameState(
     ? scenario.slackMessages.filter((message) => message.atMs <= elapsedMs)
     : state.monitors.right.slackMessages);
 
+  const prevVisibleRunbooks = scenario ? visibleRunbooks(scenario, state.clock.elapsedMs) : [];
+  const nextVisibleRunbooks = scenario ? visibleRunbooks(scenario, elapsedMs) : [];
+  const newRunbookArrived = nextVisibleRunbooks.length > prevVisibleRunbooks.length;
+
   const activeStep = resolveNavigationStep(scenario, elapsedMs, state.navigation.dismissedStepIds);
   const newAlertArrived = alerts.length > state.monitors.left.alerts.length;
   const previousSlackIds = new Set([
@@ -116,9 +122,19 @@ export function advanceGameState(
   ]);
   const newSlackArrived = slackMessages.some((message) => !previousSlackIds.has(message.id));
   const notificationPulseMs =
-    newAlertArrived || newSlackArrived ? 2400 : Math.max(0, state.notifications.pulseMs - deltaMs);
+    newAlertArrived || newSlackArrived || newRunbookArrived
+      ? 2400
+      : Math.max(0, state.notifications.pulseMs - deltaMs);
 
-  const world = computeWorld(state, elapsedMs);
+  const activeRunbookStillVisible = state.monitors.right.activeRunbook
+    ? nextVisibleRunbooks.some((runbook) => runbook.id === state.monitors.right.activeRunbook?.id)
+    : false;
+  const nextActiveRunbook = activeRunbookStillVisible
+    ? state.monitors.right.activeRunbook
+    : nextVisibleRunbooks[0];
+  const nextActiveRunbookIndex = nextActiveRunbook
+    ? Math.max(0, nextVisibleRunbooks.findIndex((runbook) => runbook.id === nextActiveRunbook.id))
+    : 0;
 
   const nextStatus =
     state.session.status === "resolved" ||
@@ -138,8 +154,10 @@ export function advanceGameState(
         alerts
       },
       right: {
-        ...state.monitors.right,
-        slackMessages
+        activePanelTab: state.monitors.right.activePanelTab,
+        slackMessages,
+        activeRunbookIndex: nextActiveRunbook ? nextActiveRunbookIndex : 0,
+        ...(nextActiveRunbook ? { activeRunbook: nextActiveRunbook } : {})
       }
     },
     navigation: {
@@ -150,29 +168,16 @@ export function advanceGameState(
       ...state.notifications,
       pulseMs: notificationPulseMs
     },
-    alertFlashMs: 0,
-    world
+    alertFlashMs: 0
   };
 }
 
 export function decayWorldOverlays(state: GameRenderState, deltaMs: number): GameRenderState {
-  const flyingMs = Math.max(0, state.world.redBullFlyingMs - deltaMs);
-  const flashMs = Math.max(0, state.world.powerOutageFlashMs - deltaMs);
   const warningFlashMs = state.warning ? Math.max(0, state.warning.flashMs - deltaMs) : 0;
-  const flyingJustEnded = state.world.redBullFlyingMs > 0 && flyingMs === 0;
-  const worldUnchanged = flyingMs === state.world.redBullFlyingMs && flashMs === state.world.powerOutageFlashMs;
   const warningUnchanged =
     warningFlashMs === (state.warning?.flashMs ?? 0) && (warningFlashMs > 0 || !state.warning);
-  if (worldUnchanged && warningUnchanged) return state;
-  const next: GameRenderState = {
-    ...state,
-    world: {
-      ...state.world,
-      powerOutageFlashMs: flashMs,
-      redBullFlyingMs: flyingMs,
-      ...(flyingJustEnded ? { redBullPercent: 42 } : {})
-    }
-  };
+  if (warningUnchanged) return state;
+  const next: GameRenderState = { ...state };
   if (warningFlashMs > 0 && state.warning) {
     next.warning = { ...state.warning, flashMs: warningFlashMs };
   } else {
@@ -228,7 +233,7 @@ export function setRightPanelTab(state: GameRenderState, tab: "runbook" | "slack
 }
 
 export function setActiveRunbook(state: GameRenderState, scenario: ScenarioDefinition, index: number): GameRenderState {
-  const runbook = scenario.runbooks[index];
+  const runbook = visibleRunbooks(scenario, state.clock.elapsedMs)[index];
   if (!runbook) return state;
   const openedRunbookIds = state.openedRunbookIds.includes(runbook.id)
     ? state.openedRunbookIds
@@ -373,50 +378,6 @@ function resolveNavigationStep(
     .filter((step) => step.atMs <= elapsedMs && !dismissedStepIds.includes(step.id))
     .sort((a, b) => b.atMs - a.atMs);
   return eligible[0];
-}
-
-function defaultWorld(): GameRenderState["world"] {
-  return {
-    narrativeHour: 0,
-    janitorCameraActive: false,
-    fridgeCameraActive: true,
-    expandedMonitor: null,
-    redBullPercent: 100,
-    powerOutageFlashMs: 0,
-    redBullFlyingMs: 0
-  };
-}
-
-function computeWorld(
-  state: GameRenderState,
-  elapsedMs: number
-): GameRenderState["world"] {
-  const timeLimitMs = Math.max(state.clock.timeLimitMs, 1);
-  const narrativeHour = Math.min(6, (elapsedMs / timeLimitMs) * 6);
-  const janitorCameraActive = narrativeHour >= 2 && narrativeHour < 5;
-  const fridgeCameraActive = true;
-
-  let redBullPercent = Math.max(0, 100 - (elapsedMs / timeLimitMs) * 40);
-  if (state.world.redBullFlyingMs > 0) redBullPercent = 0;
-
-  let redBullFlyingMs = state.world.redBullFlyingMs;
-  if (
-    redBullPercent <= RED_BULL_FLYING_THRESHOLD &&
-    redBullFlyingMs <= 0 &&
-    state.world.redBullPercent > RED_BULL_FLYING_THRESHOLD
-  ) {
-    redBullFlyingMs = RED_BULL_FLYING_MS;
-  }
-
-  return {
-    narrativeHour,
-    janitorCameraActive,
-    fridgeCameraActive,
-    expandedMonitor: state.world.expandedMonitor,
-    redBullPercent,
-    powerOutageFlashMs: state.world.powerOutageFlashMs,
-    redBullFlyingMs
-  };
 }
 
 export function toggleExpandedMonitor(

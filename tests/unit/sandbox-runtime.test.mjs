@@ -62,6 +62,18 @@ test("fault injector writes silly phase-2 markers", async (t) => {
   assert.equal(gaslight.replacement, "気合い");
 });
 
+test("unlang batch failure can embed spec in うんちく comments", async (t) => {
+  const workspace = await tempWorkspace();
+  t.after(() => rm(workspace, { recursive: true, force: true }));
+
+  const target = path.join(workspace, "services", "batch", "sales.un");
+  await injectFault("unlang_batch_failure", [target, "sales-nightly", "spec-in-comments"], { workspace });
+  const source = await readFile(target, "utf8");
+  assert.match(source, /うんちく うんわり=割り算/);
+  assert.match(source, /うん y = うんなし/);
+  assert.match(await readFile(path.join(workspace, "logs", "batch.log"), "utf8"), /sales-nightly: うんともすんとも/);
+});
+
 test("fault injector keeps targets inside the workspace and writes exact byte counts", async (t) => {
   const workspace = await tempWorkspace();
   t.after(() => rm(workspace, { recursive: true, force: true }));

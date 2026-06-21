@@ -2,7 +2,7 @@
   "id": "cable-jumprope-001",
   "version": 1,
   "title": "LANケーブル縄跳びの夜",
-  "difficulty": "beginner",
+  "difficulty": "intermediate",
   "timeLimitMinutes": 5,
   "service": {
     "name": "うん用 API",

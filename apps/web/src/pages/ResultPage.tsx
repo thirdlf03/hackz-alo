@@ -202,6 +202,7 @@ function resolveResultTone(result: string | null | undefined, endingId: string |
     result === "failed" ||
     result === "timeout" ||
     endingId === "early-exit" ||
+    endingId === "false-resolve" ||
     endingId === "overtime" ||
     endingId === "aborted"
   ) {
@@ -221,7 +222,10 @@ function buildFlavorText(
   if (endingId === "early-exit" || result === "retired") {
     return "途中で手を抜いた。再雇用の話はない。荷物をまとめて出て行け。";
   }
-  if (endingId === "overtime" || result === "failed" || result === "timeout") {
+  if (endingId === "false-resolve" || result === "false_resolve") {
+    return "まだ障害が続いているのに復旧完了を押した。監視は嘘をつかない。会社の鍵は返せ。";
+  }
+  if (endingId === "overtime" || result === "timeout") {
     return "朝までに復旧できなかった。明日の朝は来ない。会社の鍵は返せ。";
   }
   if (endingId === "aborted" || result === "aborted") {
@@ -236,6 +240,8 @@ function formatEnding(endingId: string) {
       return "無事退勤";
     case "overtime":
       return "朝まで復旧できず";
+    case "false-resolve":
+      return "未復旧のまま宣言";
     case "early-exit":
       return "途中で手を抜いた";
     case "aborted":

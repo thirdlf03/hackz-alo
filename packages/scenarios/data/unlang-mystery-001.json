@@ -1,7 +1,7 @@
 {
   "id": "unlang-mystery-001",
   "version": 1,
-  "title": "うん言語の深淵",
+  "title": "????",
   "difficulty": "advanced",
   "timeLimitMinutes": 15,
   "service": {
@@ -9,8 +9,9 @@
     "healthUrl": "http://localhost:8080/health"
   },
   "briefing": [
-    "うん言語のエラーは仕様表なしでは読めない。",
-    "バッチ修正後はログの失敗行も片付ける。"
+    "突如現れた謎の人物から、このサービスを運用してくれと頼まれた。",
+    "手元に Runbook はない。何が起きても自分で対処するしかない。",
+    "深夜バッチはうん言語で書かれているらしい。"
   ],
   "startup": [
     {
@@ -25,14 +26,6 @@
     }
   ],
   "triggers": [
-    {
-      "id": "queue",
-      "atMs": 45000,
-      "type": "queue_backlog",
-      "params": {
-        "count": 24
-      }
-    },
     {
       "id": "unlang",
       "atMs": 90000,
@@ -65,17 +58,31 @@
   ],
   "runbooks": [
     {
-      "id": "runbook.unlang",
-      "title": "うん言語調査",
-      "body": "1. tail -n 50 /workspace/logs/batch.log\n2. sed -i 's/うん y = うんなし/うん y = うんあり/' /workspace/services/batch/sales.un\n3. unlang run /workspace/services/batch/sales.un\n4. : > /workspace/logs/batch.log"
+      "id": "runbook.ar.page1",
+      "title": "صفحة 1 – السجل",
+      "availableAtMs": 90000,
+      "body": "استعادة sales-nightly\n\n1. فحص السجل\ntail -n 50 /workspace/logs/batch.log\n→ إذا ظهر «うんともすんとも»: خطأ وقت التشغيل في لغة أون\n\n2. عرض الشيفرة المصدرية\ncat /workspace/services/batch/sales.un"
     },
     {
-      "id": "runbook.unlang-spec",
-      "title": "うん言語仕様表",
-      "body": "うんわりは割り算。うんなしは 0。うんともすんともは runtime error。"
+      "id": "runbook.ar.page2",
+      "title": "صفحة 2 – الشيفرة المصدرية",
+      "availableAtMs": 93000,
+      "body": "إرشادات لغة أون\n\n«うんわり» = قسمة\n«うんなし» = 0\n«うんあり» = 1\n\nإذا كان الطرف الأيمن من «うんわり» هو «うんなし» (0) → قسمة على صفر → «うんともすんとも»\n\nمثال في sales.un:\nうん y = うんなし  يبقى كما هو → x うんわり y يفشل"
+    },
+    {
+      "id": "runbook.ar.page3",
+      "title": "صفحة 3 – الإصلاح",
+      "availableAtMs": 96000,
+      "body": "الإصلاح والاختبار\n\n1. تصحيح الملف\nsed -i 's/うん y = うんなし/うん y = うんあり/' /workspace/services/batch/sales.un\n\nأو\nvim /workspace/services/batch/sales.un\n\n2. اختبار\nunlang run /workspace/services/batch/sales.un\n→ رقم = OK. «うんともすんとも» = ما زال معطلاً\n\n3. إفراغ السجل\n: > /workspace/logs/batch.log"
     }
   ],
   "slackMessages": [
+    {
+      "id": "arabic-docs",
+      "atMs": 92000,
+      "from": "運用",
+      "body": "謎の人物からアラビア語の紙が3枚届いた。誰も読めない。"
+    },
     {
       "id": "keiri",
       "atMs": 110000,

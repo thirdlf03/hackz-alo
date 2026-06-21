@@ -3,33 +3,30 @@ import { test } from "node:test";
 import {
   advanceGameState,
   createInitialGameState,
-  decayWorldOverlays
+  visibleRunbooks
 } from "../../apps/web/src/game/state/gameState.ts";
 import { createEmptyTerminalMirror } from "../../apps/web/src/game/terminal/mirror.ts";
 
-test("red bull flying starts when the meter crosses the low threshold once", () => {
-  const scenario = testScenario();
-  let state = createInitialGameState(
-    scenario,
-    "sess_test",
-    "repl_test",
-    createEmptyTerminalMirror()
-  );
+test("visibleRunbooks filters by availableAtMs and pulses on arrival", () => {
+  const scenario = {
+    ...testScenario(),
+    runbooks: [
+      { id: "early", title: "Early", body: "now" },
+      { id: "late", title: "Late", body: "later", availableAtMs: 90_000 }
+    ]
+  };
 
-  state = advanceGameState(state, 8 * 60 * 1000, scenario, 1, 8 * 60 * 1000);
-  assert.equal(state.world.redBullFlyingMs, 0);
-  assert.ok(state.world.redBullPercent > 65);
+  assert.equal(visibleRunbooks(scenario, 0).length, 1);
+  assert.equal(visibleRunbooks(scenario, 90_000).length, 2);
 
-  state = advanceGameState(state, 9 * 60 * 1000, scenario, 1, 60 * 1000);
-  assert.ok(state.world.redBullFlyingMs > 0);
-  assert.ok(state.world.redBullPercent <= 65);
+  let state = createInitialGameState(scenario, "sess_test", "repl_test", createEmptyTerminalMirror());
+  assert.equal(state.monitors.right.activeRunbook?.id, "early");
+  assert.equal(state.notifications.pulseMs, 0);
 
-  state = decayWorldOverlays(state, 10_000);
-  assert.equal(state.world.redBullFlyingMs, 0);
-  assert.equal(state.world.redBullPercent, 42);
-
-  state = advanceGameState(state, 10 * 60 * 1000, scenario, 1, 60 * 1000);
-  assert.equal(state.world.redBullFlyingMs, 0);
+  state = advanceGameState(state, 90_000, scenario, 1, 60_000);
+  assert.equal(state.monitors.right.activeRunbook?.id, "early");
+  assert.equal(state.notifications.pulseMs, 2400);
+  assert.equal(visibleRunbooks(scenario, state.clock.elapsedMs).length, 2);
 });
 
 function testScenario() {

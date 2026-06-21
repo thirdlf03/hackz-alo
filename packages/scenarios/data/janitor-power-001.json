@@ -2,7 +2,7 @@
   "id": "janitor-power-001",
   "version": 1,
   "title": "掃除のおばちゃんが電源を抜いた夜",
-  "difficulty": "beginner",
+  "difficulty": "intermediate",
   "timeLimitMinutes": 5,
   "service": {
     "name": "うん用 API",

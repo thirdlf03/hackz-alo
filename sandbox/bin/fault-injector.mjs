@@ -55,8 +55,12 @@ export async function injectFault(fault, args = [], options = {}) {
   if (fault === "unlang_batch_failure") {
     const target = normalizeWorkspacePath(args[0] ?? path.join(workspace, "services", "batch", "sales.un"), workspace);
     const jobId = args[1] ?? "sales-nightly";
+    const specInComments = args[2] === "spec-in-comments";
     await mkdir(path.dirname(target), { recursive: true });
-    await writeFile(target, "うんちく 売上集計バッチ\nうん x = 100\nうん y = うんなし\nうん z = x うんわり y\nうん！ z\n");
+    const brokenSource = specInComments
+      ? "うんちく 売上集計バッチ\nうんちく うんわり=割り算。右辺がうんなし(0)だとエラー\nうんちく うんなし=0 / うんあり=1。エラーは「うんともすんとも」のみ\nうん x = 100\nうん y = うんなし\nうん z = x うんわり y\nうん！ z\n"
+      : "うんちく 売上集計バッチ\nうん x = 100\nうん y = うんなし\nうん z = x うんわり y\nうん！ z\n";
+    await writeFile(target, brokenSource);
     await appendFile(path.join(workspace, "logs", "batch.log"), `${jobId}: うんともすんとも\n`);
     await appendFile(
       path.join(workspace, "run", "job-queue.jsonl"),

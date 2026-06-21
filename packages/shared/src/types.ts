@@ -78,7 +78,7 @@ export type UnlangBatchFailureTrigger = {
   id: string;
   atMs: number;
   type: "unlang_batch_failure";
-  params: { jobId: string; path: string };
+  params: { jobId: string; path: string; specInComments?: boolean };
 };
 
 export type QueueBacklogTrigger = {
@@ -226,6 +226,7 @@ export type RunbookDefinition = {
   id: string;
   title: string;
   body: string;
+  availableAtMs?: number;
 };
 
 export type SlackMessageDefinition = {
@@ -328,13 +329,7 @@ export type GameRenderState = {
   alertFlashMs: number;
   warning?: { message: string; flashMs: number };
   world: {
-    narrativeHour: number;
-    janitorCameraActive: boolean;
-    fridgeCameraActive: boolean;
     expandedMonitor: "metrics" | "terminal" | "runbook" | null;
-    redBullPercent: number;
-    powerOutageFlashMs: number;
-    redBullFlyingMs: number;
   };
   commandInputFocused: boolean;
   cursor: { x: number; y: number; visible: boolean };

@@ -32,6 +32,11 @@ export class CanvasRecorder {
     return this.lastChunkEndedAtMs;
   }
 
+  get currentElapsedMs() {
+    if (!this.recorder || this.recorder.state === "inactive") return this.lastChunkEndedAtMs;
+    return Math.max(0, Math.round(performance.now() - this.startedAt));
+  }
+
   async start() {
     if (this.recorder && this.recorder.state !== "inactive") return;
     const mimeType = pickSupportedMimeType((candidate) => MediaRecorder.isTypeSupported(candidate));

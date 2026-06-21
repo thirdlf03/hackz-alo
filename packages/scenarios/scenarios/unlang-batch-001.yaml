@@ -1,15 +1,15 @@
 id: unlang-batch-001
 version: 1
 title: うんともすんとも言わないバッチ
-difficulty: beginner
-timeLimitMinutes: 5
+difficulty: intermediate
+timeLimitMinutes: 8
 service:
   name: うん用 batch
   healthUrl: http://localhost:8080/health
 briefing:
   - 深夜バッチはうん言語で書かれている。
-  - 失敗時のログは不親切だが、仕様表を読むと原因が推測できる。
-  - まず batch.log と対象ファイルを確認する。
+  - Runbook は曖昧だが、ソースのうんちくに仕様が書いてあるかもしれない。
+  - まず batch.log と sales.un を確認する。
 startup:
   - id: api
     command: PORT=8080 node /workspace/services/unyoh-api/server.mjs
@@ -24,6 +24,7 @@ triggers:
     params:
       jobId: sales-nightly
       path: /workspace/services/batch/sales.un
+      specInComments: true
 alerts:
   - id: batch-failed
     atMs: 120000
@@ -40,33 +41,9 @@ runbooks:
   - id: runbook.unlang
     title: うん言語バッチ調査
     body: |-
-      sales-nightly 復旧手順
+      うん言語仕様表みてがんばれ。
 
-      1. ログ確認
-      tail -n 50 /workspace/logs/batch.log
-      → sales-nightly: うんともすんとも が出ていたら うん言語 runtime error
-
-      2. ソース確認
-      cat /workspace/services/batch/sales.un
-      → うんわり の右辺が うんなし（0）だと 0 除算で失敗する
-
-      3. 仕様確認
-      右タブ「うん言語仕様表」を開く（拡大表示推奨）
-
-      4. 修正
-      vim /workspace/services/batch/sales.un
-      → うん y = うんなし を うん y = うんあり に直して :wq
-
-      または
-      sed -i 's/うん y = うんなし/うん y = うんあり/' /workspace/services/batch/sales.un
-
-      5. 動作確認
-      unlang run /workspace/services/batch/sales.un
-      → 数値が表示されれば OK。うんともすんとも なら未修正
-
-      6. ログ片付け
-      : > /workspace/logs/batch.log
-      → 失敗行を消して resolve 条件を満たす
+      バッチファイルは /workspace/services/batch/sales.un
   - id: runbook.unlang-spec
     title: うん言語仕様表
     body: |-
@@ -91,17 +68,3 @@ slackMessages:
     atMs: 130000
     from: 経理
     body: 売上集計が止まってるんですが、うんともすんとも言いません。
-navigationSteps:
-  - id: nav-batch-log
-    atMs: 0
-    hint: batch.log に不親切なエラーが出ていないか確認する
-    panel: terminal
-    suggestedCommand: tail -n 20 /workspace/logs/batch.log
-  - id: nav-spec
-    atMs: 60000
-    hint: うん言語仕様表 Runbook を開く
-    panel: runbook
-  - id: nav-editor
-    atMs: 90000
-    hint: Editor で sales.un を開いて壊れた行を直す
-    panel: editor

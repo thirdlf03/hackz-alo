@@ -2,6 +2,7 @@ import {
   createReplayEvent,
   replayEventSummary,
   canDeclareRecovery,
+  normalizeReplayResult,
   resolveEndingId,
   type AlertDefinition,
   type ApiResult,
@@ -197,13 +198,17 @@ export class SessionDurableObject implements DurableObject {
       }))
     );
     const resolved = incidentStarted && checks.every((check) => check.ok);
-    const finished = await this.finishSession(session, resolved ? "resolved" : "failed", resolved ? "resolved" : "failed");
+    const finished = await this.finishSession(
+      session,
+      resolved ? "resolved" : "failed",
+      resolved ? "resolved" : "false_resolve"
+    );
     const result = await this.emit(
       finished,
       resolved ? "incident_resolved" : "session_end",
       this.getGameTimeMs(finished),
-      "system",
-      { checks }
+      resolved ? "system" : "player",
+      resolved ? { checks } : { result: "false_resolve", checks }
     );
     return jsonOk({ ok: resolved, checks, session: await this.snapshotFor(result) });
   }
@@ -639,7 +644,7 @@ export class SessionDurableObject implements DurableObject {
   }
 
   private async persistSession(session: StoredSession, result?: string) {
-    const dbResult = result === "timeout" ? "failed" : (result ?? null);
+    const dbResult = normalizeReplayResult(result ?? "") || null;
     await this.env.DB.prepare(
       `update play_sessions
        set status = ?, started_at = ?, finished_at = ?, result = ?, duration_ms = ?
@@ -674,7 +679,7 @@ export class SessionDurableObject implements DurableObject {
     )
       .bind(
         finishedAt,
-        result,
+        normalizeReplayResult(result),
         resolveEndingId(result),
         this.getGameTimeMs(session),
         new Date().toISOString(),

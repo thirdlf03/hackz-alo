@@ -1,4 +1,11 @@
-export type TimelineEntry = { id?: string; at: number; label: string };
+export type TimelineEntry = { id?: string; at: number; label: string; type?: string };
+export type BuiltTimelineEntry = { id: string; at: number; label: string; type?: string };
+
+export type RecordingClockSegment = {
+  gameMs: number;
+  videoMs: number;
+  speed: number;
+};
 
 export type IndexedReplayEvent = {
   event_id: string;
@@ -31,12 +38,13 @@ export function isTimelineEventType(type: string) {
 export function buildTimelineFromEvents(
   events: IndexedReplayEvent[],
   fallback: TimelineEntry[] = []
-): Required<TimelineEntry>[] {
+): BuiltTimelineEntry[] {
   const fromEvents = events
     .filter((event) => isTimelineEventType(event.type))
     .map((event) => ({
       id: event.event_id,
       at: event.at_ms / 1000,
+      type: event.type,
       label: timelineLabel(event)
     }));
   const source = fromEvents.length > 0 ? fromEvents : fallback.filter((entry) => entry.label.length > 0);
@@ -44,6 +52,7 @@ export function buildTimelineFromEvents(
     .map((event, index) => ({
       id: event.id ?? `fallback-${index}-${event.at}-${event.label}`,
       at: event.at,
+      ...(event.type === undefined ? {} : { type: event.type }),
       label: event.label
     }))
     .sort((a, b) => a.at - b.at);
@@ -92,13 +101,38 @@ export function parseRecordingStartedAtGameMs(
   return inferRecordingStartedAtGameMs(durationMs, videoDurationSec);
 }
 
+export function parseRecordingClockSegments(browserInfo: unknown): RecordingClockSegment[] | undefined {
+  if (!browserInfo || typeof browserInfo !== "object" || Array.isArray(browserInfo)) return undefined;
+  const raw = (browserInfo as { recordingClockSegments?: unknown }).recordingClockSegments;
+  if (!Array.isArray(raw) || raw.length === 0) return undefined;
+  const segments = raw
+    .map((item) => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) return undefined;
+      const { gameMs, videoMs, speed } = item as Record<string, unknown>;
+      if (!isValidMs(gameMs) || !isValidMs(videoMs) || typeof speed !== "number" || !Number.isFinite(speed) || speed <= 0) {
+        return undefined;
+      }
+      return { gameMs, videoMs, speed };
+    })
+    .filter((segment): segment is RecordingClockSegment => segment !== undefined)
+    .sort((a, b) => a.gameMs - b.gameMs);
+  return segments.length > 0 ? segments : undefined;
+}
+
 /** Map game-clock seconds to wall-clock video position. */
 export function gameTimeToVideoSeekSeconds(
   gameSeconds: number,
   videoDurationSec: number,
   durationMs: number,
-  recordingStartedAtGameMs?: number | null
+  recordingStartedAtGameMs?: number | null,
+  recordingClockSegments?: RecordingClockSegment[] | null
 ) {
+  if (recordingClockSegments?.length) {
+    return clampSeconds(
+      gameTimeToVideoSeekSecondsFromSegments(gameSeconds, recordingClockSegments),
+      videoDurationSec
+    );
+  }
   const recordStartMs = typeof recordingStartedAtGameMs === "number" && recordingStartedAtGameMs >= 0
     ? recordingStartedAtGameMs
     : inferRecordingStartedAtGameMs(durationMs, videoDurationSec);
@@ -107,7 +141,7 @@ export function gameTimeToVideoSeekSeconds(
   const recordedGameSpanSec = Math.max(0.001, gameDurationSec - recordStartSec);
   const gameSecondsInRecording = Math.max(0, gameSeconds - recordStartSec);
   if (!Number.isFinite(videoDurationSec) || videoDurationSec <= 0) return gameSecondsInRecording;
-  return (gameSecondsInRecording / recordedGameSpanSec) * videoDurationSec;
+  return clampSeconds((gameSecondsInRecording / recordedGameSpanSec) * videoDurationSec, videoDurationSec);
 }
 
 export function timelineDisplaySeconds(
@@ -115,10 +149,17 @@ export function timelineDisplaySeconds(
   hasVideo: boolean,
   videoDurationSec: number,
   durationMs: number,
-  recordingStartedAtGameMs?: number | null
+  recordingStartedAtGameMs?: number | null,
+  recordingClockSegments?: RecordingClockSegment[] | null
 ) {
-  if (!hasVideo || videoDurationSec <= 0) return gameSeconds;
-  return gameTimeToVideoSeekSeconds(gameSeconds, videoDurationSec, durationMs, recordingStartedAtGameMs);
+  if (!hasVideo) return gameSeconds;
+  return gameTimeToVideoSeekSeconds(
+    gameSeconds,
+    videoDurationSec,
+    durationMs,
+    recordingStartedAtGameMs,
+    recordingClockSegments
+  );
 }
 
 export function formatSeconds(seconds: number) {
@@ -132,6 +173,27 @@ export function formatDuration(ms: number) {
   const min = Math.floor(totalSeconds / 60).toString().padStart(2, "0");
   const sec = (totalSeconds % 60).toString().padStart(2, "0");
   return `${min}:${sec}`;
+}
+
+function gameTimeToVideoSeekSecondsFromSegments(gameSeconds: number, segments: RecordingClockSegment[]) {
+  const gameMs = Math.max(0, gameSeconds * 1000);
+  let segment = segments[0]!;
+  for (const candidate of segments) {
+    if (candidate.gameMs > gameMs) break;
+    segment = candidate;
+  }
+  const deltaGameMs = Math.max(0, gameMs - segment.gameMs);
+  return (segment.videoMs + deltaGameMs / segment.speed) / 1000;
+}
+
+function clampSeconds(seconds: number, durationSec: number) {
+  if (!Number.isFinite(seconds)) return 0;
+  if (!Number.isFinite(durationSec) || durationSec <= 0) return Math.max(0, seconds);
+  return Math.min(durationSec, Math.max(0, seconds));
+}
+
+function isValidMs(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0;
 }
 
 function timelineLabel(event: IndexedReplayEvent) {

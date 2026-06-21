@@ -2,16 +2,16 @@
   "id": "unlang-batch-001",
   "version": 1,
   "title": "うんともすんとも言わないバッチ",
-  "difficulty": "beginner",
-  "timeLimitMinutes": 5,
+  "difficulty": "intermediate",
+  "timeLimitMinutes": 8,
   "service": {
     "name": "うん用 batch",
     "healthUrl": "http://localhost:8080/health"
   },
   "briefing": [
     "深夜バッチはうん言語で書かれている。",
-    "失敗時のログは不親切だが、仕様表を読むと原因が推測できる。",
-    "まず batch.log と対象ファイルを確認する。"
+    "Runbook は曖昧だが、ソースのうんちくに仕様が書いてあるかもしれない。",
+    "まず batch.log と sales.un を確認する。"
   ],
   "startup": [
     {
@@ -32,7 +32,8 @@
       "type": "unlang_batch_failure",
       "params": {
         "jobId": "sales-nightly",
-        "path": "/workspace/services/batch/sales.un"
+        "path": "/workspace/services/batch/sales.un",
+        "specInComments": true
       }
     }
   ],
@@ -60,7 +61,7 @@
     {
       "id": "runbook.unlang",
       "title": "うん言語バッチ調査",
-      "body": "sales-nightly 復旧手順\n\n1. ログ確認\ntail -n 50 /workspace/logs/batch.log\n→ sales-nightly: うんともすんとも が出ていたら うん言語 runtime error\n\n2. ソース確認\ncat /workspace/services/batch/sales.un\n→ うんわり の右辺が うんなし（0）だと 0 除算で失敗する\n\n3. 仕様確認\n右タブ「うん言語仕様表」を開く（拡大表示推奨）\n\n4. 修正\nvim /workspace/services/batch/sales.un\n→ うん y = うんなし を うん y = うんあり に直して :wq\n\nまたは\nsed -i 's/うん y = うんなし/うん y = うんあり/' /workspace/services/batch/sales.un\n\n5. 動作確認\nunlang run /workspace/services/batch/sales.un\n→ 数値が表示されれば OK。うんともすんとも なら未修正\n\n6. ログ片付け\n: > /workspace/logs/batch.log\n→ 失敗行を消して resolve 条件を満たす"
+      "body": "うん言語仕様表みてがんばれ。\n\nバッチファイルは /workspace/services/batch/sales.un"
     },
     {
       "id": "runbook.unlang-spec",
@@ -74,27 +75,6 @@
       "atMs": 130000,
       "from": "経理",
       "body": "売上集計が止まってるんですが、うんともすんとも言いません。"
-    }
-  ],
-  "navigationSteps": [
-    {
-      "id": "nav-batch-log",
-      "atMs": 0,
-      "hint": "batch.log に不親切なエラーが出ていないか確認する",
-      "panel": "terminal",
-      "suggestedCommand": "tail -n 20 /workspace/logs/batch.log"
-    },
-    {
-      "id": "nav-spec",
-      "atMs": 60000,
-      "hint": "うん言語仕様表 Runbook を開く",
-      "panel": "runbook"
-    },
-    {
-      "id": "nav-editor",
-      "atMs": 90000,
-      "hint": "Editor で sales.un を開いて壊れた行を直す",
-      "panel": "editor"
     }
   ]
 }

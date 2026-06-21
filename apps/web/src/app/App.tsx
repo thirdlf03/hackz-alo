@@ -18,7 +18,8 @@ import {
   submitPlayerSlackMessage,
   toggleExpandedMonitor,
   toggleNotificationPanel,
-  updateEditorPanel
+  updateEditorPanel,
+  visibleRunbooks
 } from "../game/state/gameState.js";
 import {
   CanvasRenderer,
@@ -47,7 +48,7 @@ import { classifyCommandEvent, commandEventPayload, ReplayEventEmitter } from ".
 import { detectMetricThresholdCrossings } from "../game/events/monitorEvents.js";
 import { collectStateTransitions } from "../game/events/sessionEvents.js";
 import { ApiClient, type SessionClockResponse } from "../api/client.js";
-import { isTimelineEventType } from "../replay/replayMediaUtils.js";
+import { isTimelineEventType, type RecordingClockSegment } from "../replay/replayMediaUtils.js";
 import { ReplayPage } from "../pages/ReplayPage.js";
 import { ResultPage } from "../pages/ResultPage.js";
 import "@xterm/xterm/css/xterm.css";
@@ -97,6 +98,7 @@ export function App() {
   const finishingRef = useRef(false);
   const tabBeaconSentRef = useRef(false);
   const recordingStartedAtGameMsRef = useRef(0);
+  const recordingClockSegmentsRef = useRef<RecordingClockSegment[]>([]);
   const liveReplayEventIdsRef = useRef(new Set<string>());
 
   const [screen, setScreen] = useState<Screen>(initialReplayId ? "replay" : "select");
@@ -138,6 +140,19 @@ export function App() {
     if (screen !== "play" || !current || !lastTickAt || finishingRef.current) return Math.round(baseMs);
     const elapsedSinceTickMs = Math.max(0, performance.now() - lastTickAt) * current.clock.speed;
     return Math.round(Math.min(current.clock.timeLimitMs, baseMs + elapsedSinceTickMs));
+  }
+
+  function appendRecordingClockSegment(segment: RecordingClockSegment) {
+    const previous = recordingClockSegmentsRef.current.at(-1);
+    if (previous && previous.gameMs === segment.gameMs && previous.videoMs === segment.videoMs) {
+      recordingClockSegmentsRef.current = [
+        ...recordingClockSegmentsRef.current.slice(0, -1),
+        segment
+      ];
+      return;
+    }
+    if (previous && previous.speed === segment.speed) return;
+    recordingClockSegmentsRef.current = [...recordingClockSegmentsRef.current, segment];
   }
 
   const applyClockSnapshot = (clock: SessionClockResponse) => {
@@ -217,6 +232,14 @@ export function App() {
       );
       elapsedMsRef.current = snapped;
       lastTickAtRef.current = now;
+      const activeRecorder = recorderRef.current;
+      if (oldSpeed !== gameSpeed && activeRecorder && recordingClockSegmentsRef.current.length > 0) {
+        appendRecordingClockSegment({
+          gameMs: snapped,
+          videoMs: activeRecorder.currentElapsedMs,
+          speed: gameSpeed
+        });
+      }
       const next = advanceGameState(
         previous,
         snapped,
@@ -324,6 +347,11 @@ export function App() {
       () => {
         if (cancelled) return;
         recordingStartedAtGameMsRef.current = currentGameTimeMs();
+        recordingClockSegmentsRef.current = [{
+          gameMs: recordingStartedAtGameMsRef.current,
+          videoMs: 0,
+          speed: gameSpeedRef.current
+        }];
         setGameState((current) => updateRecordingStatus(current, "recording"));
       },
       (error) => {
@@ -462,6 +490,7 @@ export function App() {
       eventEmitterRef.current?.reset();
       liveReplayEventIdsRef.current.clear();
       recordingStartedAtGameMsRef.current = 0;
+      recordingClockSegmentsRef.current = [];
       elapsedMsRef.current = 0;
       lastTickAtRef.current = 0;
       finishingRef.current = false;
@@ -640,6 +669,8 @@ export function App() {
       await attachTerminalSession(session);
       elapsedMsRef.current = 0;
       lastTickAtRef.current = performance.now();
+      recordingStartedAtGameMsRef.current = 0;
+      recordingClockSegmentsRef.current = [];
       setTimeline([]);
       setGameState(createInitialGameState(scenario, session.sessionId, session.replayId, createEmptyTerminalMirror(), {
         sessionStatus: "running",
@@ -670,12 +701,24 @@ export function App() {
   async function endSession(mode: FinishMode) {
     if (!session || finishingRef.current) return;
     finishingRef.current = true;
-    terminalRef.current?.destroy();
-    terminalRef.current = null;
     const shouldSaveVideo = saveRecordingRef.current && hasRecordingConsent;
     const activeRecorder = recorderRef.current;
     const recordingMimeType = activeRecorder?.mimeType;
     setGameState((current) => updateRecordingStatus(current, shouldSaveVideo ? "stopping" : "idle"));
+
+    let resolved = false;
+    if (mode === "resolve") {
+      const result = await api.resolveSession(session.sessionId).catch(() => undefined);
+      resolved = Boolean(result?.ok);
+    } else if (mode === "retire") {
+      await api.retireSession(session.sessionId).catch(console.error);
+    } else if (mode === "timeout") {
+      await api.timeoutSession(session.sessionId).catch(console.error);
+    }
+
+    terminalRef.current?.destroy();
+    terminalRef.current = null;
+
     if (shouldSaveVideo) {
       await activeRecorder?.stop().catch((error) => setAppError(toErrorMessage(error)));
       const videoDurationMs = activeRecorder?.durationMs;
@@ -694,7 +737,8 @@ export function App() {
         browserInfo: {
           userAgent: navigator.userAgent,
           mimeType: recordingMimeType,
-          recordingStartedAtGameMs: recordingStartedAtGameMsRef.current
+          recordingStartedAtGameMs: recordingStartedAtGameMsRef.current,
+          recordingClockSegments: recordingClockSegmentsRef.current
         },
         ...(videoDurationMs === undefined ? {} : { videoDurationMs })
       }).catch(console.error);
@@ -706,18 +750,10 @@ export function App() {
         browserInfo: {
           userAgent: navigator.userAgent,
           mimeType: recordingMimeType,
-          recordingStartedAtGameMs: recordingStartedAtGameMsRef.current
+          recordingStartedAtGameMs: recordingStartedAtGameMsRef.current,
+          recordingClockSegments: recordingClockSegmentsRef.current
         }
       }).catch(console.error);
-    }
-    let resolved = false;
-    if (mode === "resolve") {
-      const result = await api.resolveSession(session.sessionId).catch(() => undefined);
-      resolved = Boolean(result?.ok);
-    } else if (mode === "retire") {
-      await api.retireSession(session.sessionId).catch(console.error);
-    } else if (mode === "timeout") {
-      await api.timeoutSession(session.sessionId).catch(console.error);
     }
     const status = mode === "retire" ? "retired" : resolved ? "resolved" : "failed";
     let recordingStatus: GameRenderState["recording"]["status"] = "idle";
@@ -766,10 +802,9 @@ export function App() {
       }
       const activeScenario = scenarioRef.current;
       if (activeScenario) {
-        const difficulty = gameStateRef.current?.session.difficulty ?? "beginner";
         const expandedMonitor = gameStateRef.current?.world.expandedMonitor ?? null;
         const activePanelTab = gameStateRef.current?.monitors.right.activePanelTab ?? "runbook";
-        const primaryTab = rightPanelPrimaryTabAt(point.x, point.y, difficulty, expandedMonitor);
+        const primaryTab = rightPanelPrimaryTabAt(point.x, point.y, expandedMonitor);
         if (primaryTab) {
           patchGameStateRef((current) => setRightPanelTab(current, primaryTab));
           void emitter.emit({
@@ -780,18 +815,18 @@ export function App() {
           });
           return;
         }
+        const visibleRunbookList = visibleRunbooks(activeScenario, gameStateRef.current?.clock.elapsedMs ?? 0);
         const tabIndex = runbookTabAt(
           point.x,
           point.y,
-          difficulty,
-          activeScenario.runbooks.length,
-          activeScenario.runbooks.map((item) => item.title),
+          visibleRunbookList.length,
+          visibleRunbookList.map((item) => item.title),
           expandedMonitor,
           activePanelTab
         );
         if (tabIndex >= 0) {
           patchGameStateRef((current) => setActiveRunbook(current, activeScenario, tabIndex));
-          const runbook = activeScenario.runbooks[tabIndex];
+          const runbook = visibleRunbookList[tabIndex];
           if (runbook) void emitter.emitOnce(`runbook:${runbook.id}`, { replayId, type: "runbook_open", at, payload: { runbookId: runbook.id } });
           return;
         }
@@ -849,7 +884,6 @@ export function App() {
       const slackTarget = slackComposeAt(
         point.x,
         point.y,
-        gameStateRef.current?.session.difficulty ?? "beginner",
         gameStateRef.current?.monitors.right.activePanelTab ?? "slack",
         gameStateRef.current?.world.expandedMonitor ?? null
       );

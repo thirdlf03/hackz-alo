@@ -198,7 +198,12 @@ export async function injectFault(
       `node /workspace/bin/fault-injector.mjs disk_full ${shellArg(String(params.path ?? "/workspace/logs/debug.log"))} ${Number(params.bytes ?? 67108864)}`
     );
   } else if (type === "unlang_batch_failure") {
-    await sandbox.exec("node /workspace/bin/fault-injector.mjs unlang_batch_failure");
+    const batchPath = String(params.path ?? "/workspace/services/batch/sales.un");
+    const jobId = String(params.jobId ?? "sales-nightly");
+    const specFlag = params.specInComments ? " spec-in-comments" : "";
+    await sandbox.exec(
+      `node /workspace/bin/fault-injector.mjs unlang_batch_failure ${shellArg(batchPath)} ${shellArg(jobId)}${specFlag}`
+    );
   } else if (type === "queue_backlog") {
     await sandbox.exec(
       `node /workspace/bin/fault-injector.mjs queue_backlog ${Number(params.count ?? 32)}`

@@ -1,5 +1,5 @@
 import type { GameRenderState, MetricsSnapshot, MetricsSource, ScenarioDefinition } from "@incident/shared";
-import { mergedSlackMessages, unreadNotificationCount } from "../state/gameState.js";
+import { mergedSlackMessages, unreadNotificationCount, visibleRunbooks } from "../state/gameState.js";
 import { parseAnsiLine, stripAnsi, type AnsiSpan } from "../terminal/ansi.js";
 import officeMonitorBackdropUrl from "../../assets/office-monitor-backdrop.avif";
 import {
@@ -16,7 +16,6 @@ const logicalHeight = 1080;
 const monitorContentWidth = 496;
 const monitorContentHeight = 540;
 const terminalContentWidth = 496;
-const worldPanelHeight = 148;
 const runbookContentX = 1332;
 const runbookContentY = 204;
 
@@ -44,12 +43,10 @@ const CENTER_TOOL_TAB_GAP = 8;
 type RightPanelTab = "runbook" | "slack";
 
 function rightPanelLayout(
-  difficulty: GameRenderState["session"]["difficulty"],
   activeTab: RightPanelTab,
   hasRunbooks: boolean
 ) {
-  const worldHeight = runbookWorldOffset(difficulty);
-  const primaryTop = worldHeight;
+  const primaryTop = 0;
   const secondaryTop = primaryTop + RIGHT_PANEL_PRIMARY_TAB_HEIGHT + RIGHT_PANEL_TAB_ROW_GAP;
   const runbookContentTop = hasRunbooks
     ? secondaryTop + RIGHT_PANEL_SECONDARY_TAB_HEIGHT + RUNBOOK_CONTENT_GAP
@@ -58,7 +55,6 @@ function rightPanelLayout(
   const composeTop = monitorContentHeight - RIGHT_PANEL_COMPOSE_HEIGHT - RIGHT_PANEL_COMPOSE_PADDING;
 
   return {
-    worldHeight,
     primaryTop,
     secondaryTop,
     contentTop: activeTab === "runbook" ? runbookContentTop : slackMessagesTop,
@@ -90,14 +86,6 @@ export function measureRunbookTabWidth(title: string, measure?: (text: string) =
     RUNBOOK_TAB_MIN_WIDTH,
     Math.min(RUNBOOK_TAB_MAX_WIDTH, width + RUNBOOK_TAB_PAD_X * 2)
   );
-}
-
-function showWorldPanel(difficulty: GameRenderState["session"]["difficulty"]) {
-  return difficulty === "advanced";
-}
-
-function runbookWorldOffset(difficulty: GameRenderState["session"]["difficulty"]) {
-  return showWorldPanel(difficulty) ? worldPanelHeight : 0;
 }
 
 export type MonitorId = "metrics" | "terminal" | "runbook";
@@ -216,9 +204,6 @@ export class CanvasRenderer {
       this.drawMonitorMagnifyIcons();
       this.drawAlerts(state);
       if (state.warning && state.warning.flashMs > 0) this.drawCommandWarning(state.warning);
-      if (showWorldPanel(state.session.difficulty) && state.world.redBullFlyingMs > 0) {
-        this.drawRedBullFlying(state.world.redBullFlyingMs);
-      }
       this.drawNavigationOverlay(state, scenario);
       this.drawInputDock(state);
       this.drawNotifications(state);
@@ -292,9 +277,6 @@ export class CanvasRenderer {
       70,
       108
     );
-    this.ctx.fillStyle = palette.textClock;
-    this.ctx.font = monoFont(26, "bold");
-    this.ctx.fillText(formatNarrativeClock(state.world.narrativeHour), 1280, 70);
     this.ctx.fillStyle = state.recording.saveEnabled
       ? state.recording.status === "recording"
         ? palette.statusRecording
@@ -1021,13 +1003,13 @@ export class CanvasRenderer {
     return parsed;
   }
 
-  private drawRightPanel(state: GameRenderState, scenario?: import("@incident/shared").ScenarioDefinition) {
+  private drawRightPanel(state: GameRenderState, scenario?: ScenarioDefinition) {
     const expanded = state.world.expandedMonitor === "runbook";
     const activePanelTab = state.monitors.right.activePanelTab ?? "runbook";
-    const runbooks = scenario?.runbooks ?? (state.monitors.right.activeRunbook ? [state.monitors.right.activeRunbook] : []);
-    const layout = rightPanelLayout(state.session.difficulty, activePanelTab, runbooks.length > 0);
-
-    if (layout.worldHeight > 0) this.drawWorldPanel(state.world);
+    const runbooks = scenario
+      ? visibleRunbooks(scenario, state.clock.elapsedMs)
+      : (state.monitors.right.activeRunbook ? [state.monitors.right.activeRunbook] : []);
+    const layout = rightPanelLayout(activePanelTab, runbooks.length > 0);
 
     this.drawPrimaryPanelTabs(state, layout.primaryTop);
 
@@ -1038,6 +1020,12 @@ export class CanvasRenderer {
       const maxRunbookLines = Math.max(10, Math.floor((monitorContentHeight - bodyTop - 16) / 24));
       this.ctx.fillStyle = palette.textPrimary;
       this.ctx.font = uiFont(22);
+      if (runbooks.length === 0) {
+        this.ctx.fillText("Runbook", 0, titleTop);
+        this.ctx.font = uiFont(17);
+        wrapText(this.ctx, "Runbook はまだ届いていない。", 0, bodyTop, 470, 24, maxRunbookLines);
+        return;
+      }
       this.ctx.fillText(state.monitors.right.activeRunbook?.title ?? "Runbook", 0, titleTop);
       this.ctx.font = uiFont(17);
       wrapText(this.ctx, state.monitors.right.activeRunbook?.body ?? "", 0, bodyTop, 470, 24, maxRunbookLines);
@@ -1108,59 +1096,6 @@ export class CanvasRenderer {
     }
   }
 
-  private drawWorldPanel(world: GameRenderState["world"]) {
-    this.ctx.fillStyle = palette.textMuted;
-    this.ctx.font = monoFont(14);
-    this.ctx.fillText("SECURITY FEEDS", 0, 12);
-
-    this.drawCctvFeed(0, 20, 228, 88, "JANITOR CAM", world.janitorCameraActive);
-    this.drawCctvFeed(242, 20, 228, 88, "FRIDGE CAM", world.fridgeCameraActive);
-
-    this.ctx.fillStyle = palette.textSecondary;
-    this.ctx.font = monoFont(14);
-    this.ctx.fillText("RED BULL", 0, 126);
-    this.ctx.fillStyle = palette.bgCard;
-    roundRect(this.ctx, 0, 132, 470, 14, 4);
-    this.ctx.fill();
-    const fillWidth = (470 * Math.max(0, Math.min(100, world.redBullPercent))) / 100;
-    this.ctx.fillStyle = world.redBullPercent <= 15 ? palette.statusCritical : palette.statusError;
-    roundRect(this.ctx, 0, 132, Math.max(4, fillWidth), 14, 4);
-    this.ctx.fill();
-    this.ctx.fillStyle = palette.textPrimary;
-    this.ctx.font = monoFont(14, "bold");
-    this.ctx.fillText(`${Math.round(world.redBullPercent)}%`, 438, 124);
-  }
-
-  private drawCctvFeed(x: number, y: number, width: number, height: number, label: string, active: boolean) {
-    this.ctx.fillStyle = active ? palette.bgSlackActive : palette.bgSlackIdle;
-    roundRect(this.ctx, x, y, width, height, 4);
-    this.ctx.fill();
-    this.ctx.strokeStyle = active ? palette.borderSlackActive : palette.borderDefault;
-    this.ctx.lineWidth = 2;
-    this.ctx.stroke();
-
-    if (active) {
-      this.ctx.fillStyle = "rgba(34, 197, 94, 0.08)";
-      for (let row = 0; row < height; row += 4) {
-        this.ctx.fillRect(x + 2, y + row, width - 4, 2);
-      }
-      this.ctx.fillStyle = palette.accentGreenDark;
-      this.ctx.font = monoFont(14);
-      this.ctx.fillText("REC", x + 8, y + 16);
-      this.ctx.fillStyle = palette.accentGreen;
-      this.ctx.font = uiFont(14);
-      this.ctx.fillText(label === "JANITOR CAM" ? "廊下 — 静止" : "冷蔵庫 — OK", x + 8, y + height - 10);
-    } else {
-      this.ctx.fillStyle = palette.textMuted;
-      this.ctx.font = monoFont(14);
-      this.ctx.fillText("NO SIGNAL", x + width / 2 - 38, y + height / 2 + 4);
-    }
-
-    this.ctx.fillStyle = active ? palette.textTerminalMuted : palette.textMuted;
-    this.ctx.font = monoFont(14);
-    this.ctx.fillText(label, x + 8, y + height + 14);
-  }
-
   private drawSlackCompose(state: GameRenderState, boxY = 484) {
     const active = state.slackCompose.active;
     this.ctx.fillStyle = active ? palette.bgDevtoolsActive : palette.bgDevtoolsIdle;
@@ -1199,33 +1134,6 @@ export class CanvasRenderer {
     this.ctx.fillStyle = `rgba(254, 226, 226, ${opacity})`;
     this.ctx.font = uiFont(20, "bold");
     this.ctx.fillText(warning.message, box.x + 16, box.y + 34);
-  }
-
-  private drawRedBullFlying(remainingMs: number) {
-    const duration = 2800;
-    const progress = 1 - remainingMs / duration;
-    const x = -80 + progress * (logicalWidth + 160);
-    const y = 280 + Math.sin(progress * Math.PI * 3) * 120;
-
-    this.ctx.fillStyle = palette.bgOverlayLight;
-    this.ctx.fillRect(0, 0, logicalWidth, logicalHeight);
-
-    this.ctx.save();
-    this.ctx.translate(x, y);
-    this.ctx.rotate(-0.35 + progress * 0.7);
-    this.ctx.fillStyle = palette.bgButtonPrimary;
-    roundRect(this.ctx, 0, 0, 48, 96, 6);
-    this.ctx.fill();
-    this.ctx.fillStyle = palette.statusError;
-    roundRect(this.ctx, 4, 8, 40, 28, 4);
-    this.ctx.fill();
-    this.ctx.fillStyle = palette.textPrimary;
-    this.ctx.font = uiFont(14, "bold");
-    this.ctx.fillText("RB", 14, 26);
-    this.ctx.fillStyle = palette.textLink;
-    this.ctx.font = uiFont(22, "bold");
-    this.ctx.fillText("翼が生えた!", 56, 48);
-    this.ctx.restore();
   }
 
   private drawNavigationOverlay(state: GameRenderState, scenario?: import("@incident/shared").ScenarioDefinition) {
@@ -1405,8 +1313,8 @@ export function metricsPanelScrollRegion(expanded = false) {
   };
 }
 
-export const runbookTabRegion = (difficulty: GameRenderState["session"]["difficulty"]) => {
-  const layout = rightPanelLayout(difficulty, "runbook", true);
+export const runbookTabRegion = () => {
+  const layout = rightPanelLayout("runbook", true);
   return {
     x: runbookContentX,
     y: runbookContentY + layout.secondaryTop - RUNBOOK_TAB_HIT_PAD,
@@ -1416,12 +1324,11 @@ export const runbookTabRegion = (difficulty: GameRenderState["session"]["difficu
 };
 
 function slackComposeScreenRegion(
-  difficulty: GameRenderState["session"]["difficulty"],
   activePanelTab: RightPanelTab,
   expandedMonitor: MonitorId | null | undefined
 ) {
   if (activePanelTab !== "slack") return null;
-  const layout = rightPanelLayout(difficulty, "slack", false);
+  const layout = rightPanelLayout("slack", false);
   const content = runbookContentTransform(expandedMonitor === "runbook");
   return {
     x: content.x,
@@ -1432,17 +1339,15 @@ function slackComposeScreenRegion(
 }
 
 export const slackComposeRegion = (
-  difficulty: GameRenderState["session"]["difficulty"],
   activePanelTab: RightPanelTab = "slack",
   expandedMonitor: MonitorId | null = null
-) => slackComposeScreenRegion(difficulty, activePanelTab, expandedMonitor) ?? { x: 0, y: -1000, width: 0, height: 0 };
+) => slackComposeScreenRegion(activePanelTab, expandedMonitor) ?? { x: 0, y: -1000, width: 0, height: 0 };
 
 export const slackSendButtonRegion = (
-  difficulty: GameRenderState["session"]["difficulty"],
   activePanelTab: RightPanelTab = "slack",
   expandedMonitor: MonitorId | null = null
 ) => {
-  const compose = slackComposeScreenRegion(difficulty, activePanelTab, expandedMonitor);
+  const compose = slackComposeScreenRegion(activePanelTab, expandedMonitor);
   if (!compose) return { x: 0, y: -1000, width: 0, height: 0 };
   return {
     x: compose.x + 404 * compose.width / 470,
@@ -1462,13 +1367,12 @@ export function monitorMagnifyAt(x: number, y: number): MonitorId | null {
 export function slackComposeAt(
   x: number,
   y: number,
-  difficulty: GameRenderState["session"]["difficulty"],
   activePanelTab: RightPanelTab = "slack",
   expandedMonitor: MonitorId | null = null
 ) {
-  const composeRegion = slackComposeScreenRegion(difficulty, activePanelTab, expandedMonitor);
+  const composeRegion = slackComposeScreenRegion(activePanelTab, expandedMonitor);
   if (!composeRegion || !containsCanvasPoint(composeRegion, x, y)) return null;
-  const sendRegion = slackSendButtonRegion(difficulty, activePanelTab, expandedMonitor);
+  const sendRegion = slackSendButtonRegion(activePanelTab, expandedMonitor);
   if (containsCanvasPoint(sendRegion, x, y)) return "send" as const;
   return "compose" as const;
 }
@@ -1476,12 +1380,11 @@ export function slackComposeAt(
 export function rightPanelPrimaryTabAt(
   x: number,
   y: number,
-  difficulty: GameRenderState["session"]["difficulty"],
   expandedMonitor?: MonitorId | null
 ): RightPanelTab | null {
   if (expandedMonitor && expandedMonitor !== "runbook") return null;
 
-  const layout = rightPanelLayout(difficulty, "runbook", true);
+  const layout = rightPanelLayout("runbook", true);
   const content = runbookContentTransform(expandedMonitor === "runbook");
   const localY = (y - content.y) / content.scale;
   if (
@@ -1504,7 +1407,6 @@ export function rightPanelPrimaryTabAt(
 export function runbookTabAt(
   x: number,
   y: number,
-  difficulty: GameRenderState["session"]["difficulty"],
   runbookCount: number,
   titles: string[],
   expandedMonitor?: MonitorId | null,
@@ -1513,7 +1415,7 @@ export function runbookTabAt(
   if (runbookCount === 0 || activePanelTab !== "runbook") return -1;
   if (expandedMonitor && expandedMonitor !== "runbook") return -1;
 
-  const layout = rightPanelLayout(difficulty, "runbook", true);
+  const layout = rightPanelLayout("runbook", true);
   const content = runbookContentTransform(expandedMonitor === "runbook");
   const localY = (y - content.y) / content.scale;
   if (
@@ -1820,13 +1722,6 @@ function formatTime(ms: number) {
   const minutes = Math.floor(total / 60).toString().padStart(2, "0");
   const seconds = (total % 60).toString().padStart(2, "0");
   return `${minutes}:${seconds}`;
-}
-
-function formatNarrativeClock(narrativeHour: number) {
-  const totalMinutes = Math.floor(narrativeHour * 60);
-  const hours = Math.floor(totalMinutes / 60).toString().padStart(2, "0");
-  const minutes = (totalMinutes % 60).toString().padStart(2, "0");
-  return `深夜 ${hours}:${minutes}`;
 }
 
 function formatRecordingStatus(status: GameRenderState["recording"]["status"], saveEnabled: boolean) {

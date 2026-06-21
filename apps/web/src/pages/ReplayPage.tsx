@@ -4,8 +4,8 @@ import {
   buildTimelineFromEvents,
   formatDuration,
   formatSeconds,
-  gameTimeToVideoSeekSeconds,
   parseBrowserInfo,
+  parseRecordingClockSegments,
   parseRecordingStartedAtGameMs,
   timelineDisplaySeconds,
   type IndexedReplayEvent,
@@ -33,6 +33,7 @@ const timelineSeekPrerollSeconds = 1;
 
 export function ReplayPage({ replayId, timeline }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const seekRequestRef = useRef(0);
   const [meta, setMeta] = useState<ReplayMeta>();
   const [events, setEvents] = useState<IndexedReplayEvent[]>([]);
   const [comments, setComments] = useState<Array<{ id: string; at_ms: number; body: string }>>([]);
@@ -53,6 +54,7 @@ export function ReplayPage({ replayId, timeline }: Props) {
     () => parseRecordingStartedAtGameMs(browserInfo, meta?.duration_ms ?? 0, effectiveVideoDuration),
     [browserInfo, meta?.duration_ms, effectiveVideoDuration]
   );
+  const recordingClockSegments = useMemo(() => parseRecordingClockSegments(browserInfo), [browserInfo]);
 
   useEffect(() => {
     let partialUrl: string | undefined;
@@ -102,26 +104,30 @@ export function ReplayPage({ replayId, timeline }: Props) {
     ? "計算中…"
     : formatDuration(displayDurationMs);
 
-  function seekGameTime(gameSeconds: number, timelineId?: string) {
-    const video = videoRef.current;
-    if (!video) return;
-    const mapped = gameTimeToVideoSeekSeconds(
+  function timelineVideoSeconds(gameSeconds: number) {
+    return timelineDisplaySeconds(
       gameSeconds,
+      hasReplayVideo,
       effectiveVideoDuration,
       meta?.duration_ms ?? 0,
-      recordingStartMs
+      recordingStartMs,
+      recordingClockSegments
     );
-    seekVideoSeconds(mapped - timelineSeekPrerollSeconds, timelineId);
   }
 
   function seekVideoSeconds(seconds: number, timelineId?: string) {
     const video = videoRef.current;
     if (!video) return;
     const target = clampSeekTime(video, seconds);
-    video.currentTime = target;
+    const seekRequestId = seekRequestRef.current + 1;
+    seekRequestRef.current = seekRequestId;
     setCurrentTime(target);
     setActiveTimelineId(timelineId);
-    void video.play().catch(() => {});
+    video.pause();
+    seekMediaElement(video, target, () => {
+      if (seekRequestRef.current !== seekRequestId) return;
+      void video.play().catch(() => {});
+    });
   }
 
   function rememberVideoDuration(video: HTMLVideoElement) {
@@ -225,21 +231,26 @@ export function ReplayPage({ replayId, timeline }: Props) {
               role="tabpanel"
               aria-labelledby={tabIds.timeline}
             >
-              {visibleTimeline.map((event) => (
-                <li key={event.id}>
-                  {videoSrc ? (
-                    <button
-                      type="button"
-                      aria-current={activeTimelineId === event.id ? "time" : undefined}
-                      onClick={() => seekGameTime(event.at, event.id)}
-                    >
-                      {formatSeconds(timelineDisplaySeconds(event.at, true, effectiveVideoDuration, meta?.duration_ms ?? 0, recordingStartMs))} {event.label}
-                    </button>
-                  ) : (
-                    <span>{formatSeconds(timelineDisplaySeconds(event.at, effectiveVideoDuration > 0, effectiveVideoDuration, meta?.duration_ms ?? 0, recordingStartMs))} {event.label}</span>
-                  )}
-                </li>
-              ))}
+              {visibleTimeline.map((event) => {
+                const videoSeconds = timelineVideoSeconds(event.at);
+                const seekSeconds = videoSeconds - timelineSeekPrerollSeconds;
+                return (
+                  <li key={event.id}>
+                    {videoSrc ? (
+                      <button
+                        type="button"
+                        aria-current={activeTimelineId === event.id ? "time" : undefined}
+                        onMouseDown={() => seekVideoSeconds(seekSeconds, event.id)}
+                        onClick={() => seekVideoSeconds(seekSeconds, event.id)}
+                      >
+                        {formatSeconds(videoSeconds)} {event.label}
+                      </button>
+                    ) : (
+                      <span>{formatSeconds(videoSeconds)} {event.label}</span>
+                    )}
+                  </li>
+                );
+              })}
             </ol>
           ) : (
             <p class="result-replay-note" id={panelIds.timeline} role="tabpanel" aria-labelledby={tabIds.timeline}>
@@ -309,6 +320,24 @@ function clampSeekTime(video: HTMLVideoElement, seconds: number) {
   return Number.isFinite(video.duration) && video.duration > 0
     ? Math.min(lower, Math.max(0, video.duration - 0.05))
     : lower;
+}
+
+function seekMediaElement(video: HTMLVideoElement, target: number, onReady: () => void) {
+  let timeout = 0;
+  const done = () => {
+    window.clearTimeout(timeout);
+    video.removeEventListener("seeked", done);
+    onReady();
+  };
+
+  video.addEventListener("seeked", done, { once: true });
+  video.currentTime = target;
+
+  if (!video.seeking && Math.abs(video.currentTime - target) < 0.1) {
+    done();
+    return;
+  }
+  timeout = window.setTimeout(done, 800);
 }
 
 function tabLabel(tab: "timeline" | "commands" | "alerts" | "runbooks" | "comments") {
