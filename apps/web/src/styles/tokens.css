@@ -47,11 +47,11 @@
   --focus-ring-offset: 2px;
 
   /* Typography */
-  --font-body: 16px;
-  --font-briefing: 18px;
-  --font-caption: 14px;
-  --font-topbar-title: 26px;
-  --font-topbar-meta: 16px;
+  --font-body: 18px;
+  --font-briefing: 20px;
+  --font-caption: 16px;
+  --font-topbar-title: 28px;
+  --font-topbar-meta: 18px;
   --touch-speed: 60px;
   --line-height-body: 1.5;
 

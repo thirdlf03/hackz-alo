@@ -26,6 +26,7 @@ import {
   centerToolAt,
   expandedMonitorLayout,
   inputDockRects,
+  metricsPanelScrollRegion,
   monitorMagnifyAt,
   navigationOverlayRect,
   notificationBellRegion,
@@ -877,6 +878,17 @@ export function App() {
     }, { render: false, collectTransitions: false });
   }
 
+  function handleCanvasWheel(event: WheelEvent) {
+    if (!canvasRef.current || screen !== "play") return;
+    const expandedMonitor = gameStateRef.current?.world.expandedMonitor ?? null;
+    if (expandedMonitor && expandedMonitor !== "metrics") return;
+    const point = toLogicalCanvasPoint(event, canvasRef.current);
+    if (!containsPoint(metricsPanelScrollRegion(expandedMonitor === "metrics"), point.x, point.y)) return;
+
+    event.preventDefault();
+    rendererRef.current?.scrollMetricsPanel(event.deltaY);
+  }
+
   function handleTerminalKey(event: KeyboardEvent) {
     if (screen !== "play") return;
     if (gameStateRef.current?.monitors.center.activeTool === "editor") return;
@@ -1119,6 +1131,7 @@ export function App() {
             tabIndex={0}
             onClick={handleCanvasClick}
             onMouseMove={handleCanvasMove}
+            onWheel={handleCanvasWheel}
             onKeyDown={handleTerminalKey}
             onPaste={(event) => { if (screen === "play" && terminalRef.current) { const text = event.clipboardData?.getData("text/plain"); if (text) { event.preventDefault(); terminalRef.current.input(text); } } }}
           />

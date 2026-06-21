@@ -149,6 +149,9 @@ const monitorPoses: Record<MonitorId, { scaleX: number }> = {
   runbook: { scaleX: 0.958 }
 };
 
+const METRICS_BANNER_HEIGHT = 40;
+const METRICS_SCROLL_TOP = 56;
+
 export class CanvasRenderer {
   private ctx: CanvasRenderingContext2D;
   private staticCanvas: HTMLCanvasElement;
@@ -157,6 +160,8 @@ export class CanvasRenderer {
   private roomBackdropLoaded = false;
   private lastRendered?: { state: GameRenderState; scenario?: ScenarioDefinition };
   private terminalLineCache = new Map<string, { spans: AnsiSpan[]; plain: string }>();
+  private metricsScrollY = 0;
+  private metricsScrollMax = 0;
 
   constructor(private canvas: HTMLCanvasElement) {
     const ctx = canvas.getContext("2d");
@@ -180,6 +185,15 @@ export class CanvasRenderer {
     this.drawStaticLayer();
   }
 
+  scrollMetricsPanel(deltaY: number) {
+    if (this.metricsScrollMax <= 0) return false;
+    const next = clamp(this.metricsScrollY + deltaY, 0, this.metricsScrollMax);
+    if (next === this.metricsScrollY) return false;
+    this.metricsScrollY = next;
+    if (this.lastRendered) this.draw(this.lastRendered.state, this.lastRendered.scenario);
+    return true;
+  }
+
   draw(state: GameRenderState, scenario?: ScenarioDefinition) {
     this.lastRendered = scenario ? { state, scenario } : { state };
     const ctx = this.ctx;
@@ -192,7 +206,7 @@ export class CanvasRenderer {
       for (const monitor of monitorLayouts) {
         this.withMonitorPose(monitor, () => {
           this.drawMonitor(monitor.x, monitor.y, monitor.width, monitor.height, monitor.title, (content) => {
-            if (monitor.id === "metrics") this.drawMetricsPanel(state.monitors.left);
+            if (monitor.id === "metrics") this.drawMetricsPanel(state.monitors.left, content.height);
             else if (monitor.id === "terminal") this.drawCenterPanel(state, content.width);
             else this.drawRightPanel(state, scenario);
           });
@@ -500,7 +514,7 @@ export class CanvasRenderer {
     const layout = expandedMonitorLayout;
     this.drawMonitorFrame(layout.x, layout.y, layout.width, layout.height, monitor.title, { stand: false });
     this.drawMonitor(layout.x, layout.y, layout.width, layout.height, monitor.title, (content) => {
-      if (monitorId === "metrics") this.drawMetricsPanel(state.monitors.left);
+      if (monitorId === "metrics") this.drawMetricsPanel(state.monitors.left, content.height);
       else if (monitorId === "terminal") this.drawCenterPanel(state, content.width);
       else this.drawRightPanel(state, scenario);
     });
@@ -569,13 +583,14 @@ export class CanvasRenderer {
     this.ctx.restore();
   }
 
-  private drawMetricsPanel(left: GameRenderState["monitors"]["left"]) {
+  private drawMetricsPanel(left: GameRenderState["monitors"]["left"], viewportHeight = monitorContentHeight) {
     const { metrics, metricsHistory, metricsSource } = left;
     const health = summarizeMetricsHealth(metrics);
     const panelWidth = 496;
-    const cardHeight = 64;
-    const cardGap = 8;
+    const cardHeight = 88;
+    const cardGap = 12;
     const rowStride = cardHeight + cardGap;
+    const sectionGap = 16;
 
     this.drawMetricsHealthBanner(health, metricsSource, panelWidth);
 
@@ -670,12 +685,28 @@ export class CanvasRenderer {
       }
     ];
 
-    let y = 54;
+    const scrollViewportHeight = Math.max(0, viewportHeight - METRICS_SCROLL_TOP);
+    let contentHeight = 0;
+    for (const section of sections) {
+      const rows = Math.ceil(section.cards.length / 2);
+      contentHeight += 18 + rows * rowStride + sectionGap;
+    }
+    contentHeight = Math.max(0, contentHeight - sectionGap);
+    this.metricsScrollMax = Math.max(0, contentHeight - scrollViewportHeight);
+    this.metricsScrollY = clamp(this.metricsScrollY, 0, this.metricsScrollMax);
+
+    this.ctx.save();
+    this.ctx.beginPath();
+    this.ctx.rect(0, METRICS_SCROLL_TOP, panelWidth, scrollViewportHeight);
+    this.ctx.clip();
+    this.ctx.translate(0, METRICS_SCROLL_TOP - this.metricsScrollY);
+
+    let y = 0;
     for (const section of sections) {
       this.ctx.fillStyle = palette.textMuted;
       this.ctx.font = monoFont(14);
       this.ctx.fillText(section.title, 0, y);
-      y += 16;
+      y += 18;
 
       section.cards.forEach((card, index) => {
         const column = index % 2;
@@ -694,8 +725,10 @@ export class CanvasRenderer {
       });
 
       const rows = Math.ceil(section.cards.length / 2);
-      y += rows * rowStride + 8;
+      y += rows * rowStride + sectionGap;
     }
+    this.ctx.restore();
+    this.drawMetricsScrollbar(panelWidth, METRICS_SCROLL_TOP, scrollViewportHeight, contentHeight);
   }
 
   private drawMetricsHealthBanner(
@@ -770,22 +803,38 @@ export class CanvasRenderer {
 
     this.ctx.fillStyle = palette.textSecondary;
     this.ctx.font = monoFont(14);
-    this.ctx.fillText(card.label, x + 10, y + 16);
+    this.ctx.fillText(card.label, x + 12, y + 18);
 
     this.ctx.fillStyle = palette.textPrimary;
-    this.ctx.font = monoFont(20, "bold");
-    this.ctx.fillText(`${card.value}${card.suffix}`, x + 10, y + 38);
+    this.ctx.font = monoFont(22, "bold");
+    this.ctx.fillText(`${card.value}${card.suffix}`, x + 12, y + 44);
 
     drawSparkline(
       this.ctx,
-      x + 10,
-      y + height - 22,
-      width - 20,
-      14,
+      x + 12,
+      y + height - 31,
+      width - 24,
+      22,
       card.historyValues.length > 0 ? card.historyValues : [card.value],
       card.color,
       card.max
     );
+  }
+
+  private drawMetricsScrollbar(panelWidth: number, top: number, viewportHeight: number, contentHeight: number) {
+    if (this.metricsScrollMax <= 0 || viewportHeight <= 0 || contentHeight <= 0) return;
+    const trackX = panelWidth - 7;
+    const trackY = top + 2;
+    const trackHeight = viewportHeight - 4;
+    const thumbHeight = Math.max(28, Math.round((viewportHeight / contentHeight) * trackHeight));
+    const thumbY = trackY + Math.round((this.metricsScrollY / this.metricsScrollMax) * (trackHeight - thumbHeight));
+
+    this.ctx.fillStyle = "rgba(148, 163, 184, 0.16)";
+    roundRect(this.ctx, trackX, trackY, 4, trackHeight, 2);
+    this.ctx.fill();
+    this.ctx.fillStyle = "rgba(148, 163, 184, 0.58)";
+    roundRect(this.ctx, trackX, thumbY, 4, thumbHeight, 2);
+    this.ctx.fill();
   }
 
   private drawCenterPanel(state: GameRenderState, contentWidth = terminalContentWidth) {
@@ -1344,6 +1393,18 @@ export function centerEditorOverlayRegion(expanded = false) {
   };
 }
 
+export function metricsPanelScrollRegion(expanded = false) {
+  const monitor = expanded ? expandedMonitorLayout : monitorLayouts.find((item) => item.id === "metrics")!;
+  const content = monitorContentRegion(monitor);
+  const scale = Math.min(content.width / monitorContentWidth, content.height / monitorContentHeight);
+  return {
+    x: content.x,
+    y: content.y + METRICS_SCROLL_TOP * scale,
+    width: content.width,
+    height: Math.max(0, content.height - METRICS_SCROLL_TOP * scale)
+  };
+}
+
 export const runbookTabRegion = (difficulty: GameRenderState["session"]["difficulty"]) => {
   const layout = rightPanelLayout(difficulty, "runbook", true);
   return {
@@ -1480,6 +1541,10 @@ function shortenPath(path: string, maxChars: number) {
 
 function containsCanvasPoint(rect: { x: number; y: number; width: number; height: number }, x: number, y: number) {
   return x >= rect.x && x <= rect.x + rect.width && y >= rect.y && y <= rect.y + rect.height;
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, value));
 }
 
 function drawSparkline(

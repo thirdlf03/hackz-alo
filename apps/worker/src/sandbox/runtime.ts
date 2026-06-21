@@ -86,37 +86,15 @@ export async function startScenarioSandbox(
 
 export async function fetchSessionMetrics(env: Bindings, sessionId: string): Promise<MetricsSnapshot | null> {
   const sandbox = getSessionSandbox(env, sessionId);
-  const liveScript = [
-    'fetch("http://127.0.0.1:8080/metrics")',
-    ".then(async (response) => {",
-    "  if (!response.ok) process.exit(1);",
-    "  process.stdout.write(await response.text());",
-    "})",
-    ".catch(() => process.exit(1));"
-  ].join("");
-  const liveResult = await sandbox.exec(`node -e ${shellArg(liveScript)}`);
-  if (liveResult.success && liveResult.stdout?.trim()) {
-    try {
-      return parseMetricsSnapshot(JSON.parse(liveResult.stdout) as Record<string, unknown>);
-    } catch {
-      // fall through to exporter probe
-    }
+  const result = await sandbox.exec("node /workspace/services/metrics/export.mjs", { cwd: "/workspace" });
+  if (!result.success || !result.stdout?.trim()) {
+    console.error("[sandbox-metrics]", compactSandboxExecFailure(result));
+    return null;
   }
-
-  const fallbackScript = [
-    'import { readSystemMetrics, readServiceMetrics, readTrafficMetrics } from "/workspace/services/metrics/collector.mjs";',
-    "const [system, service, traffic] = await Promise.all([",
-    "  readSystemMetrics(),",
-    "  readServiceMetrics(),",
-    "  readTrafficMetrics()",
-    "]);",
-    'process.stdout.write(JSON.stringify({ at: Date.now(), ...system, ...service, ...traffic }));'
-  ].join("");
-  const fallbackResult = await sandbox.exec(`node -e ${shellArg(fallbackScript)}`);
-  if (!fallbackResult.success || !fallbackResult.stdout?.trim()) return null;
   try {
-    return parseMetricsSnapshot(JSON.parse(fallbackResult.stdout) as Record<string, unknown>);
-  } catch {
+    return parseMetricsSnapshot(JSON.parse(result.stdout) as Record<string, unknown>);
+  } catch (error) {
+    console.error("[sandbox-metrics]", compactSandboxExecFailure(result, error));
     return null;
   }
 }
@@ -330,6 +308,24 @@ function parseMetricsSnapshot(payload: Record<string, unknown>): MetricsSnapshot
     dbConnections: payload.dbConnections as number,
     queueDepth: payload.queueDepth as number
   };
+}
+
+function compactSandboxExecFailure(
+  result: { success?: boolean; stdout?: string; stderr?: string },
+  error?: unknown
+) {
+  const details = [
+    `success=${String(result.success)}`,
+    result.stderr?.trim() ? `stderr=${truncateLogField(result.stderr)}` : undefined,
+    result.stdout?.trim() ? `stdout=${truncateLogField(result.stdout)}` : undefined,
+    error instanceof Error ? `error=${error.message}` : error ? `error=${String(error)}` : undefined
+  ].filter(Boolean);
+  return details.join(" ");
+}
+
+function truncateLogField(value: string) {
+  const compact = value.trim().replace(/\s+/g, " ");
+  return compact.length > 500 ? `${compact.slice(0, 500)}...` : compact;
 }
 
 export async function destroySessionSandbox(env: Bindings, sessionId: string) {

@@ -216,7 +216,7 @@ function buildFlavorText(
   durationLabel: string
 ) {
   if (endingId === "clear-shift" || result === "resolved") {
-    return `${durationLabel}で復旧完了。今回は解雇されなかった。`;
+    return `${durationLabel}で復旧完了。`;
   }
   if (endingId === "early-exit" || result === "retired") {
     return "途中で手を抜いた。再雇用の話はない。荷物をまとめて出て行け。";

@@ -14,7 +14,7 @@ import { injectFault, normalizeWorkspacePath } from "../../sandbox/bin/fault-inj
 import { runUnctl } from "../../sandbox/bin/unctl.mjs";
 import { createFakeDbServer, handleCommand } from "../../sandbox/services/fake-db/server.mjs";
 import { createUnyohApiServer, getHealth, getMetrics, prepareWorkspace } from "../../sandbox/services/unyoh-api/server.mjs";
-import { RequestMetricsTracker, readTrafficMetrics } from "../../sandbox/services/metrics/collector.mjs";
+import { appendTrafficSample, RequestMetricsTracker, readTrafficMetrics } from "../../sandbox/services/metrics/collector.mjs";
 
 const execFileAsync = promisify(execFile);
 
@@ -185,6 +185,31 @@ test("readTrafficMetrics reports 5xx when upstream api process is stopped", asyn
   const metrics = await readTrafficMetrics(workspace);
   assert.ok(metrics.http5xxRate >= 0.5);
   assert.ok(metrics.latencyP95Ms >= 0);
+});
+
+test("metrics exporter emits a complete snapshot outside the api process", async (t) => {
+  const workspace = await tempWorkspace();
+  t.after(() => rm(workspace, { recursive: true, force: true }));
+  await prepareWorkspace(workspace);
+  for (let index = 0; index < 60; index += 1) {
+    await appendTrafficSample(workspace, 500, 25);
+  }
+
+  const script = fileURLToPath(new URL("../../sandbox/services/metrics/export.mjs", import.meta.url));
+  const result = await execFileAsync("node", [script], {
+    env: { ...process.env, WORKSPACE_DIR: workspace }
+  });
+
+  assert.equal(result.stderr, "");
+  const metrics = JSON.parse(result.stdout);
+  assert.equal(typeof metrics.at, "number");
+  assert.equal(typeof metrics.cpu, "number");
+  assert.equal(typeof metrics.memory, "number");
+  assert.equal(typeof metrics.disk, "number");
+  assert.ok(metrics.http5xxRate > 0);
+  assert.ok(metrics.rps > 0);
+  assert.equal(metrics.dbConnections, 0);
+  assert.equal(metrics.queueDepth, 0);
 });
 
 test("getMetrics uses request tracker and service state files", async (t) => {

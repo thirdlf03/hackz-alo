@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const files = [
   ["services/metrics/collector.mjs", "/workspace/services/metrics/collector.mjs"],
+  ["services/metrics/export.mjs", "/workspace/services/metrics/export.mjs"],
   ["services/unyoh-api/server.mjs", "/workspace/services/unyoh-api/server.mjs"],
   ["services/fake-db/server.mjs", "/workspace/services/fake-db/server.mjs"],
   ["bin/fault-injector.mjs", "/workspace/bin/fault-injector.mjs"],

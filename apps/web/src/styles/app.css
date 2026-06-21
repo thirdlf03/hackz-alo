@@ -286,7 +286,7 @@ button:disabled {
 
 .settings-row h2 {
   margin: 4px 0 0;
-  font-size: 22px;
+  font-size: 24px;
   letter-spacing: 0;
 }
 
@@ -402,8 +402,8 @@ button:disabled {
   background: rgba(5, 7, 10, 0.92);
   caret-color: #d1fae5;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
-  font-size: 15px;
-  line-height: 21px;
+  font-size: 17px;
+  line-height: 24px;
   tab-size: 2;
   white-space: pre;
   overflow: auto;
@@ -606,7 +606,7 @@ canvas:focus-visible {
 }
 
 .scenario-card strong {
-  font-size: 18px;
+  font-size: 20px;
   font-weight: 700;
   line-height: 1.35;
 }
@@ -848,7 +848,7 @@ canvas:focus-visible {
 
 .result-highlights h2 {
   margin: 0 0 12px;
-  font-size: 18px;
+  font-size: 20px;
 }
 
 .result-highlights ol {
@@ -951,7 +951,7 @@ canvas:focus-visible {
 
 .result-replay-panel h2 {
   margin: 0 0 12px;
-  font-size: 18px;
+  font-size: 20px;
 }
 
 .result-replay-video {

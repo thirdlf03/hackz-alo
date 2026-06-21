@@ -82,7 +82,7 @@ export function severityColor(severity: "info" | "warning" | "critical"): string
 }
 
 /** Minimum font size for canvas text (WCAG AAA readability). */
-export const fontFloor = 14;
+export const fontFloor = 16;
 
 export const gameFonts = {
   ui: "system-ui, sans-serif",
