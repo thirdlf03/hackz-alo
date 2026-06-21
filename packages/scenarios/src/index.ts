@@ -1,5 +1,6 @@
 import type { Difficulty, ScenarioDefinition } from "@incident/shared";
 import { validateScenarioDefinition } from "@incident/shared";
+import demoTutorial from "../data/demo-tutorial-001.json" with { type: "json" };
 import processStop from "../data/process-stop-001.json" with { type: "json" };
 import diskFull from "../data/disk-full-001.json" with { type: "json" };
 import unlangBatch from "../data/unlang-batch-001.json" with { type: "json" };
@@ -17,6 +18,7 @@ import runbookGaslight from "../data/runbook-gaslight-001.json" with { type: "js
 import chaoticNight from "../data/chaotic-night-001.json" with { type: "json" };
 
 export const scenarios = [
+  demoTutorial,
   processStop,
   diskFull,
   unlangBatch,

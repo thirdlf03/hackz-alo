@@ -82,7 +82,7 @@ export function createInitialGameState(
     slackCompose: { active: false, draft: "" },
     openedRunbookIds: activeRunbook ? [activeRunbook.id] : [],
     alertFlashMs: 0,
-    world: { expandedMonitor: null },
+    world: { narrativeHour: 0, expandedMonitor: null },
     commandInputFocused: false,
     cursor: { x: 960, y: 540, visible: true },
     clickEffects: [],
@@ -168,7 +168,11 @@ export function advanceGameState(
       ...state.notifications,
       pulseMs: notificationPulseMs
     },
-    alertFlashMs: 0
+    alertFlashMs: 0,
+    world: {
+      narrativeHour: computeNarrativeHour(elapsedMs, state.clock.timeLimitMs),
+      expandedMonitor: state.world.expandedMonitor
+    }
   };
 }
 
@@ -389,6 +393,11 @@ export function toggleExpandedMonitor(
     ...state,
     world: { ...state.world, expandedMonitor }
   };
+}
+
+export function computeNarrativeHour(elapsedMs: number, timeLimitMs: number) {
+  const limitMs = Math.max(timeLimitMs, 1);
+  return Math.min(6, (elapsedMs / limitMs) * 6);
 }
 
 function emptyMetrics(): MetricsSnapshot {

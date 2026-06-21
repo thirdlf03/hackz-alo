@@ -1,0 +1,70 @@
+id: demo-tutorial-001
+version: 1
+title: "デモ: 1分復旧ドリル"
+difficulty: beginner
+timeLimitMinutes: 1
+service:
+  name: うん用 API
+  healthUrl: http://localhost:8080/health
+briefing:
+  - これは約1分で遊べるデモ用シナリオです。
+  - API が落ちたら、ログ確認 → 再起動 → health 確認の順で復旧します。
+  - 困ったら右の Runbook を見てください。
+startup:
+  - id: api
+    command: PORT=8080 node /workspace/services/unyoh-api/server.mjs
+    waitForPort: 8080
+  - id: fake-db
+    command: node /workspace/services/fake-db/server.mjs
+    waitForPort: 15432
+triggers:
+  - id: stop-api
+    atMs: 10000
+    type: process_stop
+    params:
+      processId: api
+alerts:
+  - id: http-500
+    atMs: 15000
+    severity: critical
+    message: HTTP 500 rate is above threshold
+    source: scenario
+  - id: health-check-failed
+    atMs: 20000
+    severity: critical
+    message: うん用 API health check failed
+    source: monitor
+successConditions:
+  - type: http_status
+    url: http://localhost:8080/health
+    status: 200
+  - type: process_running
+    processId: api
+runbooks:
+  - id: runbook.demo
+    title: 1分復旧 Runbook
+    body: 1. 左の監視で HTTP 5xx を確認する\n2. tail -n 20 /workspace/logs/app.log で停止を確認する\n3. unctl restart api で再起動する\n4. curl localhost:8080/health で 200 を確認する
+slackMessages:
+  - id: boss-demo
+    atMs: 25000
+    from: 上司
+    body: デモ用だから再起動でいいよ。おやすみ。
+navigationSteps:
+  - id: nav-metrics
+    atMs: 0
+    hint: 左の監視画面で SERVICE HEALTH を確認する
+    panel: metrics
+  - id: nav-log
+    atMs: 5000
+    hint: app.log に停止の痕跡がないか確認する
+    panel: terminal
+    suggestedCommand: tail -n 20 /workspace/logs/app.log
+  - id: nav-status
+    atMs: 8000
+    hint: unctl status api でサービス状態を確認する
+    panel: terminal
+    suggestedCommand: unctl status api
+  - id: nav-runbook
+    atMs: 12000
+    hint: 右の Runbook で復旧手順を確認する
+    panel: runbook

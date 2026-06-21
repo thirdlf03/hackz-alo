@@ -329,6 +329,8 @@ export type GameRenderState = {
   alertFlashMs: number;
   warning?: { message: string; flashMs: number };
   world: {
+    /** Narrative hour from midnight (0–6) mapped across the session time limit. */
+    narrativeHour: number;
     expandedMonitor: "metrics" | "terminal" | "runbook" | null;
   };
   commandInputFocused: boolean;

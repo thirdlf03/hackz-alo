@@ -277,6 +277,9 @@ export class CanvasRenderer {
       70,
       108
     );
+    this.ctx.fillStyle = palette.textClock;
+    this.ctx.font = monoFont(26, "bold");
+    this.ctx.fillText(formatNarrativeClock(state.world.narrativeHour), 1280, 70);
     this.ctx.fillStyle = state.recording.saveEnabled
       ? state.recording.status === "recording"
         ? palette.statusRecording
@@ -1722,6 +1725,13 @@ function formatTime(ms: number) {
   const minutes = Math.floor(total / 60).toString().padStart(2, "0");
   const seconds = (total % 60).toString().padStart(2, "0");
   return `${minutes}:${seconds}`;
+}
+
+function formatNarrativeClock(narrativeHour: number) {
+  const totalMinutes = Math.floor(narrativeHour * 60);
+  const hours = Math.floor(totalMinutes / 60).toString().padStart(2, "0");
+  const minutes = (totalMinutes % 60).toString().padStart(2, "0");
+  return `深夜 ${hours}:${minutes}`;
 }
 
 function formatRecordingStatus(status: GameRenderState["recording"]["status"], saveEnabled: boolean) {
