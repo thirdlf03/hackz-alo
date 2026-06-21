@@ -68,6 +68,12 @@ successConditions:
     valuePercent: 85
   - type: process_running
     processId: api
+  - type: marker_absent
+    path: /workspace/run/alert.spam.json
+  - type: marker_absent
+    path: /workspace/run/runbook.gaslight.json
+  - type: marker_absent
+    path: /workspace/run/janitor.power.pulled
 runbooks:
   - id: runbook.chaos
     title: 混沌シフト初動

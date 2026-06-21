@@ -1,7 +1,11 @@
 #!/usr/bin/env node
+import { execFile } from "node:child_process";
 import { appendFile, mkdir, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
+
+const execFileAsync = promisify(execFile);
 
 const DEFAULT_WORKSPACE = process.env.WORKSPACE_DIR ?? "/workspace";
 const USAGE =
@@ -18,6 +22,7 @@ export async function injectFault(fault, args = [], options = {}) {
     if (processId !== "api") throw new Error(`unsupported process ${processId}`);
     await writeFile(path.join(workspace, "run", "api.down"), new Date().toISOString());
     await appendFile(path.join(workspace, "logs", "app.log"), "api process stopped by scenario\n");
+    await stopApiProcess();
     return "process_stop injected";
   }
 
@@ -63,7 +68,6 @@ export async function injectFault(fault, args = [], options = {}) {
   if (fault === "bad_deploy") {
     const configPath = normalizeWorkspacePath(args[0] ?? path.join(workspace, "run", "deploy.json"), workspace);
     await writeFile(configPath, JSON.stringify({ healthPath: "/broken-health", deployedAt: new Date().toISOString() }));
-    await writeFile(path.join(workspace, "run", "api.down"), `bad deploy ${new Date().toISOString()}`);
     await appendFile(path.join(workspace, "logs", "app.log"), "bad deploy marker written\n");
     return "bad_deploy injected";
   }
@@ -172,6 +176,15 @@ export async function injectFault(fault, args = [], options = {}) {
   }
 
   throw usageError();
+}
+
+async function stopApiProcess() {
+  try {
+    await execFileAsync("pkill", ["-f", "unyoh-api/server.mjs"]);
+  } catch (error) {
+    if (error && typeof error === "object" && "code" in error && error.code === 1) return;
+    throw error;
+  }
 }
 
 export function normalizeWorkspacePath(value, workspace = DEFAULT_WORKSPACE) {

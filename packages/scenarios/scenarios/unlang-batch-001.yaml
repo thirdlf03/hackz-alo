@@ -2,7 +2,7 @@ id: unlang-batch-001
 version: 1
 title: うんともすんとも言わないバッチ
 difficulty: beginner
-timeLimitMinutes: 12
+timeLimitMinutes: 5
 service:
   name: うん用 batch
   healthUrl: http://localhost:8080/health
@@ -65,7 +65,8 @@ runbooks:
       → 数値が表示されれば OK。うんともすんとも なら未修正
 
       6. ログ片付け
-      grep -v うんともすんとも /workspace/logs/batch.log > /tmp/b.log && mv /tmp/b.log /workspace/logs/batch.log
+      : > /workspace/logs/batch.log
+      → 失敗行を消して resolve 条件を満たす
   - id: runbook.unlang-spec
     title: うん言語仕様表
     body: |-

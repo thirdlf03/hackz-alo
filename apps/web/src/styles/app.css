@@ -337,6 +337,13 @@ button:disabled {
   margin: -4px 0 0 -10px;
 }
 
+.briefing-panel ul,
+.briefing-panel legend,
+.briefing-panel .consent-row,
+.briefing-panel > p {
+  font-size: var(--font-briefing);
+}
+
 .briefing-panel ul {
   margin: 0;
   padding-left: 20px;
@@ -660,6 +667,104 @@ canvas:focus-visible {
   border: 1px solid var(--border-subtle);
   border-radius: 14px;
   background: linear-gradient(180deg, rgba(16, 24, 33, 0.96), rgba(10, 14, 20, 0.92));
+}
+
+.eyebrow-dismissed {
+  color: rgba(248, 113, 113, 0.88);
+  letter-spacing: 0.14em;
+}
+
+.result-panel-dismissed {
+  border-color: rgba(248, 113, 113, 0.38);
+}
+
+.result-hero-dismissed {
+  border-color: rgba(248, 113, 113, 0.5);
+  background: rgba(127, 29, 29, 0.18);
+}
+
+.result-stamp {
+  margin: 0;
+  padding: 0;
+  font-size: clamp(56px, 14vw, 112px);
+  font-weight: 900;
+  line-height: 0.95;
+  letter-spacing: 0.08em;
+  text-align: center;
+  color: rgba(254, 226, 226, 0.95);
+  text-shadow:
+    0 -1px 0 rgba(255, 255, 255, 0.1),
+    0 0 14px rgba(248, 113, 113, 0.18),
+    0 0 28px rgba(220, 38, 38, 0.08),
+    0 3px 0 rgba(127, 29, 29, 0.5);
+  transform: rotate(-2deg);
+  animation: result-stamp-in 0.55s cubic-bezier(0.2, 1.15, 0.3, 1) both;
+}
+
+.result-dismissal-subline {
+  margin: 0;
+  text-align: center;
+  font-size: clamp(20px, 4vw, 28px);
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  color: rgba(252, 165, 165, 0.92);
+}
+
+.result-flavor-dismissed {
+  margin: 0;
+  padding: 16px 18px;
+  border: 1px solid rgba(248, 113, 113, 0.32);
+  border-radius: 10px;
+  background: rgba(127, 29, 29, 0.22);
+  color: rgba(254, 202, 202, 0.92);
+  font-size: clamp(17px, 2.8vw, 22px);
+  font-weight: 700;
+  line-height: 1.55;
+  text-align: center;
+}
+
+.result-dismissal-notice {
+  margin: 0;
+  text-align: center;
+  color: rgba(248, 113, 113, 0.82);
+  font-size: var(--font-caption);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.result-stats-dismissed {
+  border-top-color: rgba(248, 113, 113, 0.28);
+}
+
+.result-stats-dismissed dt {
+  color: rgba(252, 165, 165, 0.78);
+}
+
+.result-stats-dismissed dd {
+  color: rgba(254, 226, 226, 0.92);
+}
+
+@keyframes result-stamp-in {
+  0% {
+    opacity: 0;
+    transform: scale(1.35) rotate(-6deg);
+  }
+
+  70% {
+    transform: scale(0.98) rotate(-1deg);
+  }
+
+  100% {
+    opacity: 1;
+    transform: scale(1) rotate(-2deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .result-stamp {
+    animation: none;
+  }
 }
 
 .result-badge {

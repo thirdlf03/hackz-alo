@@ -205,7 +205,31 @@ export function App() {
   useEffect(() => { saveRecordingRef.current = saveRecording; }, [saveRecording]);
   useEffect(() => {
     gameSpeedRef.current = gameSpeed;
-    patchGameStateRef((current) => ({ ...current, clock: { ...current.clock, speed: gameSpeed } }));
+    const previous = gameStateRef.current;
+    if (previous && screen === "play") {
+      const now = performance.now();
+      const lastTickAt = lastTickAtRef.current || now;
+      const oldSpeed = previous.clock.speed;
+      const snapped = Math.min(
+        previous.clock.timeLimitMs,
+        Math.round(previous.clock.elapsedMs + Math.max(0, now - lastTickAt) * oldSpeed)
+      );
+      elapsedMsRef.current = snapped;
+      lastTickAtRef.current = now;
+      const next = advanceGameState(
+        previous,
+        snapped,
+        scenarioRef.current,
+        gameSpeed,
+        0,
+        previous.monitors.left.alerts,
+        previous.monitors.right.slackMessages
+      );
+      gameStateRef.current = next;
+      setGameState(next);
+    } else if (previous) {
+      patchGameStateRef((current) => ({ ...current, clock: { ...current.clock, speed: gameSpeed } }));
+    }
     const activeSession = sessionRef.current;
     if (screen === "play" && activeSession) {
       void api.updateSessionClock(activeSession.sessionId, gameSpeed).then(applyClockSnapshot).catch(console.error);
@@ -1107,8 +1131,16 @@ export function App() {
       )}
 
       {screen === "result" && session && scenario && (
-        <ResultPage replayId={session.replayId} sessionId={session.sessionId} scenarioTitle={scenario.title}
-          canOpenReplay={canNavigateToReplay} onRetry={() => setScreen("select")} onOpenReplay={openReplay} />
+        <ResultPage
+          replayId={session.replayId}
+          sessionId={session.sessionId}
+          scenarioTitle={scenario.title}
+          canOpenReplay={canNavigateToReplay}
+          onGoHome={() => setScreen("select")}
+          onRetry={() => void createSessionForScenario(scenario.id)}
+          onOpenReplay={openReplay}
+          isRetrying={isStarting}
+        />
       )}
 
       {screen === "replay" && activeReplayId && !deepLinkValidated && (

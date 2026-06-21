@@ -573,7 +573,7 @@ interface FaultPlugin {
 
 MVP plugins:
 
-- `process_stop`: `unyoh-api` を kill。
+- `process_stop`: `api.down` マーカーを書き、`unyoh-api` プロセスを停止する。
 - `disk_full`: log file を増やす。または quota directory に大きな file を作る。
 - `unlang_batch_failure`: うん言語 batch に 0 division を仕込む。
 

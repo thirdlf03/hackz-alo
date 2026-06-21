@@ -3,7 +3,7 @@
   "version": 1,
   "title": "ログが世界を埋め尽くす夜",
   "difficulty": "beginner",
-  "timeLimitMinutes": 10,
+  "timeLimitMinutes": 5,
   "service": {
     "name": "うん用 API",
     "healthUrl": "http://localhost:8080/health"

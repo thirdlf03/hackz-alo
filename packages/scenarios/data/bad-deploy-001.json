@@ -52,13 +52,17 @@
     {
       "type": "process_running",
       "processId": "api"
+    },
+    {
+      "type": "marker_absent",
+      "path": "/workspace/run/deploy.json"
     }
   ],
   "runbooks": [
     {
       "id": "runbook.deploy",
       "title": "Bad deploy",
-      "body": "1. cat /workspace/run/deploy.json\\n2. rm /workspace/run/api.down\\n3. unctl restart api"
+      "body": "1. cat /workspace/run/deploy.json\\n2. rm /workspace/run/deploy.json\\n3. curl localhost:8080/health\\n4. 再発する場合のみ unctl restart api"
     }
   ],
   "slackMessages": [],

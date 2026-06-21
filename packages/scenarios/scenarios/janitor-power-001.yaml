@@ -2,7 +2,7 @@ id: janitor-power-001
 version: 1
 title: 掃除のおばちゃんが電源を抜いた夜
 difficulty: beginner
-timeLimitMinutes: 10
+timeLimitMinutes: 5
 service:
   name: うん用 API
   healthUrl: http://localhost:8080/health
@@ -40,6 +40,8 @@ successConditions:
     status: 200
   - type: process_running
     processId: api
+  - type: marker_absent
+    path: /workspace/run/janitor.power.pulled
 runbooks:
   - id: runbook.janitor
     title: 掃除による電源断

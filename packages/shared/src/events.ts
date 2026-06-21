@@ -32,8 +32,9 @@ export function replayEventSummary(event: ReplayEvent): string {
     return "シナリオ開始";
   }
   if (event.type === "session_end") {
-    if (event.payload.result === "retired") return "リタイア";
-    if (event.payload.result === "timeout") return "タイムアップ";
+    if (event.payload.result === "retired") return "解雇！";
+    if (event.payload.result === "failed") return "解雇！";
+    if (event.payload.result === "timeout") return "解雇！";
     if (event.payload.result === "aborted") return "強制終了";
     return "セッション終了";
   }

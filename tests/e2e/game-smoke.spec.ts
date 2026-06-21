@@ -39,7 +39,7 @@ test("result page offers replay after resolve flow", async ({ page }) => {
   const retireY = box.y + ((878 + 48) / 1080) * box.height;
   await page.mouse.click(retireX, retireY);
   await expect(page.getByRole("heading", { level: 1 })).toBeVisible({ timeout: 15000 });
-  await expect(page.getByText("リタイア", { exact: true })).toBeVisible();
+  await expect(page.getByText("解雇！", { exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "ハイライト" })).toBeVisible();
   await expect(page.getByRole("button", { name: "再挑戦" })).toBeVisible();
   await page.getByRole("button", { name: "Replay", exact: true }).click();

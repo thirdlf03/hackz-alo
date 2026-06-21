@@ -52,6 +52,10 @@
     {
       "type": "process_running",
       "processId": "api"
+    },
+    {
+      "type": "marker_absent",
+      "path": "/workspace/run/db.pool.exhausted"
     }
   ],
   "runbooks": [

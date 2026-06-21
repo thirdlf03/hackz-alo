@@ -49,6 +49,10 @@
       "type": "http_status",
       "url": "http://localhost:8080/health",
       "status": 200
+    },
+    {
+      "type": "marker_absent",
+      "path": "/workspace/run/runbook.gaslight.json"
     }
   ],
   "runbooks": [

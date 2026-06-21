@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { readFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -7,10 +7,86 @@ import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
 
+const DEFAULT_TRAFFIC_WINDOW_MS = 60_000;
+
 let lastCpuSample = undefined;
 
+function trafficSamplesPath(workspace) {
+  return path.join(workspace, "run", "traffic-samples.jsonl");
+}
+
+export function snapshotTrafficSamples(samples, windowMs = DEFAULT_TRAFFIC_WINDOW_MS) {
+  const total = samples.length;
+  if (total === 0) {
+    return { http5xxRate: 0, latencyP95Ms: 0, rps: 0 };
+  }
+
+  const errors = samples.filter((sample) => sample.status >= 500).length;
+  const durations = samples.map((sample) => sample.durationMs).sort((left, right) => left - right);
+  const p95Index = Math.max(0, Math.ceil(durations.length * 0.95) - 1);
+
+  return {
+    http5xxRate: errors / total,
+    latencyP95Ms: durations[p95Index] ?? 0,
+    rps: Math.round(total / (windowMs / 1000))
+  };
+}
+
+export async function readTrafficSamples(workspace, windowMs = DEFAULT_TRAFFIC_WINDOW_MS) {
+  const samplesPath = trafficSamplesPath(workspace);
+  if (!existsSync(samplesPath)) return [];
+
+  try {
+    const content = await readFile(samplesPath, "utf8");
+    const cutoff = Date.now() - windowMs;
+    return content
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => JSON.parse(line))
+      .filter((sample) => Number.isFinite(sample.at) && sample.at >= cutoff);
+  } catch {
+    return [];
+  }
+}
+
+async function rewriteTrafficSamples(workspace, samples) {
+  await mkdir(path.join(workspace, "run"), { recursive: true });
+  const content = samples.length > 0 ? `${samples.map((sample) => JSON.stringify(sample)).join("\n")}\n` : "";
+  await writeFile(trafficSamplesPath(workspace), content);
+}
+
+export async function appendTrafficSample(workspace, status, durationMs, at = Date.now()) {
+  await mkdir(path.join(workspace, "run"), { recursive: true });
+  await appendFile(trafficSamplesPath(workspace), `${JSON.stringify({ at, status, durationMs })}\n`);
+}
+
+export async function pruneTrafficSamples(workspace, windowMs = DEFAULT_TRAFFIC_WINDOW_MS) {
+  const samples = await readTrafficSamples(workspace, windowMs);
+  await rewriteTrafficSamples(workspace, samples);
+  return samples;
+}
+
+export async function probeUpstreamTraffic(workspace, baseUrl = "http://127.0.0.1:8080") {
+  for (const pathname of ["/health", "/orders"]) {
+    const startedAt = performance.now();
+    try {
+      const response = await fetch(`${baseUrl}${pathname}`);
+      await appendTrafficSample(workspace, response.status, Math.round(performance.now() - startedAt));
+    } catch {
+      await appendTrafficSample(workspace, 500, Math.round(performance.now() - startedAt));
+    }
+  }
+}
+
+export async function readTrafficMetrics(workspace, windowMs = DEFAULT_TRAFFIC_WINDOW_MS, options = {}) {
+  const probe = options.probe ?? true;
+  if (probe) await probeUpstreamTraffic(workspace);
+  const samples = await pruneTrafficSamples(workspace, windowMs);
+  return snapshotTrafficSamples(samples, windowMs);
+}
+
 export class RequestMetricsTracker {
-  constructor(windowMs = 60_000) {
+  constructor(windowMs = DEFAULT_TRAFFIC_WINDOW_MS) {
     this.windowMs = windowMs;
     this.samples = [];
   }
@@ -28,20 +104,7 @@ export class RequestMetricsTracker {
 
   snapshot() {
     this.prune();
-    const total = this.samples.length;
-    if (total === 0) {
-      return { http5xxRate: 0, latencyP95Ms: 0, rps: 0 };
-    }
-
-    const errors = this.samples.filter((sample) => sample.status >= 500).length;
-    const durations = this.samples.map((sample) => sample.durationMs).sort((left, right) => left - right);
-    const p95Index = Math.max(0, Math.ceil(durations.length * 0.95) - 1);
-
-    return {
-      http5xxRate: errors / total,
-      latencyP95Ms: durations[p95Index] ?? 0,
-      rps: Math.round(total / (this.windowMs / 1000))
-    };
+    return snapshotTrafficSamples(this.samples, this.windowMs);
   }
 }
 

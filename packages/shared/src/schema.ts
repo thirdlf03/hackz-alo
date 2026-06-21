@@ -29,6 +29,7 @@ const successTypes = new Set([
   "http_status",
   "disk_usage_below",
   "process_running",
+  "marker_absent",
   "log_absent",
   "unlang_batch_ok"
 ]);
@@ -386,6 +387,8 @@ function validateSuccessCondition(condition: Record<string, unknown>, path: stri
     requirePercent(condition, "valuePercent", errors, path);
   } else if (condition.type === "process_running") {
     requireString(condition, "processId", errors, path);
+  } else if (condition.type === "marker_absent") {
+    requireAbsolutePath(condition, "path", errors, path);
   } else if (condition.type === "log_absent") {
     requireAbsolutePath(condition, "path", errors, path);
     requireString(condition, "pattern", errors, path);

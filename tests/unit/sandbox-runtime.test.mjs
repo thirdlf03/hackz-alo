@@ -13,8 +13,8 @@ import { runUnlang } from "../../sandbox/bin/unlang.mjs";
 import { injectFault, normalizeWorkspacePath } from "../../sandbox/bin/fault-injector.mjs";
 import { runUnctl } from "../../sandbox/bin/unctl.mjs";
 import { createFakeDbServer, handleCommand } from "../../sandbox/services/fake-db/server.mjs";
-import { createUnyohApiServer, getMetrics, prepareWorkspace } from "../../sandbox/services/unyoh-api/server.mjs";
-import { RequestMetricsTracker } from "../../sandbox/services/metrics/collector.mjs";
+import { createUnyohApiServer, getHealth, getMetrics, prepareWorkspace } from "../../sandbox/services/unyoh-api/server.mjs";
+import { RequestMetricsTracker, readTrafficMetrics } from "../../sandbox/services/metrics/collector.mjs";
 
 const execFileAsync = promisify(execFile);
 
@@ -93,6 +93,27 @@ test("unctl creates run state and reports api status transitions", async (t) => 
   await assert.rejects(() => runUnctl("status", "db", { workspace }), /usage: unctl/);
 });
 
+test("unctl restart clears api.down but scenario markers still degrade health", async (t) => {
+  const workspace = await tempWorkspace();
+  t.after(() => rm(workspace, { recursive: true, force: true }));
+
+  await injectFault("janitor_power_pull", [], { workspace });
+  assert.equal(await runUnctl("restart", "api", { workspace }), "api restarted");
+  assert.match(await runUnctl("status", "api", { workspace }), /api degraded \(janitor power pull marker active\)/);
+  assert.equal((await getHealth(workspace)).ok, false);
+});
+
+test("bad deploy fails health until deploy.json is removed", async (t) => {
+  const workspace = await tempWorkspace();
+  t.after(() => rm(workspace, { recursive: true, force: true }));
+
+  await injectFault("bad_deploy", [], { workspace });
+  assert.equal((await getHealth(workspace)).ok, false);
+  assert.match((await getHealth(workspace)).reason, /bad deploy/);
+  await rm(path.join(workspace, "run", "deploy.json"));
+  assert.equal((await getHealth(workspace)).ok, true);
+});
+
 test("unctl CLI writes command results to stdout", async (t) => {
   const workspace = await tempWorkspace();
   t.after(() => rm(workspace, { recursive: true, force: true }));
@@ -111,7 +132,7 @@ test("unyoh-api reflects marker health, metrics, and access log statuses", async
   t.after(() => rm(workspace, { recursive: true, force: true }));
   await prepareWorkspace(workspace);
 
-  const server = createUnyohApiServer({ workspace, enableProbe: false });
+  const server = createUnyohApiServer({ workspace });
   const baseUrl = await listenHttp(server);
   t.after(() => closeServer(server));
 
@@ -145,6 +166,25 @@ test("unyoh-api reflects marker health, metrics, and access log statuses", async
   assert.match(accessLog, /GET \/missing 404/);
   assert.match(accessLog, /GET \/orders 500/);
   assert.match(accessLog, /GET \/metrics 200/);
+});
+
+test("readTrafficMetrics reports 5xx when upstream api process is stopped", async (t) => {
+  const workspace = await tempWorkspace();
+  t.after(() => rm(workspace, { recursive: true, force: true }));
+  await prepareWorkspace(workspace);
+
+  const server = createUnyohApiServer({ workspace });
+  const baseUrl = await listenHttp(server);
+
+  const healthy = await fetch(`${baseUrl}/health`);
+  assert.equal(healthy.status, 200);
+
+  await closeServer(server);
+  await injectFault("process_stop", ["api"], { workspace });
+
+  const metrics = await readTrafficMetrics(workspace);
+  assert.ok(metrics.http5xxRate >= 0.5);
+  assert.ok(metrics.latencyP95Ms >= 0);
 });
 
 test("getMetrics uses request tracker and service state files", async (t) => {

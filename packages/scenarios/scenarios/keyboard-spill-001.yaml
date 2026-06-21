@@ -38,6 +38,8 @@ successConditions:
   - type: http_status
     url: http://localhost:8080/health
     status: 200
+  - type: marker_absent
+    path: /workspace/run/keyboard.spill
 runbooks:
   - id: runbook.spill
     title: キーボードこぼし対応

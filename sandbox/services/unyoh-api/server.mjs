@@ -4,9 +4,10 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  RequestMetricsTracker,
+  appendTrafficSample,
   readServiceMetrics,
-  readSystemMetrics
+  readSystemMetrics,
+  readTrafficMetrics
 } from "../metrics/collector.mjs";
 
 const DEFAULT_WORKSPACE = process.env.WORKSPACE_DIR ?? "/workspace";
@@ -18,8 +19,6 @@ export async function prepareWorkspace(workspace = DEFAULT_WORKSPACE) {
 
 export function createUnyohApiServer(options = {}) {
   const workspace = options.workspace ?? DEFAULT_WORKSPACE;
-  const tracker = options.tracker ?? new RequestMetricsTracker();
-  const enableProbe = options.enableProbe ?? true;
 
   const server = http.createServer(async (req, res) => {
     const startedAt = performance.now();
@@ -43,7 +42,7 @@ export function createUnyohApiServer(options = {}) {
         }
       } else if (url.pathname === "/metrics") {
         status = 200;
-        payload = await getMetrics(workspace, tracker);
+        payload = await getMetrics(workspace);
       }
     } catch {
       status = 500;
@@ -51,33 +50,11 @@ export function createUnyohApiServer(options = {}) {
     }
 
     const durationMs = Math.round(performance.now() - startedAt);
-    tracker.record(status, durationMs);
+    await appendTrafficSample(workspace, status, durationMs);
     await appendAccessLog(workspace, req.method ?? "GET", url.pathname, status);
     res.writeHead(status, { "content-type": "application/json; charset=utf-8" });
     res.end(JSON.stringify(payload));
   });
-
-  if (enableProbe) {
-    server.on("listening", () => {
-      const port = server.address()?.port;
-      if (!port) return;
-      const probe = async () => {
-        for (const pathname of ["/health", "/orders"]) {
-          const startedAt = performance.now();
-          try {
-            const response = await fetch(`http://127.0.0.1:${port}${pathname}`);
-            tracker.record(response.status, Math.round(performance.now() - startedAt));
-          } catch {
-            tracker.record(500, Math.round(performance.now() - startedAt));
-          }
-        }
-      };
-      const timer = setInterval(() => {
-        void probe();
-      }, 2000);
-      timer.unref();
-    });
-  }
 
   return server;
 }
@@ -96,9 +73,30 @@ async function appendAccessLog(workspace, method, pathname, status) {
 
 export async function getHealth(workspace = DEFAULT_WORKSPACE) {
   const logDir = path.join(workspace, "logs");
-  const downMarker = path.join(workspace, "run", "api.down");
+  const runDir = path.join(workspace, "run");
+  const downMarker = path.join(runDir, "api.down");
   if (existsSync(downMarker)) {
     return { ok: false, reason: "process marker says api is down" };
+  }
+  if (existsSync(path.join(runDir, "janitor.power.pulled"))) {
+    return { ok: false, reason: "janitor power pull marker active" };
+  }
+  if (existsSync(path.join(runDir, "network.jumprope")) || existsSync(path.join(runDir, "hosts.override"))) {
+    return { ok: false, reason: "network path blocked by cable or hosts override" };
+  }
+  const deployPath = path.join(runDir, "deploy.json");
+  if (existsSync(deployPath)) {
+    try {
+      const deploy = JSON.parse(await readFile(deployPath, "utf8"));
+      if (deploy.healthPath && deploy.healthPath !== "/health") {
+        return { ok: false, reason: "bad deploy: health probe misconfigured" };
+      }
+    } catch {
+      return { ok: false, reason: "bad deploy: unreadable deploy.json" };
+    }
+  }
+  if (existsSync(path.join(runDir, "db.pool.exhausted"))) {
+    return { ok: false, reason: "db connection pool exhausted" };
   }
   const debugLog = path.join(logDir, "debug.log");
   if (existsSync(debugLog)) {
@@ -107,14 +105,25 @@ export async function getHealth(workspace = DEFAULT_WORKSPACE) {
       return { ok: false, reason: "disk pressure from debug.log" };
     }
   }
+  const accessLog = path.join(logDir, "access.log");
+  if (existsSync(accessLog)) {
+    const info = await stat(accessLog);
+    if (info.size > 100 * 1024 * 1024) {
+      return { ok: false, reason: "disk pressure from access.log" };
+    }
+  }
+  const system = await readSystemMetrics(workspace);
+  if (system.disk > 85) {
+    return { ok: false, reason: `disk usage at ${system.disk}%` };
+  }
   return { ok: true };
 }
 
-export async function getMetrics(workspace = DEFAULT_WORKSPACE, tracker = new RequestMetricsTracker()) {
+export async function getMetrics(workspace = DEFAULT_WORKSPACE, tracker) {
   const [system, service, traffic] = await Promise.all([
     readSystemMetrics(workspace),
     readServiceMetrics(workspace),
-    Promise.resolve(tracker.snapshot())
+    tracker ? Promise.resolve(tracker.snapshot()) : readTrafficMetrics(workspace, undefined, { probe: false })
   ]);
 
   let appLogTail = "";

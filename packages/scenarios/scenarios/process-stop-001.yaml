@@ -2,14 +2,15 @@ id: process-stop-001
 version: 1
 title: API が寝落ちした夜
 difficulty: beginner
-timeLimitMinutes: 10
+timeLimitMinutes: 5
 service:
   name: うん用 API
   healthUrl: http://localhost:8080/health
 briefing:
   - うん用 API は社内売上確認画面の裏側で使われている。
   - 通常は /health が 200 を返し、access.log にリクエストが流れる。
-  - 困ったらまず監視、ログ、プロセス状態を順番に見る。
+  - 障害時は app.log と run/api.down マーカーにも手がかりが出る。
+  - 困ったらまず監視、ログ、サービス状態を順番に見る。
 startup:
   - id: api
     command: PORT=8080 node /workspace/services/unyoh-api/server.mjs
@@ -43,7 +44,7 @@ successConditions:
 runbooks:
   - id: runbook.process
     title: API プロセス停止時の初動
-    body: 1. curl localhost:8080/health で影響を確認する\n2. ps aux | grep unyoh-api でプロセスを見る\n3. tail -n 50 /workspace/logs/app.log を確認する\n4. unctl restart api で暫定復旧する\n5. curl で復旧確認する
+    body: 1. 左の監視画面で HTTP 5xx と SERVICE HEALTH を確認する\n2. tail -n 50 /workspace/logs/app.log を確認する\n3. unctl status api または ls /workspace/run で停止原因を見る\n4. unctl restart api で暫定復旧する\n5. curl localhost:8080/health で復旧確認する
 slackMessages:
   - id: boss-restart
     atMs: 120000
@@ -54,11 +55,16 @@ navigationSteps:
     atMs: 0
     hint: 左の監視画面で HTTP 5xx と SERVICE HEALTH を確認する
     panel: metrics
-  - id: nav-health
+  - id: nav-log
     atMs: 30000
-    hint: ターミナルで curl localhost:8080/health を実行する
+    hint: app.log に停止の痕跡がないか確認する
     panel: terminal
-    suggestedCommand: curl localhost:8080/health
+    suggestedCommand: tail -n 50 /workspace/logs/app.log
+  - id: nav-status
+    atMs: 45000
+    hint: unctl status api でサービス状態を確認する
+    panel: terminal
+    suggestedCommand: unctl status api
   - id: nav-runbook
     atMs: 60000
     hint: 右の Runbook で復旧手順を確認する

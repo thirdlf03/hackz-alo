@@ -218,6 +218,7 @@ export type SuccessCondition =
   | { type: "http_status"; url: string; status: number }
   | { type: "disk_usage_below"; path: string; valuePercent: number }
   | { type: "process_running"; processId: string }
+  | { type: "marker_absent"; path: string }
   | { type: "log_absent"; path: string; pattern: string }
   | { type: "unlang_batch_ok"; jobId: string };
 

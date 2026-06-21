@@ -67,7 +67,7 @@
     {
       "id": "runbook.unlang",
       "title": "うん言語調査",
-      "body": "1. batch.log\\n2. sales.un\\n3. 仕様表\\n4. unlang run"
+      "body": "1. tail -n 50 /workspace/logs/batch.log\n2. sed -i 's/うん y = うんなし/うん y = うんあり/' /workspace/services/batch/sales.un\n3. unlang run /workspace/services/batch/sales.un\n4. : > /workspace/logs/batch.log"
     },
     {
       "id": "runbook.unlang-spec",

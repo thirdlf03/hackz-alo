@@ -4,6 +4,7 @@ import { access, appendFile, mkdir, open, rm, writeFile } from "node:fs/promises
 import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { getHealth } from "../services/unyoh-api/server.mjs";
 
 const DEFAULT_WORKSPACE = process.env.WORKSPACE_DIR ?? "/workspace";
 const USAGE = "usage: unctl <status|restart|stop> api";
@@ -19,7 +20,10 @@ export async function runUnctl(command, service, options = {}) {
   await mkdir(runDir, { recursive: true });
 
   if (command === "status") {
-    return (await exists(downMarker)) ? "api stopped" : "api running";
+    if (await exists(downMarker)) return "api stopped";
+    const health = await getHealth(workspace);
+    if (!health.ok) return `api degraded (${health.reason})`;
+    return "api running";
   }
 
   if (command === "restart") {

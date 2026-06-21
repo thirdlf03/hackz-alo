@@ -89,6 +89,6 @@ test("replayEventSummary formats session lifecycle labels", () => {
         payload: { result: "retired" }
       })
     ),
-    "リタイア"
+    "解雇！"
   );
 });

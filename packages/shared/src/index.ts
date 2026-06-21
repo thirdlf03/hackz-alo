@@ -5,3 +5,4 @@ export * from "./r2Keys.js";
 export * from "./recording.js";
 export * from "./gameClock.js";
 export * from "./endings.js";
+export * from "./recovery.js";

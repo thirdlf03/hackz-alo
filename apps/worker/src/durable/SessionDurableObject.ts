@@ -1,6 +1,7 @@
 import {
   createReplayEvent,
   replayEventSummary,
+  canDeclareRecovery,
   resolveEndingId,
   type AlertDefinition,
   type ApiResult,
@@ -188,13 +189,14 @@ export class SessionDurableObject implements DurableObject {
   private async resolve() {
     const session = await this.requireSession();
     const scenario = requireScenario(session.scenarioId);
+    const incidentStarted = canDeclareRecovery(scenario, session.triggeredIds);
     const checks: SuccessCheck[] = await Promise.all(
       scenario.successConditions.map(async (condition) => ({
         condition,
         ok: await evaluateSuccessCondition(this.env, session.sessionId, condition)
       }))
     );
-    const resolved = checks.every((check) => check.ok);
+    const resolved = incidentStarted && checks.every((check) => check.ok);
     const finished = await this.finishSession(session, resolved ? "resolved" : "failed", resolved ? "resolved" : "failed");
     const result = await this.emit(
       finished,

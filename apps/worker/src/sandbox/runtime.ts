@@ -86,7 +86,7 @@ export async function startScenarioSandbox(
 
 export async function fetchSessionMetrics(env: Bindings, sessionId: string): Promise<MetricsSnapshot | null> {
   const sandbox = getSessionSandbox(env, sessionId);
-  const script = [
+  const liveScript = [
     'fetch("http://127.0.0.1:8080/metrics")',
     ".then(async (response) => {",
     "  if (!response.ok) process.exit(1);",
@@ -94,10 +94,28 @@ export async function fetchSessionMetrics(env: Bindings, sessionId: string): Pro
     "})",
     ".catch(() => process.exit(1));"
   ].join("");
-  const result = await sandbox.exec(`node -e ${shellArg(script)}`);
-  if (!result.success || !result.stdout?.trim()) return null;
+  const liveResult = await sandbox.exec(`node -e ${shellArg(liveScript)}`);
+  if (liveResult.success && liveResult.stdout?.trim()) {
+    try {
+      return parseMetricsSnapshot(JSON.parse(liveResult.stdout) as Record<string, unknown>);
+    } catch {
+      // fall through to exporter probe
+    }
+  }
+
+  const fallbackScript = [
+    'import { readSystemMetrics, readServiceMetrics, readTrafficMetrics } from "/workspace/services/metrics/collector.mjs";',
+    "const [system, service, traffic] = await Promise.all([",
+    "  readSystemMetrics(),",
+    "  readServiceMetrics(),",
+    "  readTrafficMetrics()",
+    "]);",
+    'process.stdout.write(JSON.stringify({ at: Date.now(), ...system, ...service, ...traffic }));'
+  ].join("");
+  const fallbackResult = await sandbox.exec(`node -e ${shellArg(fallbackScript)}`);
+  if (!fallbackResult.success || !fallbackResult.stdout?.trim()) return null;
   try {
-    return parseMetricsSnapshot(JSON.parse(result.stdout) as Record<string, unknown>);
+    return parseMetricsSnapshot(JSON.parse(fallbackResult.stdout) as Record<string, unknown>);
   } catch {
     return null;
   }
@@ -265,6 +283,11 @@ export async function evaluateSuccessCondition(env: Bindings, sessionId: string,
     const result = await sandbox.exec(`test ! -f /workspace/run/${shellPathSegment(condition.processId)}.down`);
     return result.success;
   }
+  if (condition.type === "marker_absent") {
+    const markerPath = shellArg(normalizeWorkspaceMarkerPath(condition.path));
+    const result = await sandbox.exec(`test ! -e ${markerPath}`);
+    return result.success;
+  }
   if (condition.type === "disk_usage_below") {
     const script = `const {execFileSync}=require("child_process");const target=${JSON.stringify(condition.path)};let used=100;try{const out=execFileSync("df",["-P",target],{encoding:"utf8"});const line=out.trim().split("\\n")[1];used=Number(line.split(/\\s+/)[4].replace("%",""));}catch{}process.exit(used<${condition.valuePercent}?0:1)`;
     const result = await sandbox.exec(`node -e ${shellArg(script)}`);
@@ -334,6 +357,13 @@ function shellArg(value: string) {
 function shellPathSegment(value: string) {
   if (!/^[a-zA-Z0-9._-]+$/.test(value)) {
     throw new Error("invalid process id");
+  }
+  return value;
+}
+
+function normalizeWorkspaceMarkerPath(value: string) {
+  if (!value.startsWith("/workspace/") || value.includes("\0") || value.split("/").includes("..")) {
+    throw new Error("marker path must stay inside /workspace");
   }
   return value;
 }

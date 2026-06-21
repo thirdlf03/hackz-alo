@@ -3,7 +3,7 @@
   "version": 1,
   "title": "うんともすんとも言わないバッチ",
   "difficulty": "beginner",
-  "timeLimitMinutes": 12,
+  "timeLimitMinutes": 5,
   "service": {
     "name": "うん用 batch",
     "healthUrl": "http://localhost:8080/health"
@@ -60,7 +60,7 @@
     {
       "id": "runbook.unlang",
       "title": "うん言語バッチ調査",
-      "body": "sales-nightly 復旧手順\n\n1. ログ確認\ntail -n 50 /workspace/logs/batch.log\n→ sales-nightly: うんともすんとも が出ていたら うん言語 runtime error\n\n2. ソース確認\ncat /workspace/services/batch/sales.un\n→ うんわり の右辺が うんなし（0）だと 0 除算で失敗する\n\n3. 仕様確認\n右タブ「うん言語仕様表」を開く（拡大表示推奨）\n\n4. 修正\nvim /workspace/services/batch/sales.un\n→ うん y = うんなし を うん y = うんあり に直して :wq\n\nまたは\nsed -i 's/うん y = うんなし/うん y = うんあり/' /workspace/services/batch/sales.un\n\n5. 動作確認\nunlang run /workspace/services/batch/sales.un\n→ 数値が表示されれば OK。うんともすんとも なら未修正\n\n6. ログ片付け\ngrep -v うんともすんとも /workspace/logs/batch.log > /tmp/b.log && mv /tmp/b.log /workspace/logs/batch.log"
+      "body": "sales-nightly 復旧手順\n\n1. ログ確認\ntail -n 50 /workspace/logs/batch.log\n→ sales-nightly: うんともすんとも が出ていたら うん言語 runtime error\n\n2. ソース確認\ncat /workspace/services/batch/sales.un\n→ うんわり の右辺が うんなし（0）だと 0 除算で失敗する\n\n3. 仕様確認\n右タブ「うん言語仕様表」を開く（拡大表示推奨）\n\n4. 修正\nvim /workspace/services/batch/sales.un\n→ うん y = うんなし を うん y = うんあり に直して :wq\n\nまたは\nsed -i 's/うん y = うんなし/うん y = うんあり/' /workspace/services/batch/sales.un\n\n5. 動作確認\nunlang run /workspace/services/batch/sales.un\n→ 数値が表示されれば OK。うんともすんとも なら未修正\n\n6. ログ片付け\n: > /workspace/logs/batch.log\n→ 失敗行を消して resolve 条件を満たす"
     },
     {
       "id": "runbook.unlang-spec",

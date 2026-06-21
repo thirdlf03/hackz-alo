@@ -11,9 +11,11 @@ type Props = {
   replayId: string;
   sessionId: string;
   scenarioTitle: string;
+  onGoHome: () => void;
   onRetry: () => void;
   onOpenReplay: () => void;
   canOpenReplay: boolean;
+  isRetrying?: boolean;
 };
 
 type ReplayMeta = {
@@ -38,9 +40,11 @@ export function ResultPage({
   replayId,
   sessionId,
   scenarioTitle,
+  onGoHome,
   onRetry,
   onOpenReplay,
-  canOpenReplay
+  canOpenReplay,
+  isRetrying = false
 }: Props) {
   const [meta, setMeta] = useState<ReplayMeta>();
   const [events, setEvents] = useState<IndexedReplayEvent[]>([]);
@@ -57,10 +61,12 @@ export function ResultPage({
 
   const durationMs = meta?.video_duration_ms ?? meta?.duration_ms ?? 0;
   const durationLabel = formatDuration(durationMs);
-  const resultLabel = meta?.result === "resolved" ? "成功" : meta?.result === "retired" ? "リタイア" : "失敗";
+  const isDismissed = meta?.result !== "resolved";
+  const resultLabel = isDismissed ? "解雇！" : "成功";
   const endingLabel = meta?.ending_id ? formatEnding(meta.ending_id) : undefined;
   const resultTone = resolveResultTone(meta?.result, meta?.ending_id);
   const flavorText = buildFlavorText(meta?.result, meta?.ending_id, durationLabel);
+  const dismissalSubline = endingLabel ?? "処分確定";
 
   const stats = useMemo(() => ({
     alerts: events.filter((event) => event.type === "alert").length,
@@ -71,21 +77,42 @@ export function ResultPage({
   const highlights = useMemo(() => pickHighlights(events), [events]);
 
   return (
-    <section class="panel result-panel" aria-labelledby="result-heading">
-      <p class="eyebrow">Mission Report</p>
+    <section
+      class={`panel result-panel${isDismissed ? " result-panel-dismissed" : ""}`}
+      aria-labelledby="result-heading"
+    >
+      <p class={`eyebrow${isDismissed ? " eyebrow-dismissed" : ""}`}>{isDismissed ? "解雇通知" : "Mission Report"}</p>
       <h1 id="result-heading">{scenarioTitle}</h1>
       {error && <p class="app-error" role="alert">{error}</p>}
 
-      <div class="result-hero">
-        <p class={`result-badge result-badge-${resultTone}`}>{resultLabel}</p>
-        <p class="result-hero-meta">
-          {endingLabel ? <span>{endingLabel}</span> : null}
-          {endingLabel ? <span aria-hidden="true"> · </span> : null}
-          <span>{durationLabel}</span>
-        </p>
-        <p class="result-flavor">{flavorText}</p>
+      <div class={`result-hero${isDismissed ? " result-hero-dismissed" : ""}`}>
+        {isDismissed ? (
+          <>
+            <p class="result-stamp" role="status">{resultLabel}</p>
+            <p class="result-dismissal-subline">{dismissalSubline}</p>
+            <p class="result-flavor result-flavor-dismissed">{flavorText}</p>
+            <p class="result-dismissal-notice">
+              人事部に録画を送付済み
+              <span aria-hidden="true"> · </span>
+              <span>{durationLabel}</span>
+            </p>
+          </>
+        ) : (
+          <>
+            <p class={`result-badge result-badge-${resultTone}`}>{resultLabel}</p>
+            <p class="result-hero-meta">
+              {endingLabel ? <span>{endingLabel}</span> : null}
+              {endingLabel ? <span aria-hidden="true"> · </span> : null}
+              <span>{durationLabel}</span>
+            </p>
+            <p class="result-flavor">{flavorText}</p>
+          </>
+        )}
 
-        <dl class="result-stats" aria-label="対応サマリー">
+        <dl
+          class={`result-stats${isDismissed ? " result-stats-dismissed" : ""}`}
+          aria-label={isDismissed ? "解雇理由の記録" : "対応サマリー"}
+        >
           <div>
             <dt>アラート</dt>
             <dd>{stats.alerts}</dd>
@@ -121,7 +148,10 @@ export function ResultPage({
       </p>
 
       <div class="result-actions">
-        <button type="button" class="result-action-secondary" onClick={onRetry}>再挑戦</button>
+        <button type="button" class="result-action-secondary" onClick={onGoHome}>ホームに戻る</button>
+        <button type="button" class="result-action-secondary" onClick={onRetry} disabled={isRetrying}>
+          {isRetrying ? "開始中…" : "再挑戦"}
+        </button>
         <button
           type="button"
           class="result-action-primary"
@@ -167,8 +197,16 @@ function pickHighlights(events: IndexedReplayEvent[]): Highlight[] {
 
 function resolveResultTone(result: string | null | undefined, endingId: string | null | undefined): ResultTone {
   if (result === "resolved" || endingId === "clear-shift") return "success";
-  if (result === "retired" || endingId === "early-exit") return "warning";
-  if (result === "failed" || endingId === "overtime" || endingId === "aborted") return "danger";
+  if (
+    result === "retired" ||
+    result === "failed" ||
+    result === "timeout" ||
+    endingId === "early-exit" ||
+    endingId === "overtime" ||
+    endingId === "aborted"
+  ) {
+    return "danger";
+  }
   return "neutral";
 }
 
@@ -178,18 +216,18 @@ function buildFlavorText(
   durationLabel: string
 ) {
   if (endingId === "clear-shift" || result === "resolved") {
-    return `${durationLabel}で対応完了。お疲れ様でした。`;
-  }
-  if (endingId === "overtime" || result === "failed" || result === "timeout") {
-    return "対応は終わらなかった。明日また戦う。";
+    return `${durationLabel}で復旧完了。今回は解雇されなかった。`;
   }
   if (endingId === "early-exit" || result === "retired") {
-    return "途中で切り上げた。また挑戦できる。";
+    return "途中で手を抜いた。再雇用の話はない。荷物をまとめて出て行け。";
+  }
+  if (endingId === "overtime" || result === "failed" || result === "timeout") {
+    return "朝までに復旧できなかった。明日の朝は来ない。会社の鍵は返せ。";
   }
   if (endingId === "aborted" || result === "aborted") {
-    return "セッションが中断された。";
+    return "セッションが中断された。結果は解雇。言い訳は聞かない。";
   }
-  return "記録を残した。Replay で振り返れる。";
+  return "記録は残っている。人事部が全部見た。";
 }
 
 function formatEnding(endingId: string) {
@@ -197,9 +235,9 @@ function formatEnding(endingId: string) {
     case "clear-shift":
       return "無事退勤";
     case "overtime":
-      return "残業確定";
+      return "朝まで復旧できず";
     case "early-exit":
-      return "途中撤退";
+      return "途中で手を抜いた";
     case "aborted":
       return "強制終了";
     default:

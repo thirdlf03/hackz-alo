@@ -570,7 +570,7 @@ export class CanvasRenderer {
   }
 
   private drawMetricsPanel(left: GameRenderState["monitors"]["left"]) {
-    const { metrics, metricsSource } = left;
+    const { metrics, metricsHistory, metricsSource } = left;
     const health = summarizeMetricsHealth(metrics);
     const panelWidth = 496;
     const cardHeight = 64;
@@ -579,16 +579,16 @@ export class CanvasRenderer {
 
     this.drawMetricsHealthBanner(health, metricsSource, panelWidth);
 
-    const sections: Array<{
-      title: string;
-      cards: Array<{
-        label: string;
-        value: number;
-        suffix: string;
-        max: number;
-        color: string;
-      }>;
-    }> = [
+    type MetricCardSpec = {
+      label: string;
+      value: number;
+      suffix: string;
+      max: number;
+      color: string;
+      pickHistory: (snapshot: MetricsSnapshot) => number;
+    };
+
+    const sections: Array<{ title: string; cards: MetricCardSpec[] }> = [
       {
         title: "RESOURCES",
         cards: [
@@ -597,21 +597,24 @@ export class CanvasRenderer {
             value: metrics.cpu,
             suffix: "%",
             max: 100,
-            color: toneColor(metricTone(metrics.cpu, 70, 85))
+            color: toneColor(metricTone(metrics.cpu, 70, 85)),
+            pickHistory: (snapshot) => snapshot.cpu
           },
           {
             label: "Memory",
             value: metrics.memory,
             suffix: "%",
             max: 100,
-            color: toneColor(metricTone(metrics.memory, 75, 90))
+            color: toneColor(metricTone(metrics.memory, 75, 90)),
+            pickHistory: (snapshot) => snapshot.memory
           },
           {
             label: "Disk",
             value: metrics.disk,
             suffix: "%",
             max: 100,
-            color: toneColor(metricTone(metrics.disk, 80, 92))
+            color: toneColor(metricTone(metrics.disk, 80, 92)),
+            pickHistory: (snapshot) => snapshot.disk
           }
         ]
       },
@@ -623,21 +626,24 @@ export class CanvasRenderer {
             value: Math.round(metrics.http5xxRate * 100),
             suffix: "%",
             max: 100,
-            color: toneColor(metrics.http5xxRate > 0 ? "critical" : "healthy")
+            color: toneColor(metrics.http5xxRate > 0 ? "critical" : "healthy"),
+            pickHistory: (snapshot) => Math.round(snapshot.http5xxRate * 100)
           },
           {
             label: "Latency p95",
             value: metrics.latencyP95Ms,
             suffix: "ms",
             max: 2000,
-            color: toneColor(metricTone(metrics.latencyP95Ms, 800, 1500))
+            color: toneColor(metricTone(metrics.latencyP95Ms, 800, 1500)),
+            pickHistory: (snapshot) => snapshot.latencyP95Ms
           },
           {
             label: "RPS",
             value: metrics.rps,
             suffix: "",
             max: 80,
-            color: palette.accentPurple
+            color: palette.accentPurple,
+            pickHistory: (snapshot) => snapshot.rps
           }
         ]
       },
@@ -649,14 +655,16 @@ export class CanvasRenderer {
             value: metrics.dbConnections,
             suffix: "",
             max: 40,
-            color: palette.accentPink
+            color: palette.accentPink,
+            pickHistory: (snapshot) => snapshot.dbConnections
           },
           {
             label: "Queue",
             value: metrics.queueDepth,
             suffix: "",
             max: 40,
-            color: toneColor(metricTone(metrics.queueDepth, 12, 24))
+            color: toneColor(metricTone(metrics.queueDepth, 12, 24)),
+            pickHistory: (snapshot) => snapshot.queueDepth
           }
         ]
       }
@@ -674,7 +682,15 @@ export class CanvasRenderer {
         const row = Math.floor(index / 2);
         const cardX = column * 252;
         const cardY = y + row * rowStride;
-        this.drawMetricCard(cardX, cardY, 236, cardHeight, card);
+        const historyValues = metricsHistory.map(card.pickHistory);
+        this.drawMetricCard(cardX, cardY, 236, cardHeight, {
+          label: card.label,
+          value: card.value,
+          suffix: card.suffix,
+          max: card.max,
+          color: card.color,
+          historyValues
+        });
       });
 
       const rows = Math.ceil(section.cards.length / 2);
@@ -742,6 +758,7 @@ export class CanvasRenderer {
       suffix: string;
       max: number;
       color: string;
+      historyValues: number[];
     }
   ) {
     this.ctx.fillStyle = palette.bgPanel;
@@ -759,14 +776,16 @@ export class CanvasRenderer {
     this.ctx.font = monoFont(20, "bold");
     this.ctx.fillText(`${card.value}${card.suffix}`, x + 10, y + 38);
 
-    const barX = x + 10;
-    const barY = y + height - 18;
-    const barWidth = width - 20;
-    const ratio = Math.max(0, Math.min(1, card.value / card.max));
-    this.ctx.fillStyle = palette.bgCard;
-    this.ctx.fillRect(barX, barY, barWidth, 6);
-    this.ctx.fillStyle = card.color;
-    this.ctx.fillRect(barX, barY, barWidth * ratio, 6);
+    drawSparkline(
+      this.ctx,
+      x + 10,
+      y + height - 22,
+      width - 20,
+      14,
+      card.historyValues.length > 0 ? card.historyValues : [card.value],
+      card.color,
+      card.max
+    );
   }
 
   private drawCenterPanel(state: GameRenderState, contentWidth = terminalContentWidth) {
@@ -1461,6 +1480,86 @@ function shortenPath(path: string, maxChars: number) {
 
 function containsCanvasPoint(rect: { x: number; y: number; width: number; height: number }, x: number, y: number) {
   return x >= rect.x && x <= rect.x + rect.width && y >= rect.y && y <= rect.y + rect.height;
+}
+
+function drawSparkline(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  values: number[],
+  color: string,
+  scaleMax: number
+) {
+  if (width <= 0 || height <= 0 || values.length === 0) return;
+
+  const peak = Math.max(scaleMax, ...values, 1);
+  const points = values.map((value, index) => ({
+    x: values.length === 1 ? x + width / 2 : x + (index / (values.length - 1)) * width,
+    y: y + height - (Math.max(0, value) / peak) * (height - 2) - 1
+  }));
+  const first = points[0];
+  const last = points[points.length - 1];
+  if (!first || !last) return;
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(x, y, width, height);
+  ctx.clip();
+
+  ctx.fillStyle = palette.bgCard;
+  ctx.fillRect(x, y, width, height);
+
+  if (points.length === 1) {
+    ctx.strokeStyle = withAlpha(color, 0.35);
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(x, first.y);
+    ctx.lineTo(x + width, first.y);
+    ctx.stroke();
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(first.x, first.y, 2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+    return;
+  }
+
+  ctx.beginPath();
+  ctx.moveTo(first.x, y + height);
+  for (const point of points) ctx.lineTo(point.x, point.y);
+  ctx.lineTo(last.x, y + height);
+  ctx.closePath();
+  ctx.fillStyle = withAlpha(color, 0.18);
+  ctx.fill();
+
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1.5;
+  ctx.lineJoin = "round";
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(first.x, first.y);
+  for (let index = 1; index < points.length; index += 1) {
+    const point = points[index];
+    if (!point) continue;
+    ctx.lineTo(point.x, point.y);
+  }
+  ctx.stroke();
+  ctx.restore();
+}
+
+function withAlpha(color: string, alpha: number) {
+  if (color.startsWith("#") && (color.length === 7 || color.length === 4)) {
+    const hex = color.length === 4
+      ? `#${color[1]}${color[1]}${color[2]}${color[2]}${color[3]}${color[3]}`
+      : color;
+    const r = Number.parseInt(hex.slice(1, 3), 16);
+    const g = Number.parseInt(hex.slice(3, 5), 16);
+    const b = Number.parseInt(hex.slice(5, 7), 16);
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+  }
+  return color;
 }
 
 function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, radius: number) {
