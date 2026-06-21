@@ -19,7 +19,7 @@ crons = ["*/10 * * * *"]
 class_name = "Sandbox"
 image = "../../sandbox/container/Dockerfile"
 instance_type = "lite"
-max_instances = 5
+max_instances = 100
 
 [[d1_databases]]
 binding = "DB"

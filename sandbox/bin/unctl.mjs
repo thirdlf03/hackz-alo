@@ -7,6 +7,11 @@ import { fileURLToPath } from "node:url";
 import { getHealth } from "../services/unyoh-api/server.mjs";
 
 const DEFAULT_WORKSPACE = process.env.WORKSPACE_DIR ?? "/workspace";
+const SANDBOX_CONTROL_URL = process.env.SANDBOX_CONTROL_URL ?? "http://127.0.0.1:3000";
+const API_PROCESS_ID = "api";
+const API_PORT = 8080;
+const API_START_COMMAND = `PORT=${API_PORT} node /workspace/services/unyoh-api/server.mjs`;
+const PORT_WAIT_MS = 30_000;
 const USAGE = "usage: unctl <status|restart|stop> api";
 
 export async function runUnctl(command, service, options = {}) {
@@ -61,23 +66,62 @@ async function appendAppLog(workspace, line) {
 }
 
 async function ensureApiProcess(workspace) {
-  if (await canConnect(8080)) return;
+  if (await canConnect(API_PORT)) return;
 
+  const restartedViaControlPlane = await restartViaSandboxControlPlane(workspace);
+  if (!restartedViaControlPlane) {
+    await restartViaDetachedSpawn(workspace);
+  }
+
+  if (!(await waitForPort(API_PORT, PORT_WAIT_MS))) {
+    throw new Error(`api restart requested but port ${API_PORT} did not open`);
+  }
+}
+
+async function restartViaSandboxControlPlane(workspace) {
+  const baseUrl = SANDBOX_CONTROL_URL.replace(/\/$/, "");
+  try {
+    await fetch(`${baseUrl}/api/process/${API_PROCESS_ID}`, { method: "DELETE" });
+  } catch {
+    return false;
+  }
+
+  try {
+    const response = await fetch(`${baseUrl}/api/process/start`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        command: API_START_COMMAND,
+        processId: API_PROCESS_ID,
+        cwd: workspace,
+        autoCleanup: false,
+        env: {
+          PORT: String(API_PORT),
+          WORKSPACE_DIR: workspace
+        }
+      })
+    });
+    if (!response.ok) return false;
+    const payload = await response.json();
+    return payload.success !== false;
+  } catch {
+    return false;
+  }
+}
+
+async function restartViaDetachedSpawn(workspace) {
   await mkdir(path.join(workspace, "logs"), { recursive: true });
   const stdout = await open(path.join(workspace, "logs", "unyoh-api.out.log"), "a");
   const stderr = await open(path.join(workspace, "logs", "unyoh-api.err.log"), "a");
   const child = spawn("node", [path.join(workspace, "services", "unyoh-api", "server.mjs")], {
     cwd: workspace,
     detached: true,
-    env: { ...process.env, PORT: "8080", WORKSPACE_DIR: workspace },
+    env: { ...process.env, PORT: String(API_PORT), WORKSPACE_DIR: workspace },
     stdio: ["ignore", stdout.fd, stderr.fd]
   });
   child.unref();
   stdout.close().catch(() => {});
   stderr.close().catch(() => {});
-  if (!(await waitForPort(8080, 3000))) {
-    throw new Error("api restart requested but port 8080 did not open");
-  }
 }
 
 function canConnect(port) {
