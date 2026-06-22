@@ -1,5 +1,10 @@
 import {useEffect, useRef} from 'preact/hooks';
 import type {GameRenderState} from '@incident/shared';
+import {
+  INCIDENT_ATTRS,
+  INCIDENT_SPAN_NAMES,
+  markJourney,
+} from '@incident/observability/browser';
 import type {ApiClientSurface} from '../api/client.js';
 import {CanvasRecorder} from '../game/recording/recorder.js';
 import {RecordingFinalizer} from '../game/recording/finalizer.js';
@@ -84,6 +89,10 @@ export function useCanvasRecording(options: {
         await finalizer.append(chunk.blob);
         try {
           await options.api.uploadChunk(session.replayId, chunk);
+          markJourney(INCIDENT_SPAN_NAMES.journeyRecordingChunkUploaded, {
+            [INCIDENT_ATTRS.replayId]: session.replayId,
+            chunk_size: chunk.blob.size,
+          });
         } catch {
           await queue.enqueueChunk({
             replayId: session.replayId,

@@ -1,6 +1,11 @@
 import {useEffect, useRef} from 'preact/hooks';
 import type {GameRenderState, ScenarioDefinition} from '@incident/shared';
 import {
+  INCIDENT_ATTRS,
+  INCIDENT_SPAN_NAMES,
+  markJourney,
+} from '@incident/observability/browser';
+import {
   advanceGameState,
   createInitialGameState,
   submitPlayerSlackMessage,
@@ -43,6 +48,7 @@ export function useSessionRuntime(options: {
   saveRecording: boolean;
   recordingConsent: boolean;
   isStarting: boolean;
+  sandboxReady: boolean;
   deepLinkReplayId: string | undefined;
   deepLinkValidated: boolean;
   recordingRef: {current: SessionRecordingBridge | undefined};
@@ -68,6 +74,7 @@ export function useSessionRuntime(options: {
   ) => void;
   setAppError: (message: string | undefined) => void;
   setIsStarting: (value: boolean) => void;
+  setSandboxReady: (value: boolean) => void;
   setHasRecordingConsent: (value: boolean) => void;
   setDeepLinkReplayId: (value: string | undefined) => void;
   setDeepLinkValidated: (value: boolean) => void;
@@ -88,6 +95,7 @@ export function useSessionRuntime(options: {
   const finishingRef = useRef(false);
   const tabBeaconSentRef = useRef(false);
   const liveReplayEventIdsRef = useRef(new Set<string>());
+  const sandboxPrepareSessionIdRef = useRef<string | undefined>(undefined);
 
   const {
     api,
@@ -99,6 +107,7 @@ export function useSessionRuntime(options: {
     saveRecording,
     recordingConsent,
     isStarting,
+    sandboxReady,
     deepLinkReplayId,
     deepLinkValidated,
     recordingRef,
@@ -110,6 +119,7 @@ export function useSessionRuntime(options: {
     setTimeline,
     setAppError,
     setIsStarting,
+    setSandboxReady,
     setHasRecordingConsent,
     setDeepLinkReplayId,
     setDeepLinkValidated,
@@ -291,9 +301,15 @@ export function useSessionRuntime(options: {
     setDeepLinkReplayId(undefined);
     setDeepLinkValidated(true);
     setIsStarting(true);
+    setSandboxReady(false);
     try {
       terminalBridgeRef.current?.destroyTerminal();
       const created = await api.createSession({scenarioId});
+      markJourney(INCIDENT_SPAN_NAMES.journeySessionCreated, {
+        [INCIDENT_ATTRS.sessionId]: created.sessionId,
+        [INCIDENT_ATTRS.replayId]: created.replayId,
+        [INCIDENT_ATTRS.scenarioId]: created.scenario.id,
+      });
       api.resetEventSequence();
       eventEmitterRef.current?.reset();
       liveReplayEventIdsRef.current.clear();
@@ -315,7 +331,25 @@ export function useSessionRuntime(options: {
         )
       );
       setScreen('briefing');
+      markJourney(INCIDENT_SPAN_NAMES.journeyBriefingReady, {
+        [INCIDENT_ATTRS.sessionId]: created.sessionId,
+        [INCIDENT_ATTRS.scenarioId]: created.scenario.id,
+      });
+      sandboxPrepareSessionIdRef.current = created.sessionId;
+      void api
+        .prepareSession(created.sessionId)
+        .then(() => {
+          if (sandboxPrepareSessionIdRef.current === created.sessionId) {
+            setSandboxReady(true);
+          }
+        })
+        .catch((error: unknown) => {
+          if (sandboxPrepareSessionIdRef.current !== created.sessionId) return;
+          setSandboxReady(false);
+          setAppError(toErrorMessage(error));
+        });
     } catch (error) {
+      sandboxPrepareSessionIdRef.current = undefined;
       setAppError(toErrorMessage(error));
     } finally {
       setIsStarting(false);
@@ -323,7 +357,15 @@ export function useSessionRuntime(options: {
   }
 
   async function startPlay() {
-    if (!session || !scenario || isStarting || !recordingConsent) return;
+    if (
+      !session ||
+      !scenario ||
+      isStarting ||
+      !recordingConsent ||
+      !sandboxReady
+    ) {
+      return;
+    }
     localStorage.setItem(CONSENT_KEY, '1');
     localStorage.setItem(SAVE_RECORDING_KEY, saveRecording ? '1' : '0');
     setHasRecordingConsent(true);
@@ -331,6 +373,9 @@ export function useSessionRuntime(options: {
     try {
       await api.startSession(session.sessionId);
       await terminalBridgeRef.current?.attachTerminalSession(session);
+      markJourney(INCIDENT_SPAN_NAMES.journeyTerminalReady, {
+        [INCIDENT_ATTRS.sessionId]: session.sessionId,
+      });
       elapsedMsRef.current = 0;
       lastTickAtRef.current = performance.now();
       recordingRef.current?.resetRecordingClock();
@@ -350,6 +395,10 @@ export function useSessionRuntime(options: {
         )
       );
       setScreen('play');
+      markJourney(INCIDENT_SPAN_NAMES.journeyGameStarted, {
+        [INCIDENT_ATTRS.sessionId]: session.sessionId,
+        [INCIDENT_ATTRS.scenarioId]: scenario.id,
+      });
     } catch (error) {
       setAppError(toErrorMessage(error));
     } finally {

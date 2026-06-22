@@ -5,5 +5,7 @@ dist/
 coverage/
 test-results/
 playwright-report/
+.perf/
+perf-reports/
 *.log
 .DS_Store

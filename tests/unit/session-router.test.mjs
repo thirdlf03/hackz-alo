@@ -10,6 +10,7 @@ const {dispatchSessionRoute, matchSessionRoute} = await tsImport(
 function stubHandlers(overrides = {}) {
   const routes = [
     'bootstrap',
+    'prepare',
     'start',
     'resolve',
     'retire',
@@ -44,6 +45,12 @@ test('matchSessionRoute maps durable object HTTP actions', () => {
       new Request('https://do/start', {method: 'POST', body: '{}'})
     ),
     'start'
+  );
+  assert.equal(
+    matchSessionRoute(
+      new Request('https://do/prepare', {method: 'POST', body: '{}'})
+    ),
+    'prepare'
   );
   assert.equal(
     matchSessionRoute(new Request('https://do/events', {method: 'GET'})),

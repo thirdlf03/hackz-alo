@@ -68,6 +68,9 @@ importers:
       '@cloudflare/sandbox':
         specifier: latest
         version: 0.12.1(@xterm/xterm@6.0.0)
+      '@incident/observability':
+        specifier: workspace:*
+        version: link:../../packages/observability
       '@incident/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -92,6 +95,9 @@ importers:
       '@cloudflare/sandbox':
         specifier: latest
         version: 0.12.1(@xterm/xterm@6.0.0)
+      '@incident/observability':
+        specifier: workspace:*
+        version: link:../../packages/observability
       '@incident/scenarios':
         specifier: workspace:*
         version: link:../../packages/scenarios
@@ -101,6 +107,8 @@ importers:
       hono:
         specifier: latest
         version: 4.12.26
+
+  packages/observability: {}
 
   packages/scenarios:
     dependencies:

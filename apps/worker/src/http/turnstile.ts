@@ -18,7 +18,7 @@ export async function verifyTurnstileToken(
     response: token,
   });
   const trimmedIp = remoteIp?.trim();
-  if (trimmedIp && trimmedIp.length > 0) {
+  if (trimmedIp && trimmedIp.length > 0 && trimmedIp !== 'unknown') {
     body.set('remoteip', trimmedIp);
   }
   const response = await fetch(

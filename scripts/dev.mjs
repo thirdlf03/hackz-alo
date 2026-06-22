@@ -8,12 +8,24 @@ const env = {
     ? `${dockerBin}:${process.env.PATH ?? ""}`
     : process.env.PATH
 };
+const workerArgs = ["--filter", "@incident/worker"];
+if (env.INCIDENT_PERF || env.INCIDENT_DISABLE_TURNSTILE === "1") {
+  workerArgs.push("exec", "wrangler", "dev");
+  if (env.INCIDENT_PERF) {
+    workerArgs.push("--var", `INCIDENT_PERF:${env.INCIDENT_PERF}`);
+  }
+  if (env.INCIDENT_DISABLE_TURNSTILE === "1") {
+    workerArgs.push("--var", "TURNSTILE_SECRET_KEY:");
+  }
+} else {
+  workerArgs.push("run", "dev");
+}
 
 const processes = [
   {
     name: "worker",
     command: "pnpm",
-    args: ["--filter", "@incident/worker", "run", "dev"]
+    args: workerArgs
   },
   {
     name: "web",

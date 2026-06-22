@@ -1,6 +1,7 @@
 import {proxyToSandbox} from '@cloudflare/sandbox';
 import {Hono} from 'hono';
 import {SessionDurableObject} from './durable/SessionDurableObject.js';
+import {perfMiddleware} from '@incident/observability/worker';
 import {logStructured} from './http/requestLog.js';
 import {
   securityHeadersMiddleware,
@@ -23,6 +24,7 @@ export {Sandbox} from '@cloudflare/sandbox';
 const app = new Hono<{Bindings: Bindings}>();
 
 app.use('*', requestIdMiddleware());
+app.use('*', perfMiddleware());
 app.use('*', securityHeadersMiddleware());
 
 app.post('/api/dev/terminal-debug', async (c) => {

@@ -61,15 +61,17 @@ test('ScenarioApi and SessionApi build expected routes', async () => {
 
   await scenarios.listScenarios();
   await scenarios.getScenario('demo/tutorial');
+  await sessions.prepareSession('session-id');
   await sessions.startSession('session-id');
   await sessions.readSessionFile('session-1', '/workspace/app.un');
   await sessions.writeSessionFile('session-1', '/workspace/app.un', 'うん');
 
   assert.deepEqual(http.calls[0], {method: 'GET', path: '/api/scenarios'});
   assert.equal(http.calls[1]?.path, '/api/scenarios/demo%2Ftutorial');
-  assert.equal(http.calls[2]?.path, '/api/sessions/session-id/start');
-  assert.match(http.calls[3]?.path, /file\?path=%2Fworkspace%2Fapp\.un$/);
-  assert.equal(http.calls[4]?.path, '/api/sessions/session-1/file');
+  assert.equal(http.calls[2]?.path, '/api/sessions/session-id/prepare');
+  assert.equal(http.calls[3]?.path, '/api/sessions/session-id/start');
+  assert.match(http.calls[4]?.path, /file\?path=%2Fworkspace%2Fapp\.un$/);
+  assert.equal(http.calls[5]?.path, '/api/sessions/session-1/file');
 });
 
 test('SessionApi covers session lifecycle, editor routes, and SSE handlers', async () => {

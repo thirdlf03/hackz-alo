@@ -29,6 +29,16 @@ test('applySecurityHeaders sets production security headers', () => {
   );
 });
 
+test('withSecurityHeaders passes through WebSocket upgrade responses', () => {
+  const source = {
+    status: 101,
+    webSocket: {},
+    headers: new Headers(),
+  };
+  const secured = withSecurityHeaders(source);
+  assert.equal(secured, source);
+});
+
 test('withSecurityHeaders clones immutable DO response headers', () => {
   const source = new Response('{"ok":true}', {
     status: 200,

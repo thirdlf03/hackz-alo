@@ -6,6 +6,8 @@ const {HttpClient} = await tsImport(
   '../../apps/web/src/api/httpClient.ts',
   import.meta.url
 );
+const {initBrowserPerf, resetBrowserPerfForTests, snapshotBrowserPerf} =
+  await tsImport('@incident/observability/browser', import.meta.url);
 
 function jsonResponse(payload, status = 200) {
   return new Response(JSON.stringify(payload), {
@@ -80,4 +82,24 @@ test('HttpClient.fetch delegates to global fetch', async () => {
   const http = new HttpClient();
   const response = await http.fetch('/raw');
   assert.equal(response.status, 200);
+});
+
+test('HttpClient injects traceparent when browser perf is enabled', async () => {
+  resetBrowserPerfForTests();
+  initBrowserPerf({enabled: true, exporter: 'memory'});
+  let traceparent = '';
+  globalThis.fetch = async (_path, init) => {
+    traceparent = new Headers(init?.headers).get('traceparent') ?? '';
+    return jsonResponse({ok: true, data: {ok: true}});
+  };
+
+  const http = new HttpClient();
+  await http.get('/api/perf-check');
+
+  assert.match(traceparent, /^00-[0-9a-f]{32}-[0-9a-f]{16}-01$/);
+  assert.equal(
+    snapshotBrowserPerf().spans.at(-1)?.name,
+    'incident.app.api.request'
+  );
+  resetBrowserPerfForTests();
 });

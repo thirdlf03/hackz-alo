@@ -1,4 +1,8 @@
 import {useEffect} from 'preact/hooks';
+import {
+  INCIDENT_SPAN_NAMES,
+  markJourney,
+} from '@incident/observability/browser';
 import {ReplayEventEmitter} from '../game/events/emitReplayEvent.js';
 import {toErrorMessage} from './appUtils.js';
 import type {SessionRuntimeBootstrapOptions} from './sessionRuntimeTypes.js';
@@ -20,7 +24,12 @@ export function useSessionBootstrap(options: SessionRuntimeBootstrapOptions) {
   useEffect(() => {
     api
       .listScenarios()
-      .then(setScenarios)
+      .then((items) => {
+        setScenarios(items);
+        markJourney(INCIDENT_SPAN_NAMES.journeyScenariosLoaded, {
+          scenario_count: items.length,
+        });
+      })
       .catch((error: unknown) => {
         setAppError(toErrorMessage(error));
       });

@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@cloudflare/sandbox": "latest",
+    "@incident/observability": "workspace:*",
     "@incident/scenarios": "workspace:*",
     "@incident/shared": "workspace:*",
     "hono": "latest"

@@ -1,5 +1,6 @@
 export type SessionRouteName =
   | 'bootstrap'
+  | 'prepare'
   | 'start'
   | 'resolve'
   | 'retire'
@@ -22,6 +23,7 @@ export type SessionRouteName =
 const routeTable: Record<string, Partial<Record<string, SessionRouteName>>> = {
   POST: {
     bootstrap: 'bootstrap',
+    prepare: 'prepare',
     start: 'start',
     resolve: 'resolve',
     retire: 'retire',

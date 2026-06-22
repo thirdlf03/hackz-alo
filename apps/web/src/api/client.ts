@@ -61,6 +61,7 @@ export interface ApiClientSurface
     >,
     Pick<
       SessionApi,
+      | 'prepareSession'
       | 'startSession'
       | 'deleteSession'
       | 'getSessionClock'
@@ -125,6 +126,7 @@ export class ApiClient {
       'addReplayComment',
     ]);
     bindApiMethods(this, this.sessions, [
+      'prepareSession',
       'startSession',
       'deleteSession',
       'getSessionClock',

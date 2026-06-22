@@ -21,6 +21,10 @@ export function applySecurityHeaders(headers: Headers) {
 }
 
 export function withSecurityHeaders(response: Response) {
+  // WebSocket upgrades return 101; cloning throws outside 200–599 in Workers.
+  if (response.status === 101 || response.webSocket) {
+    return response;
+  }
   const headers = new Headers(response.headers);
   applySecurityHeaders(headers);
   return new Response(response.body, {

@@ -14,6 +14,7 @@ import {
   type Screen,
   type ScenarioSummary,
 } from './appTypes.js';
+import {PerfOverlay} from './PerfOverlay.js';
 
 export type {FinishMode, ScenarioSummary, Screen} from './appTypes.js';
 
@@ -214,6 +215,7 @@ export function ScenarioListScreen(props: {
 export function BriefingScreen(props: {
   scenario: ScenarioDefinition;
   isStarting: boolean;
+  sandboxReady: boolean;
   recordingConsent: boolean;
   saveRecording: boolean;
   onBack: () => void;
@@ -268,10 +270,16 @@ export function BriefingScreen(props: {
       <button
         type='button'
         onClick={props.onStartPlay}
-        disabled={props.isStarting || !props.recordingConsent}
+        disabled={
+          props.isStarting || !props.sandboxReady || !props.recordingConsent
+        }
         aria-describedby='briefing-consent-note'
       >
-        {props.isStarting ? '開始中…' : '開始'}
+        {props.isStarting
+          ? '開始中…'
+          : props.sandboxReady
+            ? '開始'
+            : '環境準備中…'}
       </button>
     </section>
   );
@@ -348,19 +356,22 @@ export function PlayScreen(props: {
           }}
         />
       )}
-      <canvas
-        ref={props.canvasRef}
-        width='1920'
-        height='1080'
-        aria-label='録画対象のゲーム画面。ターミナル入力はキーボードで操作できます。'
-        aria-describedby='canvas-play-hint'
-        tabIndex={0}
-        onClick={props.onCanvasClick}
-        onMouseMove={props.onCanvasMove}
-        onWheel={props.onCanvasWheel}
-        onKeyDown={props.onTerminalKey}
-        onPaste={props.onCanvasPaste}
-      />
+      <div class='canvas-stage'>
+        <canvas
+          ref={props.canvasRef}
+          width='1920'
+          height='1080'
+          aria-label='録画対象のゲーム画面。ターミナル入力はキーボードで操作できます。'
+          aria-describedby='canvas-play-hint'
+          tabIndex={0}
+          onClick={props.onCanvasClick}
+          onMouseMove={props.onCanvasMove}
+          onWheel={props.onCanvasWheel}
+          onKeyDown={props.onTerminalKey}
+          onPaste={props.onCanvasPaste}
+        />
+        <PerfOverlay />
+      </div>
       <p id='canvas-play-hint' class='visually-hidden'>
         ターミナルにフォーカスしてキーボードでコマンドを入力できます。画面上のボタンはマウスで操作します。
       </p>

@@ -1,4 +1,5 @@
 import {useEffect} from 'preact/hooks';
+import {recordGameTick} from '@incident/observability/browser';
 import {advanceGameState, decayWorldOverlays} from '../game/state/gameState.js';
 import type {SessionRuntimeBindings} from './sessionRuntimeTypes.js';
 
@@ -9,6 +10,7 @@ export function useSessionGameLoop(bindings: SessionRuntimeBindings) {
   useEffect(() => {
     if (screen !== 'play' || !session) return;
     const timer = window.setInterval(() => {
+      const tickStartedAt = performance.now();
       if (refs.finishingRef.current || document.visibilityState === 'hidden') {
         return;
       }
@@ -36,6 +38,9 @@ export function useSessionGameLoop(bindings: SessionRuntimeBindings) {
       refs.gameStateRef.current = next;
       setGameState(next);
       if (elapsedMs >= next.clock.timeLimitMs) void endSession('timeout');
+      recordGameTick(performance.now() - tickStartedAt, {
+        elapsed_ms: Math.round(elapsedMs),
+      });
     }, 500);
     return () => {
       window.clearInterval(timer);

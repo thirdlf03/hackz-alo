@@ -62,3 +62,27 @@ jobs:
             playwright-report/
             test-results/
           retention-days: 7
+
+  perf:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run build:scenarios
+      - run: pnpm run perf:bench
+      - run: pnpm run perf:report
+      - run: pnpm run perf:compare
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: perf-reports
+          path: |
+            perf-reports/
+            .perf/
+          retention-days: 7

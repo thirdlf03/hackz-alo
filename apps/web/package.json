@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@cloudflare/sandbox": "latest",
+    "@incident/observability": "workspace:*",
     "@incident/shared": "workspace:*",
     "@preact/preset-vite": "latest",
     "@xterm/xterm": "latest",

@@ -69,6 +69,14 @@ export class SessionApi {
     );
   }
 
+  prepareSession(sessionId: string) {
+    return this.http.post<{
+      prepared: boolean;
+      reused?: boolean;
+      status?: SessionStatus;
+    }>(`/api/sessions/${encodeURIComponent(sessionId)}/prepare`, {});
+  }
+
   deleteSession(sessionId: string) {
     return this.http.request(`/api/sessions/${encodeURIComponent(sessionId)}`, {
       method: 'DELETE',

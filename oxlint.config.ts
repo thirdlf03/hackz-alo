@@ -39,6 +39,7 @@ export default defineConfig({
     'sandbox/**',
     'tests/**',
     'playwright.config.ts',
+    'playwright.perf.config.ts',
     'packages/scenarios/data/**',
   ],
   overrides: [

@@ -21,6 +21,26 @@ test('verifyTurnstileToken rejects missing token when secret is set', async () =
   assert.equal(accepted, false);
 });
 
+test('verifyTurnstileToken omits remoteip when client ip is unknown', async () => {
+  const calls = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    calls.push({url, init});
+    return new Response(JSON.stringify({success: true}), {status: 200});
+  };
+  try {
+    await verifyTurnstileToken(
+      {TURNSTILE_SECRET_KEY: 'secret'},
+      'token-123',
+      'unknown'
+    );
+    const body = new URLSearchParams(calls[0].init.body);
+    assert.equal(body.get('remoteip'), null);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('verifyTurnstileToken posts token and remoteip to siteverify', async () => {
   const calls = [];
   const originalFetch = globalThis.fetch;

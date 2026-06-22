@@ -15,7 +15,20 @@
     "types": ["@cloudflare/workers-types", "node"],
     "paths": {
       "@incident/shared": ["./packages/shared/src/index.ts"],
-      "@incident/scenarios": ["./packages/scenarios/src/index.ts"]
+      "@incident/scenarios": ["./packages/scenarios/src/index.ts"],
+      "@incident/observability": ["./packages/observability/src/core/index.ts"],
+      "@incident/observability/core": [
+        "./packages/observability/src/core/index.ts"
+      ],
+      "@incident/observability/browser": [
+        "./packages/observability/src/browser/index.ts"
+      ],
+      "@incident/observability/worker": [
+        "./packages/observability/src/worker/index.ts"
+      ],
+      "@incident/observability/node": [
+        "./packages/observability/src/node/index.ts"
+      ]
     }
   },
   "include": ["apps/**/*.ts", "apps/**/*.tsx", "packages/**/*.ts"]

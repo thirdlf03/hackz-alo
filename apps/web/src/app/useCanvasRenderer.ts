@@ -1,5 +1,6 @@
 import {useEffect} from 'preact/hooks';
 import type {GameRenderState, ScenarioDefinition} from '@incident/shared';
+import {recordCanvasDraw} from '@incident/observability/browser';
 import {CanvasRenderer} from '../game/render/canvasRenderer.js';
 import type {Screen} from './appTypes.js';
 
@@ -29,7 +30,11 @@ export function useCanvasRenderer(options: {
         latest &&
         (animate || latest !== lastState || scenario !== lastScenario)
       ) {
+        const drawStartedAt = performance.now();
         renderer.draw(latest, scenario);
+        recordCanvasDraw(performance.now() - drawStartedAt, {
+          command_input_focused: animate,
+        });
         if (!animate) {
           lastState = latest;
           lastScenario = scenario;

@@ -8,6 +8,8 @@ export interface Bindings {
   SESSION_DO: DurableObjectNamespace;
   Sandbox: DurableObjectNamespace<Sandbox>;
   ENVIRONMENT?: string;
+  INCIDENT_PERF?: string;
+  INCIDENT_SANDBOX_SLEEP_AFTER?: string;
   TURNSTILE_SECRET_KEY?: string;
   ADMIN_SECRET?: string;
   AI?: Ai;

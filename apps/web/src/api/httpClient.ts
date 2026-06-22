@@ -1,4 +1,10 @@
 import type {ApiResult} from '@incident/shared';
+import {
+  getBrowserPerf,
+  INCIDENT_ATTRS,
+  INCIDENT_SPAN_NAMES,
+  type ActivePerfSpan,
+} from '@incident/observability/browser';
 
 const WRITE_TOKEN_STORAGE_KEY = 'incident-write-token';
 
@@ -45,19 +51,43 @@ export class HttpClient {
   }
 
   async fetch(path: string, init?: RequestInit): Promise<Response> {
-    return fetch(path, this.withAuth(init, path));
+    const span = this.startRequestSpan(path, init);
+    try {
+      const response = await fetch(
+        path,
+        this.withPerfTrace(this.withAuth(init, path), span)
+      );
+      span?.setAttribute(INCIDENT_ATTRS.httpStatusCode, response.status);
+      span?.end();
+      return response;
+    } catch (error) {
+      span?.end({status: 'error', error});
+      throw error;
+    }
   }
 
   async request<T>(path: string, init: RequestInit): Promise<T> {
-    const response = await fetch(path, this.withAuth(init, path));
-    if (init.method === 'DELETE' && response.status === 200) {
+    const span = this.startRequestSpan(path, init);
+    try {
+      const response = await fetch(
+        path,
+        this.withPerfTrace(this.withAuth(init, path), span)
+      );
+      span?.setAttribute(INCIDENT_ATTRS.httpStatusCode, response.status);
+      if (init.method === 'DELETE' && response.status === 200) {
+        const payload: ApiResult<T> = await response.json();
+        if (!payload.ok) throw new Error(payload.error.message);
+        span?.end();
+        return payload.data;
+      }
       const payload: ApiResult<T> = await response.json();
       if (!payload.ok) throw new Error(payload.error.message);
+      span?.end();
       return payload.data;
+    } catch (error) {
+      span?.end({status: 'error', error});
+      throw error;
     }
-    const payload: ApiResult<T> = await response.json();
-    if (!payload.ok) throw new Error(payload.error.message);
-    return payload.data;
   }
 
   private withAuth(init: RequestInit = {}, path = '') {
@@ -75,6 +105,30 @@ export class HttpClient {
     if (!headers.has('authorization')) {
       headers.set('authorization', `Bearer ${token}`);
     }
+    return {...init, headers};
+  }
+
+  private startRequestSpan(
+    path: string,
+    init: RequestInit | undefined
+  ): ActivePerfSpan | undefined {
+    const perf = getBrowserPerf();
+    if (!perf.enabled) return undefined;
+    return perf.startSpan(INCIDENT_SPAN_NAMES.apiRequest, {
+      attributes: {
+        [INCIDENT_ATTRS.httpMethod]: init?.method ?? 'GET',
+        [INCIDENT_ATTRS.httpTarget]: path.split('?')[0] ?? path,
+      },
+    });
+  }
+
+  private withPerfTrace(
+    init: RequestInit = {},
+    span: ActivePerfSpan | undefined
+  ): RequestInit {
+    if (!span) return init;
+    const headers = new Headers(init.headers ?? {});
+    headers.set('traceparent', span.traceparent);
     return {...init, headers};
   }
 }

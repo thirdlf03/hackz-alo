@@ -108,6 +108,7 @@ function putWranglerSecret(name, value) {
     ],
     {
       input: value,
+      stdio: ['pipe', 'inherit', 'inherit'],
       env: {
         ...process.env,
         CLOUDFLARE_API_TOKEN: apiToken(),

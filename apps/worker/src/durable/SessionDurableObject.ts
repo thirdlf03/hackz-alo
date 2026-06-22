@@ -8,6 +8,11 @@ import {
 } from '@incident/shared';
 import {getScenario} from '@incident/scenarios';
 import {
+  INCIDENT_ATTRS,
+  INCIDENT_SPAN_NAMES,
+  withWorkerSpan,
+} from '@incident/observability/worker';
+import {
   errorResponse,
   HttpError,
   jsonErr,
@@ -45,11 +50,14 @@ import {
   injectFault,
   interruptSessionTerminal,
   listSessionFiles,
+  prepareScenarioSandbox,
   proxySessionTerminal,
   readSessionFile,
   writeSessionFile,
   startScenarioSandbox,
+  type SandboxPrepareResult,
 } from '../sandbox/runtime.js';
+import {matchSessionRoute} from './sessionRouter.js';
 
 const SESSION_IDLE_TIMEOUT_MS = 3 * 60 * 1000;
 const BRIEFING_TIMEOUT_MS = 15 * 60 * 1000;
@@ -59,6 +67,7 @@ export class SessionDurableObject implements DurableObject {
   private metricsCache?: MetricsSnapshot;
   private metricsCachedAt = 0;
   private timeline: SessionTimeline;
+  private sandboxPreparePromise?: Promise<SandboxPrepareResult>;
   private sseClients: Set<ReadableStreamDefaultController<Uint8Array>> =
     new Set();
   private static readonly METRICS_TTL_MS = 3000;
@@ -120,43 +129,74 @@ export class SessionDurableObject implements DurableObject {
   }
 
   async fetch(request: Request): Promise<Response> {
-    try {
-      const response = await dispatchSessionRoute(request, {
-        bootstrap: (req) => this.bootstrap(req),
-        start: (req) => this.start(req),
-        resolve: () => this.resolve(),
-        retire: () => this.retire(),
-        timeout: () => this.timeout(),
-        delete: () => this.deleteSession(),
-        updateClock: (req) => this.updateClock(req),
-        terminalResize: (req) => this.terminalResize(req),
-        events: (req) => this.events(req),
-        clock: async () =>
-          jsonOk(this.clockPayload(await this.requireSession())),
-        metrics: () => this.metrics(),
-        logs: (req) => this.logs(req),
-        storage: () => this.storage(),
-        files: () => this.files(),
-        readFile: (req) => this.readFile(req),
-        writeFile: (req) => this.writeFile(req),
-        terminal: (req) => this.terminal(req),
-        terminalInterrupt: () => this.terminalInterrupt(),
-        snapshot: async () => jsonOk(await this.snapshot()),
-      });
-      if (response) return response;
-      return jsonErr('not_found', 'session action not found', 404);
-    } catch (error) {
-      return errorResponse(error);
-    }
+    const action = matchSessionRoute(request) ?? 'unknown';
+    return await withWorkerSpan(
+      this.env,
+      INCIDENT_SPAN_NAMES.doRequest,
+      {
+        [INCIDENT_ATTRS.doAction]: action,
+        [INCIDENT_ATTRS.httpMethod]: request.method,
+      },
+      async (span) => {
+        try {
+          const response = await dispatchSessionRoute(request, {
+            bootstrap: (req) => this.bootstrap(req),
+            prepare: (req) => this.prepare(req),
+            start: (req) => this.start(req),
+            resolve: () => this.resolve(),
+            retire: () => this.retire(),
+            timeout: () => this.timeout(),
+            delete: () => this.deleteSession(),
+            updateClock: (req) => this.updateClock(req),
+            terminalResize: (req) => this.terminalResize(req),
+            events: (req) => this.events(req),
+            clock: async () =>
+              jsonOk(this.clockPayload(await this.requireSession())),
+            metrics: () => this.metrics(),
+            logs: (req) => this.logs(req),
+            storage: () => this.storage(),
+            files: () => this.files(),
+            readFile: (req) => this.readFile(req),
+            writeFile: (req) => this.writeFile(req),
+            terminal: (req) => this.terminal(req),
+            terminalInterrupt: () => this.terminalInterrupt(),
+            snapshot: async () => jsonOk(await this.snapshot()),
+          });
+          if (response) {
+            span.setAttribute(INCIDENT_ATTRS.httpStatusCode, response.status);
+            return response;
+          }
+          span.setAttribute(INCIDENT_ATTRS.httpStatusCode, 404);
+          return jsonErr('not_found', 'session action not found', 404);
+        } catch (error) {
+          const response = errorResponse(error);
+          span.setAttribute(INCIDENT_ATTRS.httpStatusCode, response.status);
+          throw error;
+        }
+      },
+      request.headers.get('traceparent') ?? undefined
+    ).catch((error: unknown) => errorResponse(error));
   }
 
   private async bootstrap(request: Request) {
     const session = await this.loadOrCreate(await readBootstrap(request));
+    await this.state.storage.put('session', session);
     await persistSession(this.env, session);
     if (session.status === 'briefing') {
       await this.state.storage.setAlarm(Date.now() + BRIEFING_TIMEOUT_MS);
     }
     return jsonOk({session: this.snapshotFor(session)});
+  }
+
+  private async prepare(request: Request) {
+    const session = await this.loadOrCreate(await readBootstrap(request));
+    await this.state.storage.put('session', session);
+    if (isTerminalStatus(session.status)) {
+      return jsonOk({prepared: false, status: session.status});
+    }
+    const scenario = requireScenario(session.scenarioId);
+    const result = await this.prepareSandbox(session, scenario);
+    return jsonOk(result);
   }
 
   private async start(request: Request) {
@@ -182,6 +222,7 @@ export class SessionDurableObject implements DurableObject {
 
     let startup: Awaited<ReturnType<typeof startScenarioSandbox>>;
     try {
+      await this.prepareSandbox(running, scenario);
       startup = await startScenarioSandbox(
         this.env,
         running.sessionId,
@@ -406,9 +447,26 @@ export class SessionDurableObject implements DurableObject {
       this.metricsCache &&
       now - this.metricsCachedAt < SessionDurableObject.METRICS_TTL_MS
     ) {
+      await withWorkerSpan(
+        this.env,
+        INCIDENT_SPAN_NAMES.doSnapshotPoll,
+        {
+          [INCIDENT_ATTRS.sessionId]: session.sessionId,
+          [INCIDENT_ATTRS.cached]: true,
+        },
+        () => undefined
+      );
       return jsonOk(this.metricsCache);
     }
-    const metrics = await fetchSessionMetrics(this.env, session.sessionId);
+    const metrics = await withWorkerSpan(
+      this.env,
+      INCIDENT_SPAN_NAMES.doSnapshotPoll,
+      {
+        [INCIDENT_ATTRS.sessionId]: session.sessionId,
+        [INCIDENT_ATTRS.cached]: false,
+      },
+      async () => await fetchSessionMetrics(this.env, session.sessionId)
+    );
     if (!metrics) {
       throw new HttpError(
         502,
@@ -547,6 +605,20 @@ export class SessionDurableObject implements DurableObject {
       );
     }
     return session;
+  }
+
+  private prepareSandbox(
+    session: StoredSession,
+    scenario: ScenarioDefinition
+  ): Promise<SandboxPrepareResult> {
+    this.sandboxPreparePromise ??= prepareScenarioSandbox(
+      this.env,
+      session.sessionId,
+      scenario
+    ).finally(() => {
+      delete this.sandboxPreparePromise;
+    });
+    return this.sandboxPreparePromise;
   }
 
   private async requireRunningSession(message: string) {

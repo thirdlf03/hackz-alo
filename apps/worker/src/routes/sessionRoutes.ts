@@ -1,11 +1,12 @@
 import {getRandomScenarioByDifficulty, getScenario} from '@incident/scenarios';
 import type {Difficulty} from '@incident/shared';
+import {traceHeaders} from '@incident/observability/worker';
 import type {WorkerApp, WorkerContext} from '../http/context.js';
 import {enforceRateLimit, shouldEnforceRateLimit} from '../http/rateLimit.js';
 import {logStructured} from '../http/requestLog.js';
 import {verifyTurnstileToken} from '../http/turnstile.js';
 import {requireSessionWriteAccess} from '../http/writeAuthMiddleware.js';
-import {err, ok} from '../http/response.js';
+import {err, messageFrom, ok} from '../http/response.js';
 import {createWriteToken, hashWriteToken} from '../pure/writeAuth.js';
 import {purgeReplayStorage} from '../storage/replayPurge.js';
 import type {Bindings} from '../types.js';
@@ -108,6 +109,11 @@ export function registerSessionRoutes(app: WorkerApp) {
       }
     );
     if (!bootstrapResponse.ok) return bootstrapResponse;
+    scheduleSessionPrepare(c, sessionId, {
+      sessionId,
+      replayId,
+      scenarioId: scenario.id,
+    });
 
     logStructured('session_created', {
       sessionId,
@@ -118,6 +124,18 @@ export function registerSessionRoutes(app: WorkerApp) {
   });
 
   app.get('/api/sessions/:sessionId', async (c) => proxySession(c, 'snapshot'));
+  app.post('/api/sessions/:sessionId/prepare', async (c) => {
+    const denied = await requireSessionWriteAccess(c, c.req.param('sessionId'));
+    if (denied) return denied;
+    const sessionId = c.req.param('sessionId');
+    const record = await getSession(c.env, sessionId);
+    if (!record) return c.json(err('not_found', 'session not found'), 404);
+    return proxySession(c, 'prepare', {
+      sessionId,
+      replayId: record.replay_id,
+      scenarioId: record.scenario_id,
+    });
+  });
   app.post('/api/sessions/:sessionId/start', async (c) => {
     const denied = await requireSessionWriteAccess(c, c.req.param('sessionId'));
     if (denied) return denied;
@@ -235,10 +253,12 @@ async function proxySession(c: WorkerContext, action: string, body?: unknown) {
   target.pathname = `/internal/sessions/${sessionId}/${action}`;
   const request =
     body === undefined
-      ? new Request(target, c.req.raw)
+      ? new Request(new Request(target, c.req.raw), {
+          headers: traceHeaders(c.req.raw.headers),
+        })
       : new Request(target, {
           method: c.req.method === 'GET' ? 'POST' : c.req.method,
-          headers: {'content-type': 'application/json'},
+          headers: traceHeaders({'content-type': 'application/json'}),
           body: JSON.stringify(body),
         });
   return stub.fetch(request);
@@ -257,7 +277,9 @@ async function proxySessionDelete(c: WorkerContext, action: string) {
   const target = new URL(
     `https://session.internal/internal/sessions/${sessionId}/${action}`
   );
-  const response = await stub.fetch(new Request(target, {method: 'DELETE'}));
+  const response = await stub.fetch(
+    new Request(target, {method: 'DELETE', headers: traceHeaders()})
+  );
   if (response.ok && replayId) {
     await purgeReplayStorage(c.env, replayId).catch(() => undefined);
   }
@@ -278,10 +300,44 @@ async function fetchSessionObject(
   return stub.fetch(
     new Request(target, {
       method: 'POST',
-      headers: {'content-type': 'application/json'},
+      headers: traceHeaders({'content-type': 'application/json'}),
       body: JSON.stringify(body),
     })
   );
+}
+
+function scheduleSessionPrepare(
+  c: WorkerContext,
+  sessionId: string,
+  body: SessionBootstrapBody
+) {
+  c.executionCtx.waitUntil(
+    fetchSessionObject(c.env, sessionId, 'prepare', body)
+      .then(async (response) => {
+        if (response.ok) return;
+        logStructured('session_prepare_failed', {
+          sessionId,
+          status: response.status,
+          response: truncateLogValue(await response.text().catch(() => '')),
+        });
+      })
+      .catch((error: unknown) => {
+        logStructured('session_prepare_failed', {
+          sessionId,
+          message: messageFrom(error),
+        });
+      })
+  );
+}
+
+interface SessionBootstrapBody {
+  sessionId: string;
+  replayId: string;
+  scenarioId: string;
+}
+
+function truncateLogValue(value: string) {
+  return value.length > 300 ? `${value.slice(0, 300)}...` : value;
 }
 
 interface SessionRow {

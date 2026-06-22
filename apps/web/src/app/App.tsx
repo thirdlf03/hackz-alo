@@ -62,6 +62,7 @@ export function App() {
     []
   );
   const [isStarting, setIsStarting] = useState(false);
+  const [sandboxReady, setSandboxReady] = useState(false);
   const [gameSpeed, setGameSpeed] = useState(1);
   const [appError, setAppError] = useState<string>();
   const [recordingConsent, setRecordingConsent] = useState(
@@ -84,6 +85,7 @@ export function App() {
     saveRecording,
     recordingConsent,
     isStarting,
+    sandboxReady,
     deepLinkReplayId,
     deepLinkValidated,
     recordingRef,
@@ -95,6 +97,7 @@ export function App() {
     setTimeline,
     setAppError,
     setIsStarting,
+    setSandboxReady,
     setHasRecordingConsent,
     setDeepLinkReplayId,
     setDeepLinkValidated,
@@ -275,6 +278,7 @@ export function App() {
         <BriefingScreen
           scenario={scenario}
           isStarting={isStarting}
+          sandboxReady={sandboxReady}
           recordingConsent={recordingConsent}
           saveRecording={saveRecording}
           onBack={() => {

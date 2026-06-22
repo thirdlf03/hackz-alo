@@ -25,12 +25,11 @@ declare global {
 
 let scriptPromise: Promise<void> | undefined;
 
+// Module-level so Vite can inline VITE_* at build time (see vite.config / deploy workflow).
+const buildTimeSiteKey = import.meta.env?.VITE_TURNSTILE_SITE_KEY;
+
 export function turnstileSiteKey() {
-  const env =
-    typeof import.meta !== 'undefined' && 'env' in import.meta
-      ? import.meta.env
-      : undefined;
-  const value = env?.VITE_TURNSTILE_SITE_KEY;
+  const value = buildTimeSiteKey;
   if (typeof value !== 'string') return undefined;
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : undefined;

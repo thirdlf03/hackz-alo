@@ -1,4 +1,9 @@
 import {getSandbox, type PtyOptions, type Sandbox} from '@cloudflare/sandbox';
+import {
+  INCIDENT_ATTRS,
+  INCIDENT_SPAN_NAMES,
+  withWorkerSpan,
+} from '@incident/observability/worker';
 import type {
   MetricsSnapshot,
   ScenarioDefinition,
@@ -17,31 +22,46 @@ import {buildSuccessCheckCommand} from './successEvaluators.js';
 
 export type SandboxRuntime = Sandbox;
 
-const SANDBOX_SLEEP_AFTER = '3m';
+const DEFAULT_SANDBOX_SLEEP_AFTER = '16m';
+const SANDBOX_PREPARED_MARKER = '/workspace/run/.incident-prepared.json';
 
 export function getSessionSandbox(
   env: Bindings,
   sessionId: string
 ): SandboxRuntime {
   return getSandbox(env.Sandbox, sessionSandboxName(sessionId), {
-    sleepAfter: SANDBOX_SLEEP_AFTER,
+    sleepAfter: sandboxSleepAfter(env),
   });
 }
 
-export function proxySessionTerminal(
+function sandboxSleepAfter(env: Bindings) {
+  const configured = env.INCIDENT_SANDBOX_SLEEP_AFTER?.trim();
+  return configured || DEFAULT_SANDBOX_SLEEP_AFTER;
+}
+
+export async function proxySessionTerminal(
   env: Bindings,
   sessionId: string,
   request: Request,
   options?: PtyOptions
 ) {
-  return (
-    getSessionSandbox(env, sessionId) as SandboxRuntime & {
-      terminal(
-        request: Request,
-        options?: PtyOptions
-      ): Response | Promise<Response>;
-    }
-  ).terminal(request, options);
+  return await withWorkerSpan(
+    env,
+    INCIDENT_SPAN_NAMES.sandboxTerminalProxy,
+    {
+      [INCIDENT_ATTRS.sessionId]: sessionId,
+      [INCIDENT_ATTRS.sandboxCommandKind]: 'terminal_upgrade',
+    },
+    async () =>
+      await (
+        getSessionSandbox(env, sessionId) as SandboxRuntime & {
+          terminal(
+            request: Request,
+            options?: PtyOptions
+          ): Response | Promise<Response>;
+        }
+      ).terminal(request, options)
+  );
 }
 
 export interface EditableFileEntry {
@@ -72,7 +92,9 @@ export async function interruptSessionTerminal(
     '  break',
     'done',
   ].join('\n');
-  await sandbox.exec(`bash -lc ${shellArg(script)}`, {cwd: '/workspace'});
+  await withSandboxExecSpan(env, sessionId, 'terminal_interrupt', async () => {
+    await sandbox.exec(`bash -lc ${shellArg(script)}`, {cwd: '/workspace'});
+  });
 }
 
 export async function startScenarioSandbox(
@@ -80,36 +102,94 @@ export async function startScenarioSandbox(
   sessionId: string,
   scenario: ScenarioDefinition
 ) {
-  const sandbox = getSessionSandbox(env, sessionId);
-  await installSandboxAssets(sandbox);
-  await sandbox.exec(
-    'mkdir -p /workspace/logs /workspace/run && rm -f /workspace/run/api.down /workspace/logs/debug.log /workspace/logs/batch.log',
-    {cwd: '/workspace'}
-  );
-
-  const started: Array<{id: string; command: string; waitForPort?: number}> =
-    [];
-  for (const process of scenario.startup) {
-    const child = await sandbox.startProcess(process.command, {
-      processId: process.id,
-      cwd: '/workspace',
-      autoCleanup: false,
-    });
-    if (process.waitForPort !== undefined) {
-      await child.waitForPort(process.waitForPort, {
-        mode: 'tcp',
-        timeout: 30_000,
-      });
+  return await withWorkerSpan(
+    env,
+    INCIDENT_SPAN_NAMES.sandboxStart,
+    {
+      [INCIDENT_ATTRS.sessionId]: sessionId,
+      [INCIDENT_ATTRS.scenarioId]: scenario.id,
+    },
+    async () => {
+      await prepareScenarioSandbox(env, sessionId, scenario);
+      const sandbox = getSessionSandbox(env, sessionId);
+      const started: Array<{
+        id: string;
+        command: string;
+        waitForPort?: number;
+      }> = [];
+      for (const process of scenario.startup) {
+        await withSandboxExecSpan(
+          env,
+          sessionId,
+          'startup_process',
+          async () => {
+            const child = await sandbox.startProcess(process.command, {
+              processId: process.id,
+              cwd: '/workspace',
+              autoCleanup: false,
+            });
+            if (process.waitForPort !== undefined) {
+              await child.waitForPort(process.waitForPort, {
+                mode: 'tcp',
+                timeout: 30_000,
+              });
+            }
+          },
+          process.id
+        );
+        started.push({
+          id: process.id,
+          command: process.command,
+          ...(process.waitForPort === undefined
+            ? {}
+            : {waitForPort: process.waitForPort}),
+        });
+      }
+      return started;
     }
-    started.push({
-      id: process.id,
-      command: process.command,
-      ...(process.waitForPort === undefined
-        ? {}
-        : {waitForPort: process.waitForPort}),
-    });
-  }
-  return started;
+  );
+}
+
+export interface SandboxPrepareResult {
+  prepared: true;
+  reused: boolean;
+}
+
+export async function prepareScenarioSandbox(
+  env: Bindings,
+  sessionId: string,
+  scenario: ScenarioDefinition
+): Promise<SandboxPrepareResult> {
+  return await withWorkerSpan(
+    env,
+    INCIDENT_SPAN_NAMES.sandboxPrepare,
+    {
+      [INCIDENT_ATTRS.sessionId]: sessionId,
+      [INCIDENT_ATTRS.scenarioId]: scenario.id,
+    },
+    async (span) => {
+      const sandbox = getSessionSandbox(env, sessionId);
+      const reused = await isSandboxPrepared(sandbox, scenario.id);
+      span.setAttribute(INCIDENT_ATTRS.cached, reused);
+      if (reused) return {prepared: true, reused};
+
+      await installSandboxAssets(sandbox);
+      await withSandboxExecSpan(env, sessionId, 'sandbox_setup', async () => {
+        await sandbox.exec(
+          'mkdir -p /workspace/logs /workspace/run && rm -f /workspace/run/api.down /workspace/logs/debug.log /workspace/logs/batch.log',
+          {cwd: '/workspace'}
+        );
+      });
+      await (sandbox as SandboxFileApi).writeFile(
+        SANDBOX_PREPARED_MARKER,
+        JSON.stringify({
+          scenarioId: scenario.id,
+          preparedAt: new Date().toISOString(),
+        })
+      );
+      return {prepared: true, reused};
+    }
+  );
 }
 
 export async function fetchSessionMetrics(
@@ -117,9 +197,14 @@ export async function fetchSessionMetrics(
   sessionId: string
 ): Promise<MetricsSnapshot | null> {
   const sandbox = getSessionSandbox(env, sessionId);
-  const result = await sandbox.exec(
-    'node /workspace/services/metrics/export.mjs',
-    {cwd: '/workspace'}
+  const result = await withSandboxExecSpan(
+    env,
+    sessionId,
+    'metrics_export',
+    async () =>
+      await sandbox.exec('node /workspace/services/metrics/export.mjs', {
+        cwd: '/workspace',
+      })
   );
   if (!result.success || !result.stdout.trim()) {
     console.error('[sandbox-metrics]', compactSandboxExecFailure(result));
@@ -149,8 +234,11 @@ export async function fetchSessionLogs(
   const path = `/workspace/logs/${file}.log`;
   const lines = Math.max(1, Math.min(200, Number.isFinite(tail) ? tail : 50));
   const sandbox = getSessionSandbox(env, sessionId);
-  const result = await sandbox.exec(
-    `tail -n ${String(lines)} ${shellArg(path)}`
+  const result = await withSandboxExecSpan(
+    env,
+    sessionId,
+    'logs_tail',
+    async () => await sandbox.exec(`tail -n ${String(lines)} ${shellArg(path)}`)
   );
   if (!result.success || !result.stdout) return [];
   return result.stdout.split('\n').filter(Boolean);
@@ -169,7 +257,12 @@ export async function fetchSessionStorage(env: Bindings, sessionId: string) {
     "if(fs.existsSync(path.join(run,'fake-db-stats.json'))) entries.push({key:'fake-db-stats',value:fs.readFileSync(path.join(run,'fake-db-stats.json'),'utf8').trim()});",
     'process.stdout.write(JSON.stringify(entries));',
   ].join('');
-  const result = await sandbox.exec(`node -e ${shellArg(script)}`);
+  const result = await withSandboxExecSpan(
+    env,
+    sessionId,
+    'storage_snapshot',
+    async () => await sandbox.exec(`node -e ${shellArg(script)}`)
+  );
   if (!result.success || !result.stdout.trim()) return [];
   try {
     return JSON.parse(result.stdout) as Array<{key: string; value: string}>;
@@ -202,9 +295,15 @@ export async function listSessionFiles(
     'out.sort((a,b)=>a.path.localeCompare(b.path));',
     'process.stdout.write(JSON.stringify(out));',
   ].join('');
-  const result = await sandbox.exec(`node -e ${shellArg(script)}`, {
-    cwd: '/workspace',
-  });
+  const result = await withSandboxExecSpan(
+    env,
+    sessionId,
+    'file_list',
+    async () =>
+      await sandbox.exec(`node -e ${shellArg(script)}`, {
+        cwd: '/workspace',
+      })
+  );
   if (!result.success || !result.stdout.trim()) return [];
   try {
     const files = JSON.parse(result.stdout) as EditableFileEntry[];
@@ -223,7 +322,15 @@ export async function readSessionFile(
 ) {
   const safePath = normalizeEditableWorkspacePath(path);
   const sandbox = getSessionSandbox(env, sessionId) as SandboxFileApi;
-  const file = await sandbox.readFile(safePath);
+  const file = await withWorkerSpan(
+    env,
+    INCIDENT_SPAN_NAMES.sandboxFileRead,
+    {
+      [INCIDENT_ATTRS.sessionId]: sessionId,
+      [INCIDENT_ATTRS.sandboxCommandKind]: 'file_read',
+    },
+    async () => await sandbox.readFile(safePath)
+  );
   const content = typeof file === 'string' ? file : file.content;
   return {path: safePath, content};
 }
@@ -237,7 +344,17 @@ export async function writeSessionFile(
   const safePath = normalizeEditableWorkspacePath(path);
   if (content.length > 200_000) throw new Error('file content is too large');
   const sandbox = getSessionSandbox(env, sessionId) as SandboxFileApi;
-  await sandbox.writeFile(safePath, content);
+  await withWorkerSpan(
+    env,
+    INCIDENT_SPAN_NAMES.sandboxFileWrite,
+    {
+      [INCIDENT_ATTRS.sessionId]: sessionId,
+      [INCIDENT_ATTRS.sandboxCommandKind]: 'file_write',
+    },
+    async () => {
+      await sandbox.writeFile(safePath, content);
+    }
+  );
   return {path: safePath, byteLength: new TextEncoder().encode(content).length};
 }
 
@@ -248,7 +365,9 @@ export async function injectFault(
   params: Record<string, unknown>
 ) {
   const sandbox = getSessionSandbox(env, sessionId);
-  await sandbox.exec(buildFaultCommand(type, params));
+  await withSandboxExecSpan(env, sessionId, 'fault_inject', async () => {
+    await sandbox.exec(buildFaultCommand(type, params));
+  });
 }
 
 export async function evaluateSuccessCondition(
@@ -257,7 +376,12 @@ export async function evaluateSuccessCondition(
   condition: SuccessCondition
 ) {
   const sandbox = getSessionSandbox(env, sessionId);
-  const result = await sandbox.exec(buildSuccessCheckCommand(condition));
+  const result = await withSandboxExecSpan(
+    env,
+    sessionId,
+    'success_check',
+    async () => await sandbox.exec(buildSuccessCheckCommand(condition))
+  );
   return result.success;
 }
 
@@ -318,6 +442,25 @@ function truncateLogField(value: string) {
   return compact.length > 500 ? `${compact.slice(0, 500)}...` : compact;
 }
 
+async function isSandboxPrepared(
+  sandbox: SandboxRuntime,
+  scenarioId: string
+): Promise<boolean> {
+  try {
+    const result = await sandbox.exec(
+      `if [ -f ${shellArg(SANDBOX_PREPARED_MARKER)} ]; then cat ${shellArg(
+        SANDBOX_PREPARED_MARKER
+      )}; fi`,
+      {cwd: '/workspace'}
+    );
+    if (!result.success || !result.stdout.trim()) return false;
+    const marker = JSON.parse(result.stdout) as {scenarioId?: unknown};
+    return marker.scenarioId === scenarioId;
+  } catch {
+    return false;
+  }
+}
+
 export async function destroySessionSandbox(env: Bindings, sessionId: string) {
   const sandbox = getSessionSandbox(env, sessionId);
   try {
@@ -334,4 +477,23 @@ export async function destroySessionSandbox(env: Bindings, sessionId: string) {
 
 function sessionSandboxName(sessionId: string) {
   return `session-${sessionId}`;
+}
+
+async function withSandboxExecSpan<T>(
+  env: Bindings,
+  sessionId: string,
+  commandKind: string,
+  run: () => T | Promise<T>,
+  processId?: string
+): Promise<T> {
+  return await withWorkerSpan(
+    env,
+    INCIDENT_SPAN_NAMES.sandboxExec,
+    {
+      [INCIDENT_ATTRS.sessionId]: sessionId,
+      [INCIDENT_ATTRS.sandboxCommandKind]: commandKind,
+      [INCIDENT_ATTRS.sandboxProcessId]: processId,
+    },
+    async () => await run()
+  );
 }
