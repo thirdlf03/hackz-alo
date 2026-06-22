@@ -1,6 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {tabCompletionCursorColumn} from '../../apps/web/src/game/terminal/cursorRepair.ts';
+import {tsImport} from 'tsx/esm/api';
+
+const {tabCompletionCursorColumn} = await tsImport(
+  '../../apps/web/src/game/terminal/cursorRepair.ts',
+  import.meta.url
+);
 
 const prompt = 'root@135f9fa46121:/workspace# ';
 

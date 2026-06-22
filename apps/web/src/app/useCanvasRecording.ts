@@ -1,6 +1,6 @@
 import {useEffect, useRef} from 'preact/hooks';
 import type {GameRenderState} from '@incident/shared';
-import type {ApiClient} from '../api/client.js';
+import type {ApiClientSurface} from '../api/client.js';
 import {CanvasRecorder} from '../game/recording/recorder.js';
 import {RecordingFinalizer} from '../game/recording/finalizer.js';
 import {
@@ -24,7 +24,7 @@ type SetGameState = (
 let offlineQueue: OfflineUploadQueue | undefined;
 const recordingFlushRef: {stop?: () => void} = {};
 
-function queueFor(api: ApiClient) {
+function queueFor(api: ApiClientSurface) {
   if (!offlineQueue) {
     offlineQueue = new OfflineUploadQueue(api);
     installOfflineFlush(offlineQueue, () => recordingFlushRef.stop?.());
@@ -33,7 +33,7 @@ function queueFor(api: ApiClient) {
 }
 
 export function useCanvasRecording(options: {
-  api: ApiClient;
+  api: ApiClientSurface;
   canvasRef: {current: HTMLCanvasElement | null};
   screen: Screen;
   session: SessionIdentity | undefined;

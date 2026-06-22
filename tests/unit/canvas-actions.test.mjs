@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {tsImport} from 'tsx/esm/api';
+import {baseScenario, createPlayState} from '../helpers/game-fixtures.mjs';
 
 const {
   expandedMonitorLayout,
@@ -21,28 +22,26 @@ const {editorFileAt, resolveCanvasAction} = await tsImport(
   '../../apps/web/src/game/input/canvasActions.ts',
   import.meta.url
 );
-import {createInitialGameState} from '../../apps/web/src/game/state/gameState.ts';
-import {createEmptyTerminalMirror} from '../../apps/web/src/game/terminal/mirror.ts';
 
 test('resolveCanvasAction maps input dock clicks to command actions', () => {
-  const state = createState();
+  const state = createPlayState();
 
   assert.deepEqual(
-    resolveCanvasAction(pointIn(inputDockRects.button), state, testScenario()),
+    resolveCanvasAction(pointIn(inputDockRects.button), state, baseScenario()),
     {type: 'end_session', mode: 'resolve'}
   );
   assert.deepEqual(
-    resolveCanvasAction(pointIn(inputDockRects.retire), state, testScenario()),
+    resolveCanvasAction(pointIn(inputDockRects.retire), state, baseScenario()),
     {type: 'end_session', mode: 'retire'}
   );
   assert.deepEqual(
-    resolveCanvasAction(pointIn(inputDockRects.input), state, testScenario()),
+    resolveCanvasAction(pointIn(inputDockRects.input), state, baseScenario()),
     {type: 'focus_command_input'}
   );
 });
 
 test('resolveCanvasAction opens editor files from normal and expanded terminal views', () => {
-  const initial = createState();
+  const initial = createPlayState();
   const state = {
     ...initial,
     monitors: {
@@ -59,7 +58,7 @@ test('resolveCanvasAction opens editor files from normal and expanded terminal v
     editorFileAt(normalPoint.x, normalPoint.y, state),
     '/workspace/services/batch/sales.un'
   );
-  assert.deepEqual(resolveCanvasAction(normalPoint, state, testScenario()), {
+  assert.deepEqual(resolveCanvasAction(normalPoint, state, baseScenario()), {
     type: 'open_editor_file',
     path: '/workspace/services/batch/sales.un',
   });
@@ -70,20 +69,20 @@ test('resolveCanvasAction opens editor files from normal and expanded terminal v
   };
   const expandedPoint = editorFilePoint(1, true);
   assert.deepEqual(
-    resolveCanvasAction(expandedPoint, expandedState, testScenario()),
+    resolveCanvasAction(expandedPoint, expandedState, baseScenario()),
     {type: 'open_editor_file', path: '/workspace/run/deploy.json'}
   );
 });
 
 test('resolveCanvasAction handles right panel tabs, runbook tabs, and notifications', () => {
   const scenario = {
-    ...testScenario(),
+    ...baseScenario(),
     runbooks: [
       {id: 'first', title: 'First', body: 'one'},
       {id: 'second', title: 'Second', body: 'two'},
     ],
   };
-  const state = createState(scenario);
+  const state = createPlayState(scenario);
   const tabRow = runbookTabRegion();
   const secondRunbookTabPoint = {
     x: tabRow.x + measureRunbookTabWidth('First') + 24,
@@ -102,7 +101,7 @@ test('resolveCanvasAction handles right panel tabs, runbook tabs, and notificati
 
 test('resolveCanvasAction dismisses navigation before monitor expansion', () => {
   const state = {
-    ...createState(),
+    ...createPlayState(),
     navigation: {
       dismissedStepIds: [],
       activeStepId: 'nav-1',
@@ -110,36 +109,36 @@ test('resolveCanvasAction dismisses navigation before monitor expansion', () => 
   };
 
   assert.deepEqual(
-    resolveCanvasAction(pointIn(navigationOverlayRect), state, testScenario()),
+    resolveCanvasAction(pointIn(navigationOverlayRect), state, baseScenario()),
     {type: 'dismiss_navigation', stepId: 'nav-1'}
   );
 });
 
 test('resolveCanvasAction absorbs expanded monitor interior and closes from outside', () => {
-  const initial = createState();
+  const initial = createPlayState();
   const state = {
     ...initial,
     world: {...initial.world, expandedMonitor: 'metrics'},
   };
 
   assert.deepEqual(
-    resolveCanvasAction(pointIn(expandedMonitorLayout), state, testScenario()),
+    resolveCanvasAction(pointIn(expandedMonitorLayout), state, baseScenario()),
     {type: 'none', absorb: true}
   );
-  assert.deepEqual(resolveCanvasAction({x: 10, y: 10}, state, testScenario()), {
+  assert.deepEqual(resolveCanvasAction({x: 10, y: 10}, state, baseScenario()), {
     type: 'close_expanded_monitor',
   });
 });
 
 test('resolveCanvasAction maps monitor magnify and slack compose targets', () => {
   const terminal = monitorLayout('terminal');
-  const state = createState();
+  const state = createPlayState();
 
   assert.deepEqual(
     resolveCanvasAction(
       {x: terminal.x + terminal.width - 28, y: terminal.y + 24},
       state,
-      testScenario()
+      baseScenario()
     ),
     {type: 'toggle_expanded_monitor', monitor: 'terminal'}
   );
@@ -155,7 +154,7 @@ test('resolveCanvasAction maps monitor magnify and slack compose targets', () =>
     resolveCanvasAction(
       pointIn(slackComposeRegion()),
       slackState,
-      testScenario()
+      baseScenario()
     ),
     {type: 'slack_compose'}
   );
@@ -163,14 +162,14 @@ test('resolveCanvasAction maps monitor magnify and slack compose targets', () =>
     resolveCanvasAction(
       pointIn(slackSendButtonRegion()),
       slackState,
-      testScenario()
+      baseScenario()
     ),
     {type: 'slack_send'}
   );
 });
 
 test('resolveCanvasAction keeps slack compose interactive in expanded runbook view', () => {
-  const initial = createState();
+  const initial = createPlayState();
   const state = {
     ...initial,
     monitors: {
@@ -184,7 +183,7 @@ test('resolveCanvasAction keeps slack compose interactive in expanded runbook vi
     resolveCanvasAction(
       pointIn(slackComposeRegion('slack', 'runbook')),
       state,
-      testScenario()
+      baseScenario()
     ),
     {type: 'slack_compose'}
   );
@@ -192,7 +191,7 @@ test('resolveCanvasAction keeps slack compose interactive in expanded runbook vi
     resolveCanvasAction(
       pointIn(slackSendButtonRegion('slack', 'runbook')),
       state,
-      testScenario()
+      baseScenario()
     ),
     {type: 'slack_send'}
   );
@@ -200,23 +199,14 @@ test('resolveCanvasAction keeps slack compose interactive in expanded runbook vi
 
 test('resolveCanvasAction deactivates slack compose on outside clicks', () => {
   const state = {
-    ...createState(),
+    ...createPlayState(),
     slackCompose: {active: true, draft: 'hello'},
   };
 
-  assert.deepEqual(resolveCanvasAction({x: 10, y: 10}, state, testScenario()), {
+  assert.deepEqual(resolveCanvasAction({x: 10, y: 10}, state, baseScenario()), {
     type: 'deactivate_slack_compose',
   });
 });
-
-function createState(scenario = testScenario()) {
-  return createInitialGameState(
-    scenario,
-    'sess_test',
-    'repl_test',
-    createEmptyTerminalMirror()
-  );
-}
 
 function editorFilePoint(index, expanded = false) {
   const monitor = expanded ? expandedMonitorLayout : monitorLayout('terminal');
@@ -235,26 +225,5 @@ function pointIn(region) {
   return {
     x: region.x + Math.min(10, region.width / 2),
     y: region.y + Math.min(10, region.height / 2),
-  };
-}
-
-function testScenario() {
-  return {
-    id: 'scenario_test',
-    version: 1,
-    title: 'Test Scenario',
-    difficulty: 'beginner',
-    timeLimitMinutes: 10,
-    service: {
-      name: 'Test API',
-      healthUrl: 'http://localhost:8080/health',
-    },
-    briefing: [],
-    startup: [],
-    triggers: [],
-    alerts: [],
-    successConditions: [],
-    runbooks: [],
-    slackMessages: [],
   };
 }

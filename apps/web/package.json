@@ -13,8 +13,8 @@
     "@incident/shared": "workspace:*",
     "@preact/preset-vite": "latest",
     "@xterm/xterm": "latest",
+    "effect": "^3.21.4",
     "preact": "latest",
     "vite": "latest"
-  },
-  "devDependencies": {}
+  }
 }

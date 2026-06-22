@@ -1,5 +1,5 @@
 import {useEffect, useMemo, useRef, useState} from 'preact/hooks';
-import {ApiClient} from '../api/client.js';
+import {createApiClient} from '../api/client.js';
 import {
   buildTimelineFromEvents,
   formatDuration,
@@ -28,7 +28,7 @@ interface ReplayMeta {
 
 type VideoLoadState = 'loading' | 'ready' | 'unavailable';
 
-const api = new ApiClient();
+const api = createApiClient();
 const timelineSeekPrerollSeconds = 1;
 
 export function ReplayPage({replayId, timeline}: Props) {

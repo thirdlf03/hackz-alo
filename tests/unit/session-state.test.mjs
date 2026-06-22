@@ -8,7 +8,7 @@ import {
   getGameTimeMs,
   isTerminalStatus,
   startStoredSession,
-} from '../../apps/worker/src/durable/sessionState.ts';
+} from '../helpers/session-fixtures.mjs';
 
 test('session state helpers create and start stored sessions', () => {
   const briefing = createBriefingSession({

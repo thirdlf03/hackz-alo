@@ -41,4 +41,38 @@ export default defineConfig({
     'playwright.config.ts',
     'packages/scenarios/data/**',
   ],
+  overrides: [
+    {
+      files: [
+        'apps/**/pure/**/*.ts',
+        'apps/**/game/state/gameSelectors.ts',
+        'apps/worker/src/durable/sessionState.ts',
+      ],
+      rules: {
+        'no-restricted-imports': [
+          'error',
+          {
+            patterns: [
+              {
+                group: ['**/effect/**', 'effect', 'effect/*'],
+                message:
+                  'Pure modules must not import Effect. Keep IO in effect/ or hooks.',
+              },
+              {
+                group: ['**/game/state/gameState*'],
+                message:
+                  'Pure modules must not import reducers. Use gameSelectors instead.',
+              },
+            ],
+          },
+        ],
+      },
+    },
+    {
+      files: ['apps/**/effect/**/*.ts'],
+      rules: {
+        'eslint/new-cap': 'off',
+      },
+    },
+  ],
 });

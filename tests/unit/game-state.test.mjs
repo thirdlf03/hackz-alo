@@ -1,12 +1,17 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {
-  applyLiveMetrics,
   advanceGameState,
+  applyLiveMetrics,
+  activateSlackCompose,
+  blurCommandInput,
   computeNarrativeHour,
-  createInitialGameState,
+  createPlayState,
+  baseScenario,
+  decayWorldOverlays,
   deactivateSlackCompose,
   dismissNavigationStep,
+  focusCommandInput,
   setActiveRunbook,
   setCenterTool,
   setRightPanelTab,
@@ -14,15 +19,15 @@ import {
   submitPlayerSlackMessage,
   toggleExpandedMonitor,
   toggleNotificationPanel,
+  unreadAlertCount,
   unreadNotificationCount,
   updateEditorPanel,
   visibleRunbooks,
-} from '../../apps/web/src/game/state/gameState.ts';
-import {createEmptyTerminalMirror} from '../../apps/web/src/game/terminal/mirror.ts';
+} from '../helpers/game-fixtures.mjs';
 
 test('visibleRunbooks filters by availableAtMs and pulses on arrival', () => {
   const scenario = {
-    ...testScenario(),
+    ...baseScenario(),
     runbooks: [
       {id: 'early', title: 'Early', body: 'now'},
       {id: 'late', title: 'Late', body: 'later', availableAtMs: 90_000},
@@ -32,7 +37,7 @@ test('visibleRunbooks filters by availableAtMs and pulses on arrival', () => {
   assert.equal(visibleRunbooks(scenario, 0).length, 1);
   assert.equal(visibleRunbooks(scenario, 90_000).length, 2);
 
-  let state = createState(scenario);
+  let state = createPlayState(scenario);
   assert.equal(state.monitors.right.activeRunbook?.id, 'early');
   assert.equal(state.notifications.pulseMs, 0);
 
@@ -49,8 +54,8 @@ test('computeNarrativeHour maps session progress to midnight shift hours', () =>
 });
 
 test('advanceGameState updates narrativeHour with elapsed time', () => {
-  const scenario = testScenario();
-  let state = createState(scenario);
+  const scenario = baseScenario();
+  let state = createPlayState(scenario);
   assert.equal(state.world.narrativeHour, 0);
 
   state = advanceGameState(state, 300_000, scenario, 1, 60_000);
@@ -58,7 +63,7 @@ test('advanceGameState updates narrativeHour with elapsed time', () => {
 });
 
 test('applyLiveMetrics stores live metrics and caps history', () => {
-  let state = createState();
+  let state = createPlayState();
 
   for (let at = 0; at < 35; at += 1) {
     state = applyLiveMetrics(state, metricAt(at));
@@ -72,7 +77,7 @@ test('applyLiveMetrics stores live metrics and caps history', () => {
 });
 
 test('right panel tab switches mark slack seen and deactivate compose on runbook', () => {
-  const initial = createState();
+  const initial = createPlayState();
   const state = {
     ...initial,
     monitors: {
@@ -101,7 +106,7 @@ test('right panel tab switches mark slack seen and deactivate compose on runbook
 });
 
 test('toggleNotificationPanel marks visible notifications as read on open', () => {
-  const initial = createState();
+  const initial = createPlayState();
   const state = {
     ...initial,
     monitors: {
@@ -146,7 +151,7 @@ test('toggleNotificationPanel marks visible notifications as read on open', () =
 
 test('editor and focus reducers keep unrelated state intact', () => {
   const initial = {
-    ...createState(),
+    ...createPlayState(),
     commandInputFocused: true,
   };
 
@@ -167,7 +172,7 @@ test('editor and focus reducers keep unrelated state intact', () => {
 });
 
 test('navigation, expansion, and slack compose reducers are idempotent where expected', () => {
-  const state = createState();
+  const state = createPlayState();
 
   const dismissed = dismissNavigationStep(state, 'nav-1');
   assert.deepEqual(dismissed.navigation.dismissedStepIds, ['nav-1']);
@@ -192,14 +197,14 @@ test('navigation, expansion, and slack compose reducers are idempotent where exp
 
 test('setActiveRunbook tracks opened runbooks and ignores unavailable indexes', () => {
   const scenario = {
-    ...testScenario(),
+    ...baseScenario(),
     runbooks: [
       {id: 'early', title: 'Early', body: 'now'},
       {id: 'late', title: 'Late', body: 'later', availableAtMs: 60_000},
     ],
   };
   const state = advanceGameState(
-    createState(scenario),
+    createPlayState(scenario),
     60_000,
     scenario,
     1,
@@ -215,7 +220,7 @@ test('setActiveRunbook tracks opened runbooks and ignores unavailable indexes', 
 
 test('submitPlayerSlackMessage trims body and ignores blank messages', () => {
   const state = {
-    ...createState(),
+    ...createPlayState(),
     slackCompose: {active: true, draft: '  hello  '},
   };
 
@@ -228,35 +233,82 @@ test('submitPlayerSlackMessage trims body and ignores blank messages', () => {
   assert.deepEqual(submitted.slackCompose, {active: false, draft: ''});
 });
 
-function testScenario() {
-  return {
-    id: 'scenario_test',
-    version: 1,
-    title: 'Test Scenario',
-    difficulty: 'beginner',
-    timeLimitMinutes: 10,
-    service: {
-      name: 'Test API',
-      healthUrl: 'http://localhost:8080/health',
-    },
-    briefing: [],
-    startup: [],
-    triggers: [],
-    alerts: [],
-    successConditions: [],
-    runbooks: [],
-    slackMessages: [],
-  };
-}
+test('focus, warning decay, and unread counters cover remaining reducers', () => {
+  const base = createPlayState();
+  const focused = focusCommandInput(base);
+  assert.equal(focused.commandInputFocused, true);
+  assert.equal(focusCommandInput(focused), focused);
 
-function createState(scenario = testScenario()) {
-  return createInitialGameState(
+  const blurred = blurCommandInput(focused);
+  assert.equal(blurred.commandInputFocused, false);
+  assert.equal(blurCommandInput(blurred), blurred);
+
+  const compose = activateSlackCompose(base);
+  assert.equal(compose.commandInputFocused, false);
+  assert.equal(compose.slackCompose.active, true);
+
+  const warned = {
+    ...base,
+    warning: {message: 'slow down', flashMs: 500},
+  };
+  const decayed = decayWorldOverlays(warned, 200);
+  assert.equal(decayed.warning?.flashMs, 300);
+  const cleared = decayWorldOverlays(decayed, 400);
+  assert.equal(cleared.warning, undefined);
+
+  const withAlerts = {
+    ...base,
+    monitors: {
+      ...base.monitors,
+      left: {
+        ...base.monitors.left,
+        alerts: [
+          {
+            id: 'alert-1',
+            atMs: 1,
+            severity: 'warning',
+            title: 'warn',
+            body: 'body',
+          },
+        ],
+      },
+    },
+  };
+  assert.equal(unreadAlertCount(withAlerts), 1);
+  assert.equal(unreadNotificationCount(withAlerts), 1);
+
+  const scenario = {
+    ...baseScenario(),
+    navigationSteps: [{id: 'nav-1', atMs: 0, hint: 'click terminal'}],
+  };
+  const withNav = advanceGameState(
+    createPlayState(scenario),
+    1_000,
     scenario,
-    'sess_test',
-    'repl_test',
-    createEmptyTerminalMirror()
+    1,
+    1_000
   );
-}
+  assert.equal(withNav.navigation.activeStepId, 'nav-1');
+});
+
+test('advanceGameState pulses when new slack messages arrive from the server', () => {
+  const scenario = baseScenario();
+  const initial = createPlayState(scenario, 1_000);
+  const serverSlack = [
+    {id: 'slack-new', atMs: 2_000, from: 'SRE', body: 'check queue'},
+  ];
+  const next = advanceGameState(
+    initial,
+    2_000,
+    scenario,
+    1,
+    1_000,
+    initial.monitors.left.alerts,
+    serverSlack
+  );
+  assert.equal(next.monitors.right.slackMessages.length, 1);
+  assert.equal(next.notifications.pulseMs, 2400);
+});
 
 function metricAt(at) {
   return {

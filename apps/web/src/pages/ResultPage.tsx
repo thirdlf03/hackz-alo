@@ -1,5 +1,5 @@
 import {useEffect, useMemo, useState} from 'preact/hooks';
-import {ApiClient} from '../api/client.js';
+import {createApiClient} from '../api/client.js';
 import {
   buildTimelineFromEvents,
   filterImportantEvents,
@@ -33,7 +33,7 @@ interface Highlight {
   label: string;
 }
 
-const api = new ApiClient();
+const api = createApiClient();
 const highlightLimit = 3;
 
 export function ResultPage({

@@ -1,6 +1,6 @@
 import {useEffect, useRef} from 'preact/hooks';
 import type {GameRenderState} from '@incident/shared';
-import type {ApiClient} from '../api/client.js';
+import type {ApiClientSurface} from '../api/client.js';
 import {updateEditorPanel} from '../game/state/gameState.js';
 import type {ReplayEventEmitter} from '../game/events/emitReplayEvent.js';
 import type {Screen} from './appTypes.js';
@@ -15,7 +15,7 @@ type PatchGameState = (
 ) => void;
 
 export function useSessionEditor(options: {
-  api: ApiClient;
+  api: ApiClientSurface;
   screen: Screen;
   gameState: GameRenderState | undefined;
   sessionRef: {current: SessionIdentity | undefined};

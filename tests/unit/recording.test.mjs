@@ -10,6 +10,7 @@ import {
 import {
   replayEventSummary,
   createReplayEvent,
+  toJsonLine,
 } from '../../packages/shared/src/events.ts';
 
 test('recording defaults keep chunk cadence and multipart part size separate', () => {
@@ -97,4 +98,141 @@ test('replayEventSummary formats session lifecycle labels', () => {
     ),
     '解雇！'
   );
+});
+
+test('replayEventSummary covers event label branches', () => {
+  const replayId = 'repl_test';
+  const cases = [
+    {
+      type: 'session_end',
+      payload: {result: 'false_resolve'},
+      expected: '未復旧のまま解雇',
+    },
+    {
+      type: 'session_end',
+      payload: {result: 'failed'},
+      expected: '解雇！',
+    },
+    {
+      type: 'session_end',
+      payload: {result: 'timeout'},
+      expected: '解雇！',
+    },
+    {
+      type: 'session_end',
+      payload: {result: 'aborted'},
+      expected: '強制終了',
+    },
+    {
+      type: 'session_end',
+      payload: {result: 'resolved'},
+      expected: 'セッション終了',
+    },
+    {
+      type: 'terminal_input',
+      payload: {data: '  ls -la '},
+      expected: 'command: ls -la',
+    },
+    {
+      type: 'alert',
+      payload: {message: 'latency high'},
+      expected: 'alert: latency high',
+    },
+    {
+      type: 'runbook_open',
+      payload: {runbookId: 'rb-1'},
+      expected: 'runbook: rb-1',
+    },
+    {
+      type: 'command_detected',
+      payload: {command: 'restart api'},
+      expected: 'command: restart api',
+    },
+    {
+      type: 'recovery_check',
+      payload: {command: 'curl health'},
+      expected: '復旧確認: curl health',
+    },
+    {
+      type: 'service_restart',
+      payload: {command: 'unctl restart api'},
+      expected: '再起動: unctl restart api',
+    },
+    {
+      type: 'file_opened',
+      payload: {path: '/workspace/app.un'},
+      expected: 'ファイル: /workspace/app.un',
+    },
+    {
+      type: 'file_saved',
+      payload: {path: '/workspace/app.un'},
+      expected: '保存: /workspace/app.un',
+    },
+    {
+      type: 'ui_panel_open',
+      payload: {panel: 'editor'},
+      expected: 'Editor を開いた',
+    },
+    {
+      type: 'ui_panel_open',
+      payload: {panel: 'notifications'},
+      expected: '通知パネルを開いた',
+    },
+    {
+      type: 'ui_panel_open',
+      payload: {panel: 'slack_compose'},
+      expected: 'Slack 返信を開始',
+    },
+    {
+      type: 'ui_panel_open',
+      payload: {panel: 'metrics'},
+      expected: 'パネル: metrics',
+    },
+    {
+      type: 'monitor_update',
+      payload: {label: 'CPU'},
+      expected: 'メトリクス: CPU',
+    },
+    {
+      type: 'incident_resolved',
+      payload: {},
+      expected: '復旧宣言',
+    },
+    {
+      type: 'scenario_event',
+      payload: {},
+      expected: 'scenario_event',
+    },
+  ];
+
+  for (const {type, payload, expected} of cases) {
+    assert.equal(
+      replayEventSummary(
+        createReplayEvent({
+          replayId,
+          type,
+          at: 1,
+          actor: 'player',
+          payload,
+        })
+      ),
+      expected,
+      type
+    );
+  }
+});
+
+test('createReplayEvent and toJsonLine serialize replay events', () => {
+  const event = createReplayEvent({
+    replayId: 'repl_test',
+    type: 'session_start',
+    at: 12,
+    actor: 'system',
+    payload: {scenarioId: 'demo'},
+    visibility: 'private',
+  });
+  assert.equal(event.at, 12);
+  assert.equal(event.visibility, 'private');
+  assert.match(event.id, /^evt_/);
+  assert.match(toJsonLine(event), /"replayId":"repl_test"/);
 });

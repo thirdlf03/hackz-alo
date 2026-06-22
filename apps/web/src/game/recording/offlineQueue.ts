@@ -1,5 +1,5 @@
 import type {ReplayEvent} from '@incident/shared';
-import type {ApiClient} from '../../api/client.js';
+import type {ApiClientSurface} from '../../api/client.js';
 
 interface QueuedChunk {
   kind: 'chunk';
@@ -29,7 +29,7 @@ function indexedDbError(message: string, cause?: DOMException | null): Error {
 export class OfflineUploadQueue {
   private flushing = false;
 
-  constructor(private api: ApiClient) {}
+  constructor(private api: ApiClientSurface) {}
 
   async enqueueChunk(input: Omit<QueuedChunk, 'kind'>) {
     await this.put({kind: 'chunk', ...input});

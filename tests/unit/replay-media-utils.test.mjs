@@ -1,13 +1,23 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {
+import {tsImport} from 'tsx/esm/api';
+
+const {
   buildTimelineFromEvents,
+  filterImportantEvents,
+  formatDuration,
+  formatSeconds,
   gameTimeToVideoSeekSeconds,
   inferRecordingStartedAtGameMs,
   isTimelineEventType,
+  parseBrowserInfo,
   parseRecordingClockSegments,
+  parseRecordingStartedAtGameMs,
   timelineDisplaySeconds,
-} from '../../apps/web/src/replay/replayMediaUtils.ts';
+} = await tsImport(
+  '../../apps/web/src/replay/replayMediaUtils.ts',
+  import.meta.url
+);
 
 test('isTimelineEventType excludes noisy recording and duplicate command events', () => {
   assert.equal(isTimelineEventType('command_detected'), true);
@@ -107,4 +117,65 @@ test('timelineDisplaySeconds maps timeline labels to video time when video is av
 test('inferRecordingStartedAtGameMs estimates late recorder start', () => {
   assert.equal(inferRecordingStartedAtGameMs(21_000, 15), 6_000);
   assert.equal(inferRecordingStartedAtGameMs(15_000, 15), 0);
+  assert.equal(inferRecordingStartedAtGameMs(0, 15), 0);
+  assert.equal(inferRecordingStartedAtGameMs(21_000, 0), 0);
+});
+
+test('parseBrowserInfo and parseRecordingStartedAtGameMs read browser metadata', () => {
+  assert.equal(parseBrowserInfo(null), undefined);
+  assert.equal(parseBrowserInfo('not-json'), undefined);
+  assert.deepEqual(parseBrowserInfo('{"ua":"x"}'), {ua: 'x'});
+  assert.equal(
+    parseRecordingStartedAtGameMs(
+      {recordingStartedAtGameMs: 4_000},
+      20_000,
+      10
+    ),
+    4_000
+  );
+  assert.equal(parseRecordingStartedAtGameMs({}, 21_000, 15), 6_000);
+});
+
+test('filterImportantEvents keeps incident-critical replay events', () => {
+  const events = [
+    {event_id: 'e1', type: 'alert', at_ms: 1},
+    {event_id: 'e2', type: 'terminal_input', at_ms: 2},
+    {event_id: 'e3', type: 'incident_resolved', at_ms: 3},
+    {event_id: 'e4', type: 'player_note', at_ms: 4},
+  ];
+  assert.deepEqual(
+    filterImportantEvents(events).map((event) => event.type),
+    ['alert', 'incident_resolved', 'player_note']
+  );
+});
+
+test('formatSeconds and formatDuration render stable labels', () => {
+  assert.equal(formatSeconds(65), '01:05');
+  assert.equal(formatDuration(65_000), '01:05');
+  assert.equal(formatDuration(-1_000), '00:00');
+});
+
+test('buildTimelineFromEvents falls back to scenario timeline entries', () => {
+  const timeline = buildTimelineFromEvents(
+    [],
+    [
+      {at: 2, label: 'fallback event'},
+      {at: 0, label: ''},
+    ]
+  );
+  assert.deepEqual(timeline, [
+    {id: 'fallback-0-2-fallback event', at: 2, label: 'fallback event'},
+  ]);
+});
+
+test('buildTimelineFromEvents uses default labels for known event types', () => {
+  const timeline = buildTimelineFromEvents([
+    {event_id: 'e1', type: 'session_end', at_ms: 2_000},
+    {event_id: 'e2', type: 'incident_resolved', at_ms: 3_000},
+    {event_id: 'e3', type: 'monitor_update', at_ms: 4_000},
+  ]);
+  assert.deepEqual(
+    timeline.map((entry) => entry.label),
+    ['セッション終了', '復旧宣言', 'メトリクス更新']
+  );
 });

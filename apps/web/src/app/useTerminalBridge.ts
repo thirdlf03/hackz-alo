@@ -17,7 +17,7 @@ import {
   commandEventPayload,
   type ReplayEventEmitter,
 } from '../game/events/emitReplayEvent.js';
-import type {ApiClient} from '../api/client.js';
+import type {ApiClientSurface} from '../api/client.js';
 import type {Screen} from './appTypes.js';
 
 interface SessionIdentity {
@@ -35,7 +35,7 @@ type PatchGameState = (
 const DANGEROUS_COMMAND = /\brm\s+-rf\b/i;
 
 export function useTerminalBridge(options: {
-  api: ApiClient;
+  api: ApiClientSurface;
   screen: Screen;
   gameState: GameRenderState | undefined;
   gameStateRef: MutableRef<GameRenderState | undefined>;

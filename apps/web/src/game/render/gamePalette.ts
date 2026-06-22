@@ -67,21 +67,8 @@ export const gamePalette = {
   metricCritical: '#f87171',
 } as const;
 
-export type MetricTone = 'healthy' | 'warn' | 'critical';
-
-export function toneColor(tone: MetricTone): string {
-  if (tone === 'critical') return gamePalette.metricCritical;
-  if (tone === 'warn') return gamePalette.metricWarn;
-  return gamePalette.metricHealthy;
-}
-
-export function severityColor(
-  severity: 'info' | 'warning' | 'critical'
-): string {
-  if (severity === 'critical') return gamePalette.statusCritical;
-  if (severity === 'warning') return gamePalette.statusWarn;
-  return gamePalette.statusInfo;
-}
+export type {MetricTone} from '../../pure/paletteHelpers.js';
+export {toneColor, severityColor} from '../../pure/paletteHelpers.js';
 
 /** Minimum font size for canvas text (WCAG AAA readability). */
 export const fontFloor = 16;

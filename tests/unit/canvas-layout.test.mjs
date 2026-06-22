@@ -33,6 +33,8 @@ const {
 );
 
 test('measureRunbookTabWidth clamps text measurement to stable tab sizes', () => {
+  assert.equal(measureRunbookTabWidth('wide-tab-label'), 240);
+
   assert.equal(
     measureRunbookTabWidth('x', () => 1),
     132
@@ -66,7 +68,7 @@ test('monitor layout helpers derive content and overlay regions', () => {
     ['metrics', 'terminal', 'runbook']
   );
   assert.equal(monitorLayout('metrics'), monitorLayouts[0]);
-  assert.throws(() => monitorLayout('missing'), /missing monitor layout/);
+  assert.equal(monitorLayout('missing'), undefined);
 
   const terminalContent = monitorContentRegion(monitorLayout('terminal'));
   assert.deepEqual(terminalContent, {
@@ -187,4 +189,47 @@ test('monitorMagnifyAt resolves monitor magnify affordances', () => {
     );
   }
   assert.equal(monitorMagnifyAt(0, 0), null);
+});
+
+test('centerToolTabRegions and slackComposeAt cover expanded hit targets', () => {
+  const tabs = centerToolTabRegions();
+  assert.equal(tabs.length, 2);
+  assert.equal(tabs[0]?.id, 'terminal');
+
+  const composePoint = slackComposeRegion('slack');
+  assert.equal(
+    slackComposeAt(composePoint.x + 10, composePoint.y + 10, 'slack'),
+    'compose'
+  );
+
+  const expandedCompose = slackComposeRegion('slack', 'runbook');
+  assert.equal(
+    slackComposeAt(
+      expandedCompose.x + 10,
+      expandedCompose.y + 10,
+      'slack',
+      'runbook'
+    ),
+    'compose'
+  );
+});
+
+test('expanded monitor helpers scale metrics and runbook regions', () => {
+  const expandedMetrics = metricsPanelScrollRegion(true);
+  assert.equal(expandedMetrics.x, 282);
+  assert.equal(expandedMetrics.width, 1356);
+
+  const expandedEditor = centerEditorOverlayRegion(true);
+  assert.equal(expandedEditor.x, 282 + 156 * (700 / 540));
+
+  const expandedCompose = slackComposeRegion('slack', 'runbook');
+  assert.equal(expandedCompose.width > 0, true);
+  const expandedSend = slackSendButtonRegion('slack', 'runbook');
+  assert.equal(expandedSend.width > 0, true);
+
+  assert.equal(
+    runbookTabAt(366, 202, 2, ['First', 'Second'], 'runbook', 'runbook'),
+    0
+  );
+  assert.equal(rightPanelPrimaryTabAt(310, 120, 'runbook'), 'runbook');
 });

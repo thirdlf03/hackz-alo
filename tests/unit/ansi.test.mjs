@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {
-  parseAnsiLine,
-  stripAnsi,
-} from '../../apps/web/src/game/terminal/ansi.ts';
+import {tsImport} from 'tsx/esm/api';
+
+const {parseAnsiLine, stripAnsi} = await tsImport(
+  '../../apps/web/src/game/terminal/ansi.ts',
+  import.meta.url
+);
 
 test('stripAnsi removes escape sequences', () => {
   assert.equal(stripAnsi('\u001b[31merror\u001b[0m'), 'error');

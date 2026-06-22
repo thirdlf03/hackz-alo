@@ -4,6 +4,7 @@ import type {
   ScenarioDefinition,
   SessionStatus,
 } from '@incident/shared';
+import {computeGameTimeMs} from '../pure/sessionTime.js';
 
 export interface StoredSession {
   sessionId: string;
@@ -69,25 +70,17 @@ export function finishStoredSession(
   finishedAt: string,
   nowMs: number
 ): StoredSession {
-  const finished: StoredSession = {
-    ...session,
+  const {gameClockWallMs: _gameClockWallMs, ...sessionWithoutWall} = session;
+  return {
+    ...sessionWithoutWall,
     status,
     gameTimeMs: getGameTimeMs(session, nowMs),
     finishedAt,
   };
-  delete finished.gameClockWallMs;
-  return finished;
 }
 
 export function getGameTimeMs(session: StoredSession, nowMs = Date.now()) {
-  if (session.status !== 'running' || !session.gameClockWallMs) {
-    return session.gameTimeMs;
-  }
-  const wallDelta = nowMs - session.gameClockWallMs;
-  return Math.max(
-    0,
-    Math.round(session.gameTimeMs + wallDelta * session.gameSpeed)
-  );
+  return computeGameTimeMs(session, nowMs);
 }
 
 export function isTerminalStatus(status: SessionStatus) {

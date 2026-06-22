@@ -2,7 +2,7 @@ import {
   recordingMultipartPartSize,
   splitBufferIntoParts,
 } from '@incident/shared';
-import type {ApiClient} from '../../api/client.js';
+import type {ApiClientSurface} from '../../api/client.js';
 
 export {splitBufferIntoParts};
 
@@ -27,7 +27,7 @@ export class RecordingFinalizer {
     this.totalSize = 0;
   }
 
-  async finalize(replayId: string, api: ApiClient) {
+  async finalize(replayId: string, api: ApiClientSurface) {
     if (!this.hasData()) return false;
 
     const merged = mergeUint8Arrays(this.parts);

@@ -2,10 +2,15 @@ import type {
   EditorPanelState,
   GameRenderState,
   MetricsSnapshot,
-  RunbookDefinition,
   ScenarioDefinition,
   TerminalMirrorState,
 } from '@incident/shared';
+import type {GameStateAction} from './gameStateActions.js';
+import {computeNarrativeHour, visibleRunbooks} from './gameSelectors.js';
+import {reduceGameState} from './gameStateReduce.js';
+
+export type {GameStateAction};
+export {reduceGameState};
 
 const METRICS_HISTORY_LIMIT = 30;
 
@@ -36,14 +41,13 @@ function defaultEditor(): EditorPanelState {
   };
 }
 
-export function visibleRunbooks(
-  scenario: ScenarioDefinition,
-  elapsedMs: number
-): RunbookDefinition[] {
-  return scenario.runbooks.filter(
-    (runbook) => (runbook.availableAtMs ?? 0) <= elapsedMs
-  );
-}
+export {
+  computeNarrativeHour,
+  mergedSlackMessages,
+  unreadAlertCount,
+  unreadNotificationCount,
+  visibleRunbooks,
+} from './gameSelectors.js';
 
 export function createInitialGameState(
   scenario: ScenarioDefinition,
@@ -212,6 +216,20 @@ export function advanceGameState(
   };
 }
 
+function resolveNavigationStep(
+  scenario: ScenarioDefinition | undefined,
+  elapsedMs: number,
+  dismissedStepIds: string[]
+) {
+  if (!scenario?.navigationSteps?.length) return undefined;
+  const eligible = scenario.navigationSteps
+    .filter(
+      (step) => step.atMs <= elapsedMs && !dismissedStepIds.includes(step.id)
+    )
+    .toSorted((a, b) => b.atMs - a.atMs);
+  return eligible[0];
+}
+
 export function decayWorldOverlays(
   state: GameRenderState,
   deltaMs: number
@@ -257,44 +275,14 @@ export function dismissNavigationStep(
   state: GameRenderState,
   stepId: string
 ): GameRenderState {
-  if (state.navigation.dismissedStepIds.includes(stepId)) return state;
-  return {
-    ...state,
-    navigation: {
-      dismissedStepIds: [...state.navigation.dismissedStepIds, stepId],
-    },
-  };
+  return reduceGameState(state, {type: 'dismiss_navigation_step', stepId});
 }
 
 export function setRightPanelTab(
   state: GameRenderState,
   tab: 'runbook' | 'slack'
 ): GameRenderState {
-  if (state.monitors.right.activePanelTab === tab) return state;
-  const seenSlackIds =
-    tab === 'slack'
-      ? [
-          ...new Set([
-            ...state.seenSlackIds,
-            ...mergedSlackMessages(state).map((message) => message.id),
-          ]),
-        ]
-      : state.seenSlackIds;
-  return {
-    ...state,
-    monitors: {
-      ...state.monitors,
-      right: {
-        ...state.monitors.right,
-        activePanelTab: tab,
-      },
-    },
-    seenSlackIds,
-    slackCompose:
-      tab === 'slack'
-        ? state.slackCompose
-        : {...state.slackCompose, active: false},
-  };
+  return reduceGameState(state, {type: 'set_right_panel_tab', tab});
 }
 
 export function setActiveRunbook(
@@ -302,135 +290,56 @@ export function setActiveRunbook(
   scenario: ScenarioDefinition,
   index: number
 ): GameRenderState {
-  const runbook = visibleRunbooks(scenario, state.clock.elapsedMs)[index];
-  if (!runbook) return state;
-  const openedRunbookIds = state.openedRunbookIds.includes(runbook.id)
-    ? state.openedRunbookIds
-    : [...state.openedRunbookIds, runbook.id];
-  return {
-    ...state,
-    monitors: {
-      ...state.monitors,
-      right: {
-        ...state.monitors.right,
-        activePanelTab: 'runbook',
-        activeRunbook: runbook,
-        activeRunbookIndex: index,
-      },
-    },
-    openedRunbookIds,
-  };
+  return reduceGameState(state, {
+    type: 'set_active_runbook',
+    scenario,
+    index,
+  });
 }
 
 export function setCenterTool(
   state: GameRenderState,
   activeTool: GameRenderState['monitors']['center']['activeTool']
 ): GameRenderState {
-  if (state.monitors.center.activeTool === activeTool) return state;
-  return {
-    ...state,
-    commandInputFocused:
-      activeTool === 'terminal' ? state.commandInputFocused : false,
-    monitors: {
-      ...state.monitors,
-      center: {
-        ...state.monitors.center,
-        activeTool,
-      },
-    },
-  };
+  return reduceGameState(state, {type: 'set_center_tool', activeTool});
 }
 
 export function updateEditorPanel(
   state: GameRenderState,
   updater: (editor: EditorPanelState) => EditorPanelState
 ): GameRenderState {
-  const editor = updater(state.monitors.center.editor);
-  return {
-    ...state,
-    monitors: {
-      ...state.monitors,
-      center: {
-        ...state.monitors.center,
-        editor,
-      },
-    },
-  };
+  return reduceGameState(state, {type: 'update_editor_panel', updater});
 }
 
 export function toggleNotificationPanel(
   state: GameRenderState
 ): GameRenderState {
-  const panelOpen = !state.notifications.panelOpen;
-  const readAlertIds = panelOpen
-    ? [
-        ...new Set([
-          ...state.notifications.readAlertIds,
-          ...state.monitors.left.alerts.map((alert) => alert.id),
-        ]),
-      ]
-    : state.notifications.readAlertIds;
-  const seenSlackIds = panelOpen
-    ? [
-        ...new Set([
-          ...state.seenSlackIds,
-          ...mergedSlackMessages(state).map((message) => message.id),
-        ]),
-      ]
-    : state.seenSlackIds;
-  return {
-    ...state,
-    notifications: {
-      ...state.notifications,
-      panelOpen,
-      readAlertIds,
-      pulseMs: panelOpen ? 0 : state.notifications.pulseMs,
-    },
-    seenSlackIds,
-    slackCompose: panelOpen
-      ? state.slackCompose
-      : {...state.slackCompose, active: false},
-  };
+  return reduceGameState(state, {type: 'toggle_notification_panel'});
 }
 
 export function activateSlackCompose(state: GameRenderState): GameRenderState {
-  return {
-    ...state,
-    commandInputFocused: false,
-    slackCompose: {...state.slackCompose, active: true},
-  };
+  return reduceGameState(state, {type: 'activate_slack_compose'});
 }
 
 export function focusCommandInput(state: GameRenderState): GameRenderState {
-  if (state.commandInputFocused) return state;
-  return {...state, commandInputFocused: true};
+  return reduceGameState(state, {type: 'focus_command_input'});
 }
 
 export function blurCommandInput(state: GameRenderState): GameRenderState {
-  if (!state.commandInputFocused) return state;
-  return {...state, commandInputFocused: false};
+  return reduceGameState(state, {type: 'blur_command_input'});
 }
 
 export function deactivateSlackCompose(
   state: GameRenderState
 ): GameRenderState {
-  if (!state.slackCompose.active && state.slackCompose.draft === '') {
-    return state;
-  }
-  return {
-    ...state,
-    slackCompose: {active: false, draft: ''},
-  };
+  return reduceGameState(state, {type: 'deactivate_slack_compose'});
 }
 
 export function setSlackDraft(
   state: GameRenderState,
   draft: string
 ): GameRenderState {
-  return {
-    ...state,
-    slackCompose: {...state.slackCompose, draft},
-  };
+  return reduceGameState(state, {type: 'set_slack_draft', draft});
 }
 
 export function submitPlayerSlackMessage(
@@ -438,73 +347,21 @@ export function submitPlayerSlackMessage(
   body: string,
   atMs: number
 ): GameRenderState {
-  const trimmed = body.trim();
-  if (!trimmed) return state;
-  const message = {
-    id: `player-${crypto.randomUUID()}`,
+  return reduceGameState(state, {
+    type: 'submit_player_slack_message',
+    body,
     atMs,
-    from: 'あなた',
-    body: trimmed,
-  };
-  return {
-    ...state,
-    playerSlackMessages: [...state.playerSlackMessages, message],
-    slackCompose: {active: false, draft: ''},
-  };
-}
-
-export function mergedSlackMessages(state: GameRenderState) {
-  return [
-    ...state.monitors.right.slackMessages,
-    ...state.playerSlackMessages,
-  ].sort((a, b) => a.atMs - b.atMs);
-}
-
-export function unreadNotificationCount(state: GameRenderState) {
-  const unreadAlerts = state.monitors.left.alerts.filter(
-    (alert) => !state.notifications.readAlertIds.includes(alert.id)
-  ).length;
-  const unreadSlack = mergedSlackMessages(state).filter(
-    (message) => !state.seenSlackIds.includes(message.id)
-  ).length;
-  return unreadAlerts + unreadSlack;
-}
-
-export function unreadAlertCount(state: GameRenderState) {
-  return state.monitors.left.alerts.filter(
-    (alert) => !state.notifications.readAlertIds.includes(alert.id)
-  ).length;
-}
-
-function resolveNavigationStep(
-  scenario: ScenarioDefinition | undefined,
-  elapsedMs: number,
-  dismissedStepIds: string[]
-) {
-  if (!scenario?.navigationSteps?.length) return undefined;
-  const eligible = scenario.navigationSteps
-    .filter(
-      (step) => step.atMs <= elapsedMs && !dismissedStepIds.includes(step.id)
-    )
-    .sort((a, b) => b.atMs - a.atMs);
-  return eligible[0];
+  });
 }
 
 export function toggleExpandedMonitor(
   state: GameRenderState,
   monitor: 'metrics' | 'terminal' | 'runbook'
 ): GameRenderState {
-  const expandedMonitor =
-    state.world.expandedMonitor === monitor ? null : monitor;
-  return {
-    ...state,
-    world: {...state.world, expandedMonitor},
-  };
-}
-
-export function computeNarrativeHour(elapsedMs: number, timeLimitMs: number) {
-  const limitMs = Math.max(timeLimitMs, 1);
-  return Math.min(6, (elapsedMs / limitMs) * 6);
+  return reduceGameState(state, {
+    type: 'toggle_expanded_monitor',
+    monitor,
+  });
 }
 
 function emptyMetrics(): MetricsSnapshot {

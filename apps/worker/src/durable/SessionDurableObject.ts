@@ -34,6 +34,7 @@ import {
   type StoredSession,
   type SuccessCheck,
 } from './sessionState.js';
+import {dispatchSessionRoute} from './sessionRouter.js';
 import {SessionTimeline} from './sessionTimeline.js';
 import {
   destroySessionSandbox,
@@ -120,66 +121,29 @@ export class SessionDurableObject implements DurableObject {
 
   async fetch(request: Request): Promise<Response> {
     try {
-      const url = new URL(request.url);
-      const segments = url.pathname.split('/').filter(Boolean);
-      const action = segments.at(-1);
-
-      if (request.method === 'POST' && action === 'bootstrap') {
-        return await this.bootstrap(request);
-      }
-      if (request.method === 'POST' && action === 'start') {
-        return await this.start(request);
-      }
-      if (request.method === 'POST' && action === 'resolve') {
-        return await this.resolve();
-      }
-      if (request.method === 'POST' && action === 'retire') {
-        return await this.retire();
-      }
-      if (request.method === 'POST' && action === 'timeout') {
-        return await this.timeout();
-      }
-      if (request.method === 'DELETE' && action === 'delete') {
-        return await this.deleteSession();
-      }
-      if (request.method === 'POST' && action === 'clock') {
-        return await this.updateClock(request);
-      }
-      if (request.method === 'POST' && action === 'terminal-resize') {
-        return await this.terminalResize(request);
-      }
-      if (request.method === 'GET' && action === 'events') {
-        return await this.events(request);
-      }
-      if (request.method === 'GET' && action === 'clock') {
-        return jsonOk(this.clockPayload(await this.requireSession()));
-      }
-      if (request.method === 'GET' && action === 'metrics') {
-        return await this.metrics();
-      }
-      if (request.method === 'GET' && action === 'logs') {
-        return await this.logs(request);
-      }
-      if (request.method === 'GET' && action === 'storage') {
-        return await this.storage();
-      }
-      if (request.method === 'GET' && action === 'files') {
-        return await this.files();
-      }
-      if (request.method === 'GET' && action === 'file') {
-        return await this.readFile(request);
-      }
-      if (request.method === 'PUT' && action === 'file') {
-        return await this.writeFile(request);
-      }
-      if (request.method === 'GET' && action === 'terminal') {
-        return await this.terminal(request);
-      }
-      if (request.method === 'POST' && action === 'terminal-interrupt') {
-        return await this.terminalInterrupt();
-      }
-      if (request.method === 'GET') return jsonOk(await this.snapshot());
-
+      const response = await dispatchSessionRoute(request, {
+        bootstrap: (req) => this.bootstrap(req),
+        start: (req) => this.start(req),
+        resolve: () => this.resolve(),
+        retire: () => this.retire(),
+        timeout: () => this.timeout(),
+        delete: () => this.deleteSession(),
+        updateClock: (req) => this.updateClock(req),
+        terminalResize: (req) => this.terminalResize(req),
+        events: (req) => this.events(req),
+        clock: async () =>
+          jsonOk(this.clockPayload(await this.requireSession())),
+        metrics: () => this.metrics(),
+        logs: (req) => this.logs(req),
+        storage: () => this.storage(),
+        files: () => this.files(),
+        readFile: (req) => this.readFile(req),
+        writeFile: (req) => this.writeFile(req),
+        terminal: (req) => this.terminal(req),
+        terminalInterrupt: () => this.terminalInterrupt(),
+        snapshot: async () => jsonOk(await this.snapshot()),
+      });
+      if (response) return response;
       return jsonErr('not_found', 'session action not found', 404);
     } catch (error) {
       return errorResponse(error);

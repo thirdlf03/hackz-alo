@@ -6,11 +6,13 @@
   "scripts": {
     "dev": "node scripts/dev.mjs",
     "test": "node --test tests/unit/*.mjs",
+    "test:coverage": "node --test --test-concurrency=1 --experimental-test-coverage tests/unit/*.mjs",
     "test:e2e": "playwright test",
     "build:scenarios": "tsx scripts/build-scenarios.mjs",
     "db:migrate:local": "pnpm --filter @incident/worker run db:migrate:local",
     "db:reset:local": "node scripts/db-reset-local.mjs",
     "sync:sandbox-assets": "node scripts/sync-sandbox-assets.mjs",
+    "check:sandbox-assets": "node scripts/check-sandbox-assets.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "build": "pnpm -r run build",
     "setup:cloudflare": "node scripts/setup-cloudflare.mjs",
@@ -23,12 +25,18 @@
     "audit:coupling": "node scripts/audit-coupling.mjs",
     "fmt": "oxfmt",
     "fmt:check": "oxfmt --check",
-    "lint": "oxlint --type-aware",
-    "lint:fix": "oxlint --type-aware --fix"
+    "lint": "oxlint --type-aware && pnpm run lint:pure",
+    "lint:fix": "oxlint --type-aware --fix",
+    "lint:pure": "eslint --max-warnings 0"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "latest",
+    "@eslint/js": "^10.0.1",
     "@types/node": "latest",
+    "effect": "^3.21.4",
+    "eslint": "^10.5.0",
+    "eslint-plugin-functional": "^10.0.0",
+    "globals": "^17.6.0",
     "oxfmt": "latest",
     "oxlint": "latest",
     "oxlint-config-presets": "latest",
@@ -36,6 +44,7 @@
     "playwright": "latest",
     "tsx": "latest",
     "typescript": "latest",
+    "typescript-eslint": "^8.61.1",
     "vite": "latest",
     "wrangler": "latest",
     "yaml": "^2.9.0"

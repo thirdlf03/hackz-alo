@@ -1,6 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {keyboardEventToTerminalInput} from '../../apps/web/src/game/terminal/input.ts';
+import {tsImport} from 'tsx/esm/api';
+
+const {keyboardEventToTerminalInput} = await tsImport(
+  '../../apps/web/src/game/terminal/input.ts',
+  import.meta.url
+);
 
 function keyboardEvent(overrides) {
   return {

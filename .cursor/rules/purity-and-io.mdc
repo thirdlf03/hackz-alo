@@ -1,0 +1,64 @@
+---
+description: 純粋層・Effect・副作用境界と lint ルール
+globs: apps/**/*.ts
+alwaysApply: false
+---
+
+# 純粋層と副作用の境界
+
+## どこに書くか
+
+| 種類 | 置き場所 | 例 |
+|------|----------|-----|
+| 純粋（入力→出力、ミューテーションなし） | `apps/**/pure/**`, `gameSelectors.ts`, `sessionState.ts` | `buildMetricSections`, `replayMedia`, `canvasLayout` |
+| IO・時間・DOM | `apps/**/effect/**`, hooks, `appUtils.ts` | metrics ポーリング, DOM 読み取り |
+| 状態リデューサー | `gameState.ts` | `advanceGameState`, `applyLiveMetrics` |
+| HTTP ディスパッチ | `sessionRouter.ts` | `dispatchSessionRoute`（マッチングは `pure/sessionRouteMatch.ts`） |
+
+純粋層から **import 禁止**: `effect`, `gameState`（リデューサー）。セレクタは `gameSelectors` を使う。
+
+## Effect TS（段階導入中）
+
+- IO を `Effect` で表現するファイルは `apps/**/effect/**`
+- パイロット: `effect/metricsPoll.ts` + `useMetricsPolling.ts`（`Effect.runFork` / `Fiber.interrupt`）
+- 新しい IO ループを足すときは Effect を検討。既存を一括 Effect 化しない
+
+```typescript
+// effect/metricsPoll.ts — API 失敗を離散 outcome に落とす
+pollSessionMetricsOnce(api, sessionId).pipe(
+  Effect.map((metrics) => ({ kind: 'metrics', metrics })),
+  Effect.catchAll(() => Effect.succeed({ kind: 'offline' }))
+);
+```
+
+## Lint
+
+```sh
+pnpm run lint:pure   # eslint-plugin-functional (noMutations) + import 制限
+pnpm run lint        # oxlint --type-aware + lint:pure
+```
+
+**ESLint 対象（純粋層）**: `apps/**/pure/**`, `gameSelectors.ts`, `sessionState.ts`, `sessionRouteMatch.ts`
+
+**oxlint overrides**: 上記と同じパスで `effect` / `gameState` import 禁止。`effect/**` は `eslint/new-cap` 緩和（`Data.TaggedError` 用）
+
+## 純粋層の書き方
+
+- `let` / 代入 / `delete` / 引数ミューテーションを使わない
+- 配列ソートは `toSorted`（`tsconfig` target ES2023）
+- 時刻は引数 `now` で受け取る（`appClock.ts`）。`performance.now()` は境界でだけ
+
+```typescript
+// ✅ pure/appClock.ts
+export function computeLiveGameTimeMs(options: { baseMs: number; now: number; ... }) { ... }
+
+// ✅ appUtils.ts — 境界
+export function computeLiveGameTimeMs(options) {
+  return computeLiveGameTimeMsPure({ ...options, now: performance.now() });
+}
+```
+
+## Worker セッション状態
+
+- `finishStoredSession` は `delete` ではなく分割代入で `gameClockWallMs` を落とす
+- ルート表は `sessionRouteMatch.ts`、handler 呼び出しは `sessionRouter.ts`

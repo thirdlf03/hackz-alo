@@ -1,0 +1,38 @@
+---
+description: Incident プロジェクトの全体方針（疎結合・品質ゲート・テスト）
+alwaysApply: true
+---
+
+# プロジェクト方針
+
+## 責務の分離
+
+- **純粋ロジック** → `apps/**/pure/**`（web/worker）、`gameSelectors.ts`、`sessionState.ts`
+- **副作用（IO）** → `apps/**/effect/**`, hooks（`use*.ts`）, `appUtils.ts`（DOM / `performance.now` の境界）
+- **状態更新** → `gameState.ts` + `gameStateReduce.ts`（`GameStateAction` 遷移 table）。セレクタは `gameSelectors.ts` へ
+- **セッション runtime** → `useSessionRuntime.ts`（orchestration）+ `useSessionClockSync` / `useSessionSse` / `useSessionGameLoop` / `useSessionLifecycleGuards` / `useSessionBootstrap`
+- **Canvas 描画** → `canvasRenderer.ts`（orchestration）+ `canvasRenderChrome` / `Notifications` / `Scene` / `CenterPanel` / `RightPanel` / `Overlay` / `Metrics`
+- **HTTP ディスパッチ** → `sessionRouter.ts`（薄い orchestration）。マッチングは `sessionRouteMatch.ts`
+
+大きなファイルにロジックを足さない。`App.tsx` / `SessionDurableObject.ts` は orchestration 層として薄く保つ。
+
+## 品質ゲート（各 phase / PR 前）
+
+```sh
+pnpm run fmt:check && pnpm run typecheck && pnpm run lint && pnpm test && pnpm run build
+pnpm run test:coverage   # 全体 line coverage 77.27% 未満に落とさない
+pnpm run audit:coupling  # LOC / fan-out の退行確認
+```
+
+`test:coverage` は `--test-concurrency=1`。同一 TS を複数テストから別経路 import すると V8 カバレッジが分散する。
+
+## テスト
+
+- TS モジュールは `tsImport`（`tests/helpers/game-fixtures.mjs`, `session-fixtures.mjs` で単一 import を優先）
+- 意味あるテストを書く（モック可）。カバレッジ目的だけのテストは避ける
+- 純粋層は `tests/unit/pure-*.test.mjs`、Effect は `tests/unit/effect-*.test.mjs`
+
+## 参照
+
+- 疎結合計画: `refactor-decoupling-plan.md`
+- 純粋層 / Effect / lint 詳細: `.cursor/rules/purity-and-io.mdc`

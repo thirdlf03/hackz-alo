@@ -1,5 +1,5 @@
 import type {GameRenderState, ScenarioDefinition} from '@incident/shared';
-import {visibleRunbooks} from '../state/gameState.js';
+import {visibleRunbooks} from '../state/gameSelectors.js';
 import {
   centerToolAt,
   containsCanvasPoint,
