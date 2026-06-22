@@ -24,22 +24,13 @@ import {
   toggleExpandedMonitor,
   toggleNotificationPanel,
   updateEditorPanel,
-  visibleRunbooks,
 } from '../game/state/gameState.js';
 import {
-  CanvasRenderer,
   centerEditorOverlayRegion,
-  centerToolAt,
-  expandedMonitorLayout,
-  inputDockRects,
   metricsPanelScrollRegion,
-  monitorMagnifyAt,
-  navigationOverlayRect,
-  notificationBellRegion,
-  runbookTabAt,
-  rightPanelPrimaryTabAt,
-  slackComposeAt,
-} from '../game/render/canvasRenderer.js';
+} from '../game/render/canvasLayout.js';
+import {CanvasRenderer} from '../game/render/canvasRenderer.js';
+import {resolveCanvasAction} from '../game/input/canvasActions.js';
 import {createEmptyTerminalMirror} from '../game/terminal/mirror.js';
 import {
   defaultTerminalDimensions,
@@ -1145,110 +1136,78 @@ export function App() {
     const emitter = eventEmitterRef.current;
     if (screen === 'play' && replayId && emitter) {
       const at = currentGameTimeMs();
+      const state = gameStateRef.current;
+      if (!state) return;
       void emitter.emit({
         replayId,
         type: 'ui_click',
         at,
         payload: {x: point.x, y: point.y},
       });
-      if (containsPoint(inputDockRects.button, point.x, point.y)) {
-        return void endSession('resolve');
+
+      const action = resolveCanvasAction(point, state, scenarioRef.current);
+      if (action.type === 'end_session') {
+        return void endSession(action.mode);
       }
-      if (containsPoint(inputDockRects.retire, point.x, point.y)) {
-        return void endSession('retire');
-      }
-      if (containsPoint(inputDockRects.input, point.x, point.y)) {
+      if (action.type === 'focus_command_input') {
         patchGameStateRef((current) =>
           focusCommandInput(deactivateSlackCompose(current))
         );
         return;
       }
       patchGameStateRef((current) => blurCommandInput(current));
-      const centerTool = centerToolAt(point.x, point.y);
-      if (centerTool) {
-        patchGameStateRef((current) => setCenterTool(current, centerTool));
+
+      if (action.type === 'center_tool') {
+        patchGameStateRef((current) => setCenterTool(current, action.tool));
         void emitter.emit({
           replayId,
           type: 'ui_panel_open',
           at,
-          payload: {panel: centerTool},
+          payload: {panel: action.tool},
         });
-        if (centerTool === 'editor') void loadEditorFiles();
+        if (action.tool === 'editor') void loadEditorFiles();
         return;
       }
-      const editorFilePath = editorFileAt(
-        point.x,
-        point.y,
-        gameStateRef.current
-      );
-      if (editorFilePath) {
+
+      if (action.type === 'open_editor_file') {
         patchGameStateRef((current) => setCenterTool(current, 'editor'));
-        void openEditorFile(editorFilePath);
+        void openEditorFile(action.path);
         return;
       }
-      const activeScenario = scenarioRef.current;
-      if (activeScenario) {
-        const expandedMonitor =
-          gameStateRef.current?.world.expandedMonitor ?? null;
-        const activePanelTab =
-          gameStateRef.current?.monitors.right.activePanelTab ?? 'runbook';
-        const primaryTab = rightPanelPrimaryTabAt(
-          point.x,
-          point.y,
-          expandedMonitor
-        );
-        if (primaryTab) {
-          patchGameStateRef((current) => setRightPanelTab(current, primaryTab));
-          void emitter.emit({
-            replayId,
-            type: 'ui_panel_open',
-            at,
-            payload: {panel: primaryTab === 'slack' ? 'slack' : 'runbook'},
-          });
-          return;
-        }
-        const visibleRunbookList = visibleRunbooks(
-          activeScenario,
-          gameStateRef.current?.clock.elapsedMs ?? 0
-        );
-        const tabIndex = runbookTabAt(
-          point.x,
-          point.y,
-          visibleRunbookList.length,
-          visibleRunbookList.map((item) => item.title),
-          expandedMonitor,
-          activePanelTab
-        );
-        if (tabIndex >= 0) {
-          patchGameStateRef((current) =>
-            setActiveRunbook(current, activeScenario, tabIndex)
-          );
-          const runbook = visibleRunbookList[tabIndex];
-          if (runbook) {
-            void emitter.emitOnce(`runbook:${runbook.id}`, {
-              replayId,
-              type: 'runbook_open',
-              at,
-              payload: {runbookId: runbook.id},
-            });
-          }
-          return;
-        }
+
+      if (action.type === 'right_panel_tab') {
+        patchGameStateRef((current) => setRightPanelTab(current, action.tab));
+        void emitter.emit({
+          replayId,
+          type: 'ui_panel_open',
+          at,
+          payload: {panel: action.tab === 'slack' ? 'slack' : 'runbook'},
+        });
+        return;
       }
-      if (containsPoint(notificationBellRegion, point.x, point.y)) {
-        const unreadAlerts =
-          gameStateRef.current?.monitors.left.alerts.filter(
-            (alert) =>
-              !gameStateRef.current?.notifications.readAlertIds.includes(
-                alert.id
-              )
-          ) ?? [];
-        const unreadSlack = gameStateRef.current
-          ? mergedSlackMessages(gameStateRef.current).filter(
-              (message) =>
-                !gameStateRef.current?.seenSlackIds.includes(message.id)
-            )
-          : [];
+
+      if (action.type === 'runbook_tab') {
+        const activeScenario = scenarioRef.current;
+        if (!activeScenario) return;
+        patchGameStateRef((current) =>
+          setActiveRunbook(current, activeScenario, action.index)
+        );
+        void emitter.emitOnce(`runbook:${action.runbookId}`, {
+          replayId,
+          type: 'runbook_open',
+          at,
+          payload: {runbookId: action.runbookId},
+        });
+        return;
+      }
+
+      if (action.type === 'notification_bell') {
+        const unreadAlerts = state.monitors.left.alerts.filter(
+          (alert) => !state.notifications.readAlertIds.includes(alert.id)
+        );
+        const unreadSlack = mergedSlackMessages(state).filter(
+          (message) => !state.seenSlackIds.includes(message.id)
+        );
         patchGameStateRef((current) => toggleNotificationPanel(current));
         void emitter.emit({
           replayId,
@@ -1278,47 +1237,41 @@ export function App() {
         }
         return;
       }
-      if (
-        containsPoint(navigationOverlayRect, point.x, point.y) &&
-        gameStateRef.current?.navigation.activeStepId
-      ) {
-        const stepId = gameStateRef.current.navigation.activeStepId;
-        patchGameStateRef((current) => dismissNavigationStep(current, stepId));
-        return;
-      }
-      if (gameStateRef.current?.world.expandedMonitor) {
-        if (!containsPoint(expandedMonitorLayout, point.x, point.y)) {
-          patchGameStateRef((current) => ({
-            ...current,
-            world: {...current.world, expandedMonitor: null},
-          }));
-        }
-        return;
-      }
-      const monitorMagnify = monitorMagnifyAt(point.x, point.y);
-      if (monitorMagnify) {
+
+      if (action.type === 'dismiss_navigation') {
         patchGameStateRef((current) =>
-          toggleExpandedMonitor(current, monitorMagnify)
+          dismissNavigationStep(current, action.stepId)
+        );
+        return;
+      }
+
+      if (action.type === 'close_expanded_monitor') {
+        patchGameStateRef((current) => ({
+          ...current,
+          world: {...current.world, expandedMonitor: null},
+        }));
+        return;
+      }
+
+      if (action.type === 'toggle_expanded_monitor') {
+        patchGameStateRef((current) =>
+          toggleExpandedMonitor(current, action.monitor)
         );
         void emitter.emit({
           replayId,
           type: 'ui_panel_open',
           at,
-          payload: {panel: `monitor.${monitorMagnify}`},
+          payload: {panel: `monitor.${action.monitor}`},
         });
         return;
       }
-      const slackTarget = slackComposeAt(
-        point.x,
-        point.y,
-        gameStateRef.current?.monitors.right.activePanelTab ?? 'slack',
-        gameStateRef.current?.world.expandedMonitor ?? null
-      );
-      if (slackTarget === 'send') {
+
+      if (action.type === 'slack_send') {
         submitSlackMessage();
         return;
       }
-      if (slackTarget === 'compose') {
+
+      if (action.type === 'slack_compose') {
         patchGameStateRef((current) => activateSlackCompose(current));
         void emitter.emit({
           replayId,
@@ -1328,7 +1281,8 @@ export function App() {
         });
         return;
       }
-      if (gameStateRef.current?.slackCompose.active) {
+
+      if (action.type === 'deactivate_slack_compose') {
         patchGameStateRef((current) => deactivateSlackCompose(current));
       }
     }
@@ -1812,41 +1766,6 @@ function editorCursorFromTextarea(textarea: HTMLTextAreaElement) {
     line: lines.length,
     column: (lines[lines.length - 1]?.length ?? 0) + 1,
   };
-}
-function editorFileAt(
-  x: number,
-  y: number,
-  state: GameRenderState | undefined
-) {
-  if (!state || state.monitors.center.activeTool !== 'editor') return undefined;
-  if (
-    state.world.expandedMonitor &&
-    state.world.expandedMonitor !== 'terminal'
-  ) {
-    return undefined;
-  }
-  const expanded = state.world.expandedMonitor === 'terminal';
-  const monitor = expanded
-    ? expandedMonitorLayout
-    : {x: 690, y: 140, width: 540, height: 620};
-  const contentX = monitor.x + 22;
-  const contentY = monitor.y + 64;
-  const contentWidth = monitor.width - 44;
-  const contentHeight = monitor.height - 80;
-  const scale = Math.min(contentWidth / 496, contentHeight / 540);
-  const localX = (x - contentX) / scale;
-  const localY = (y - contentY) / scale;
-  const fileListTop = 66;
-  if (
-    localX < 0 ||
-    localX > 142 ||
-    localY < fileListTop ||
-    localY > fileListTop + 470
-  ) {
-    return undefined;
-  }
-  const index = Math.floor((localY - fileListTop - 8) / 28);
-  return state.monitors.center.editor.files[index]?.path;
 }
 function formatDifficulty(difficulty: Difficulty) {
   if (difficulty === 'beginner') return '初級';

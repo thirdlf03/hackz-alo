@@ -25,6 +25,8 @@ const ANSI_COLORS: Record<number, string> = {
   97: '#f0f4f8',
 };
 
+const ANSI_ESCAPE_PATTERN = new RegExp(String.raw`\u001b\[[0-9;]*m`, 'g');
+
 export function parseAnsiLine(line: string): AnsiSpan[] {
   const spans: AnsiSpan[] = [];
   let current = '';
@@ -73,5 +75,5 @@ export function parseAnsiLine(line: string): AnsiSpan[] {
 }
 
 export function stripAnsi(line: string) {
-  return line.replace(/\u001b\[[0-9;]*m/g, '');
+  return line.replace(ANSI_ESCAPE_PATTERN, '');
 }
