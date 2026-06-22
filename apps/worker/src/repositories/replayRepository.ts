@@ -27,15 +27,25 @@ export async function markReplayFinished(
     status: string;
     browserInfo?: Record<string, unknown> | undefined;
     videoDurationMs: number | null;
+    consentRecorded?: boolean | undefined;
   }
 ) {
+  const existing = await env.DB.prepare(
+    'select finished_at from replays where id = ?'
+  )
+    .bind(input.replayId)
+    .first<{finished_at: string | null}>();
   const now = new Date().toISOString();
+  if (existing?.finished_at) {
+    return;
+  }
   await env.DB.prepare(
     `update replays
      set finished_at = coalesce(finished_at, ?),
          recording_status = ?,
          browser_info_json = coalesce(?, browser_info_json),
          video_duration_ms = coalesce(?, video_duration_ms),
+         consent_recorded_at = case when ? = 1 then coalesce(consent_recorded_at, ?) else consent_recorded_at end,
          updated_at = ?
      where id = ?`
   )
@@ -44,6 +54,8 @@ export async function markReplayFinished(
       input.status,
       input.browserInfo ? JSON.stringify(input.browserInfo) : null,
       input.videoDurationMs,
+      input.consentRecorded ? 1 : 0,
+      now,
       now,
       input.replayId
     )
@@ -71,9 +83,18 @@ export async function getReplayChunkObjectKey(
     .first<{object_key: string}>();
 }
 
-export async function listReplayEvents(env: Bindings, replayId: string) {
+export async function listReplayEvents(
+  env: Bindings,
+  replayId: string,
+  options?: {includePrivate?: boolean}
+) {
+  const includePrivate = options?.includePrivate === true;
   const rows = await env.DB.prepare(
-    'select event_id, type, at_ms, summary, visibility from replay_events_index where replay_id = ? order by at_ms asc'
+    includePrivate
+      ? 'select event_id, type, at_ms, summary, visibility from replay_events_index where replay_id = ? order by at_ms asc'
+      : `select event_id, type, at_ms, summary, visibility from replay_events_index
+         where replay_id = ? and visibility = 'public_safe'
+         order by at_ms asc`
   )
     .bind(replayId)
     .all();
@@ -95,7 +116,8 @@ export async function createReplayComment(
 ) {
   const id = `cmt_${crypto.randomUUID().replaceAll('-', '')}`;
   const now = new Date().toISOString();
-  const body = input.body.trim();
+  const body = input.body.trim().slice(0, 500);
+  if (body.length === 0) throw new Error('comment body required');
   await env.DB.prepare(
     'insert into replay_comments (id, replay_id, at_ms, body, created_at) values (?, ?, ?, ?, ?)'
   )

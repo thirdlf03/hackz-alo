@@ -174,22 +174,25 @@ export function useCanvasRecording(options: {
       options.setGameState((current) =>
         updateRecordingStatus(current, 'finalizing')
       );
-      const finalized =
-        (await finalizerRef.current
-          ?.finalize(session.replayId, options.api)
-          .catch(() => false)) ?? false;
+      // finalize must not depend on finalizerRef: leaving play unmounts the
+      // recorder effect and clears that ref before finishRecording resumes.
+      const finalized = await options.api
+        .finalizeReplayVideo(session.replayId)
+        .then((result) => result.status === 'ready')
+        .catch(() => false);
       finalizerRef.current = null;
       if (!finalized) {
         const headOk = await replayVideoExists(session.replayId);
         if (!headOk) {
           await options.api
-            .assemblePartialReplayVideo(session.replayId)
+            .waitForReplayVideo(session.replayId)
             .catch(() => undefined);
         }
       }
       await options.api
         .finishReplay(session.replayId, {
           browserInfo: browserInfo(recordingMimeType),
+          consentRecorded: options.hasRecordingConsent,
           ...(videoDurationMs === undefined ? {} : {videoDurationMs}),
         })
         .catch(console.error);

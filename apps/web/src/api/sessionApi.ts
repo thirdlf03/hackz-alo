@@ -53,6 +53,7 @@ export class SessionApi {
     return this.http.post<{
       sessionId: string;
       replayId: string;
+      writeToken: string;
       scenario: ScenarioDefinition;
     }>('/api/sessions', input);
   }

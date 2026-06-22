@@ -11,12 +11,15 @@ MVP implementation for the incident-response training game described in
 - `packages/scenarios`: beginner scenarios and runbook metadata
 - `sandbox`: local scripts that model the sandbox services and fault injection
 - `migrations`: D1 schema
-- `tests`: dependency-light unit and smoke tests
+- `tests`: unit, integration, and e2e tests
+- `docs/production`: runbook, edge protection, privacy, observability
 
 ## Local Checks
 
 ```sh
 pnpm test
+pnpm run test:integration
+pnpm run audit:schema-sync
 pnpm run fmt:check
 pnpm run lint
 pnpm run typecheck
@@ -49,5 +52,17 @@ Deploy:
 pnpm run deploy
 ```
 
+See [docs/production/runbook.md](docs/production/runbook.md) and
+[docs/production/cloudflare-edge.md](docs/production/cloudflare-edge.md) for
+production checklist.
+
 `pnpm run deploy` builds scenarios, builds `apps/web/dist`, then runs `wrangler deploy`.
 R2 bucket creation and container image upload are handled by Wrangler during deploy.
+
+## Environment variables (Worker secrets)
+
+| Name                   | Purpose                                   |
+| ---------------------- | ----------------------------------------- |
+| `ENVIRONMENT`          | Set to `production` to disable dev routes |
+| `TURNSTILE_SECRET_KEY` | Optional bot protection on session create |
+| `ADMIN_SECRET`         | Admin API fallback when Access JWT absent |

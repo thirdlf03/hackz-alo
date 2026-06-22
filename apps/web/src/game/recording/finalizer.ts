@@ -1,62 +1,29 @@
-import {
-  recordingMultipartPartSize,
-  splitBufferIntoParts,
-} from '@incident/shared';
 import type {ApiClientSurface} from '../../api/client.js';
 
-export {splitBufferIntoParts};
-
 export class RecordingFinalizer {
-  private parts: Uint8Array[] = [];
-  private totalSize = 0;
+  private chunkCount = 0;
 
-  append(blob: Blob) {
-    return blob.arrayBuffer().then((buffer) => {
-      const bytes = new Uint8Array(buffer);
-      this.parts.push(bytes);
-      this.totalSize += bytes.length;
-    });
+  append(_blob: Blob) {
+    this.chunkCount += 1;
+    return Promise.resolve();
   }
 
   hasData() {
-    return this.totalSize > 0;
+    return this.chunkCount > 0;
   }
 
   reset() {
-    this.parts = [];
-    this.totalSize = 0;
+    this.chunkCount = 0;
   }
 
   async finalize(replayId: string, api: ApiClientSurface) {
     if (!this.hasData()) return false;
-
-    const merged = mergeUint8Arrays(this.parts);
-    await api.createMultipartUpload(replayId);
-
-    const chunks = splitBufferIntoParts(merged, recordingMultipartPartSize);
-    for (let index = 0; index < chunks.length; index += 1) {
-      const part = chunks[index];
-      if (!part || part.length === 0) continue;
-      await api.uploadMultipartPart(
-        replayId,
-        index + 1,
-        new Blob([part as BlobPart])
-      );
+    try {
+      const result = await api.finalizeReplayVideo(replayId);
+      this.reset();
+      return result.status === 'ready';
+    } catch {
+      return false;
     }
-
-    await api.completeMultipartUpload(replayId);
-    this.reset();
-    return true;
   }
-}
-
-function mergeUint8Arrays(parts: Uint8Array[]) {
-  const total = parts.reduce((sum, part) => sum + part.length, 0);
-  const merged = new Uint8Array(total);
-  let offset = 0;
-  for (const part of parts) {
-    merged.set(part, offset);
-    offset += part.length;
-  }
-  return merged;
 }

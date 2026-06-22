@@ -44,6 +44,7 @@ export async function sweepStaleSessions(env: Bindings) {
   if (cleaned > 0) {
     console.log(`[session-sweep] cleaned ${String(cleaned)} stale session(s)`);
   }
+  return cleaned;
 }
 
 async function finishStaleSession(env: Bindings, sessionId: string) {

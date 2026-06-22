@@ -1,7 +1,13 @@
 import {getRandomScenarioByDifficulty, getScenario} from '@incident/scenarios';
 import type {Difficulty} from '@incident/shared';
 import type {WorkerApp, WorkerContext} from '../http/context.js';
+import {enforceRateLimit, shouldEnforceRateLimit} from '../http/rateLimit.js';
+import {logStructured} from '../http/requestLog.js';
+import {verifyTurnstileToken} from '../http/turnstile.js';
+import {requireSessionWriteAccess} from '../http/writeAuthMiddleware.js';
 import {err, ok} from '../http/response.js';
+import {createWriteToken, hashWriteToken} from '../pure/writeAuth.js';
+import {purgeReplayStorage} from '../storage/replayPurge.js';
 import type {Bindings} from '../types.js';
 
 const difficulties = new Set<Difficulty>([
@@ -19,10 +25,32 @@ const sessionActionsWithoutDbLookup = new Set([
 
 export function registerSessionRoutes(app: WorkerApp) {
   app.post('/api/sessions', async (c) => {
+    const clientIp = c.req.header('cf-connecting-ip') ?? 'unknown';
+    if (shouldEnforceRateLimit(c.env)) {
+      const limited = await enforceRateLimit(
+        c.env,
+        `sessions:${clientIp}`,
+        5,
+        60
+      );
+      if (!limited.allowed) {
+        logStructured('rate_limit_hit', {
+          route: 'POST /api/sessions',
+          clientIp,
+        });
+        c.header('Retry-After', String(limited.retryAfter));
+        return c.json(err('rate_limited', 'too many session creations'), 429);
+      }
+    }
+
     const body = (await c.req.json().catch(() => ({}))) as {
       scenarioId?: string;
       difficulty?: string;
+      turnstileToken?: string;
     };
+    if (!(await verifyTurnstileToken(c.env, body.turnstileToken))) {
+      return c.json(err('forbidden', 'turnstile verification failed'), 403);
+    }
     const scenario = resolveRequestedScenario(body);
     if (!scenario) {
       return c.json(
@@ -33,11 +61,13 @@ export function registerSessionRoutes(app: WorkerApp) {
 
     const sessionId = `sess_${crypto.randomUUID().replaceAll('-', '')}`;
     const replayId = `repl_${crypto.randomUUID().replaceAll('-', '')}`;
+    const writeToken = createWriteToken();
+    const writeTokenHash = await hashWriteToken(writeToken);
     const now = new Date().toISOString();
     await c.env.DB.prepare(
       `insert into play_sessions
-       (id, scenario_id, scenario_version, sandbox_id, replay_id, status, created_at)
-       values (?, ?, ?, ?, ?, ?, ?)`
+       (id, scenario_id, scenario_version, sandbox_id, replay_id, status, created_at, write_token_hash)
+       values (?, ?, ?, ?, ?, ?, ?, ?)`
     )
       .bind(
         sessionId,
@@ -46,7 +76,8 @@ export function registerSessionRoutes(app: WorkerApp) {
         `session-${sessionId}`,
         replayId,
         'created',
-        now
+        now,
+        writeTokenHash
       )
       .run();
     await c.env.DB.prepare(
@@ -78,11 +109,18 @@ export function registerSessionRoutes(app: WorkerApp) {
     );
     if (!bootstrapResponse.ok) return bootstrapResponse;
 
-    return c.json(ok({sessionId, replayId, scenario}));
+    logStructured('session_created', {
+      sessionId,
+      replayId,
+      scenarioId: scenario.id,
+    });
+    return c.json(ok({sessionId, replayId, writeToken, scenario}));
   });
 
   app.get('/api/sessions/:sessionId', async (c) => proxySession(c, 'snapshot'));
   app.post('/api/sessions/:sessionId/start', async (c) => {
+    const denied = await requireSessionWriteAccess(c, c.req.param('sessionId'));
+    if (denied) return denied;
     const sessionId = c.req.param('sessionId');
     const record = await getSession(c.env, sessionId);
     if (!record) return c.json(err('not_found', 'session not found'), 404);
@@ -92,27 +130,37 @@ export function registerSessionRoutes(app: WorkerApp) {
       scenarioId: record.scenario_id,
     });
   });
-  app.post('/api/sessions/:sessionId/resolve', async (c) =>
-    proxySession(c, 'resolve')
-  );
-  app.post('/api/sessions/:sessionId/retire', async (c) =>
-    proxySession(c, 'retire')
-  );
-  app.post('/api/sessions/:sessionId/timeout', async (c) =>
-    proxySession(c, 'timeout')
-  );
-  app.delete('/api/sessions/:sessionId', async (c) =>
-    proxySessionDelete(c, 'delete')
-  );
+  app.post('/api/sessions/:sessionId/resolve', async (c) => {
+    const denied = await requireSessionWriteAccess(c, c.req.param('sessionId'));
+    if (denied) return denied;
+    return proxySession(c, 'resolve');
+  });
+  app.post('/api/sessions/:sessionId/retire', async (c) => {
+    const denied = await requireSessionWriteAccess(c, c.req.param('sessionId'));
+    if (denied) return denied;
+    return proxySession(c, 'retire');
+  });
+  app.post('/api/sessions/:sessionId/timeout', async (c) => {
+    const denied = await requireSessionWriteAccess(c, c.req.param('sessionId'));
+    if (denied) return denied;
+    return proxySession(c, 'timeout');
+  });
+  app.delete('/api/sessions/:sessionId', async (c) => {
+    const denied = await requireSessionWriteAccess(c, c.req.param('sessionId'));
+    if (denied) return denied;
+    return proxySessionDelete(c, 'delete');
+  });
   app.get('/api/sessions/:sessionId/events', async (c) =>
     proxySession(c, 'events')
   );
   app.get('/api/sessions/:sessionId/clock', async (c) =>
     proxySession(c, 'clock')
   );
-  app.post('/api/sessions/:sessionId/clock', async (c) =>
-    proxySession(c, 'clock', await c.req.json().catch(() => ({})))
-  );
+  app.post('/api/sessions/:sessionId/clock', async (c) => {
+    const denied = await requireSessionWriteAccess(c, c.req.param('sessionId'));
+    if (denied) return denied;
+    return proxySession(c, 'clock', await c.req.json().catch(() => ({})));
+  });
   app.get('/api/sessions/:sessionId/metrics', async (c) =>
     proxySession(c, 'metrics')
   );
@@ -128,18 +176,28 @@ export function registerSessionRoutes(app: WorkerApp) {
   app.get('/api/sessions/:sessionId/file', async (c) =>
     proxySession(c, 'file')
   );
-  app.put('/api/sessions/:sessionId/file', async (c) =>
-    proxySession(c, 'file', await c.req.json().catch(() => ({})))
-  );
+  app.put('/api/sessions/:sessionId/file', async (c) => {
+    const denied = await requireSessionWriteAccess(c, c.req.param('sessionId'));
+    if (denied) return denied;
+    return proxySession(c, 'file', await c.req.json().catch(() => ({})));
+  });
   app.get('/api/sessions/:sessionId/ws/terminal', async (c) =>
     proxySession(c, 'terminal')
   );
-  app.post('/api/sessions/:sessionId/terminal/interrupt', async (c) =>
-    proxySession(c, 'terminal-interrupt')
-  );
-  app.post('/api/sessions/:sessionId/terminal/resize', async (c) =>
-    proxySession(c, 'terminal-resize', await c.req.json().catch(() => ({})))
-  );
+  app.post('/api/sessions/:sessionId/terminal/interrupt', async (c) => {
+    const denied = await requireSessionWriteAccess(c, c.req.param('sessionId'));
+    if (denied) return denied;
+    return proxySession(c, 'terminal-interrupt');
+  });
+  app.post('/api/sessions/:sessionId/terminal/resize', async (c) => {
+    const denied = await requireSessionWriteAccess(c, c.req.param('sessionId'));
+    if (denied) return denied;
+    return proxySession(
+      c,
+      'terminal-resize',
+      await c.req.json().catch(() => ({}))
+    );
+  });
 }
 
 function resolveRequestedScenario(body: {
@@ -193,12 +251,17 @@ async function proxySessionDelete(c: WorkerContext, action: string) {
   }
   const record = await getSession(c.env, sessionId);
   if (!record) return c.json(err('not_found', 'session not found'), 404);
+  const replayId = record.replay_id;
   const id = c.env.SESSION_DO.idFromName(sessionId);
   const stub = c.env.SESSION_DO.get(id);
   const target = new URL(
     `https://session.internal/internal/sessions/${sessionId}/${action}`
   );
-  return stub.fetch(new Request(target, {method: 'DELETE'}));
+  const response = await stub.fetch(new Request(target, {method: 'DELETE'}));
+  if (response.ok && replayId) {
+    await purgeReplayStorage(c.env, replayId).catch(() => undefined);
+  }
+  return response;
 }
 
 async function fetchSessionObject(

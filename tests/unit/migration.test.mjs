@@ -13,6 +13,9 @@ const migrationPaths = [
   path.join(rootDir, 'migrations/0001_initial.sql'),
   path.join(rootDir, 'migrations/0002_remove_auth.sql'),
   path.join(rootDir, 'migrations/0003_replay_video_duration.sql'),
+  path.join(rootDir, 'migrations/0004_replay_event_types.sql'),
+  path.join(rootDir, 'migrations/0005_session_write_token.sql'),
+  path.join(rootDir, 'migrations/0006_replay_consent.sql'),
 ];
 const sqliteAvailable = !spawnSync('sqlite3', ['-version'], {encoding: 'utf8'})
   .error;

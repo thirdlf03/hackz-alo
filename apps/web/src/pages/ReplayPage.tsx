@@ -74,7 +74,6 @@ export function ReplayPage({replayId, timeline}: Props) {
   );
 
   useEffect(() => {
-    let partialUrl: string | undefined;
     setVideoSrc(undefined);
     setVideoLoadState('loading');
     setVideoDuration(0);
@@ -102,18 +101,21 @@ export function ReplayPage({replayId, timeline}: Props) {
           setVideoLoadState('ready');
           return;
         }
-        partialUrl = await api.assemblePartialReplayVideo(replayId);
-        setVideoSrc(partialUrl);
+        const videoPath = await api
+          .waitForReplayVideo(replayId)
+          .catch(() => undefined);
+        if (!videoPath) {
+          setVideoSrc(undefined);
+          setVideoLoadState('unavailable');
+          return;
+        }
+        setVideoSrc(videoPath);
         setVideoLoadState('ready');
       })
       .catch(() => {
         setVideoSrc(undefined);
         setVideoLoadState('unavailable');
       });
-
-    return () => {
-      if (partialUrl) URL.revokeObjectURL(partialUrl);
-    };
   }, [replayId]);
 
   const visibleTimeline = useMemo(

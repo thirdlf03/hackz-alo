@@ -20,6 +20,10 @@ type QueueItem = QueuedChunk | QueuedEvents;
 
 const DB_NAME = 'incident-offline-queue';
 const STORE = 'queue';
+const MAX_QUEUE_ITEMS = 200;
+const MAX_QUEUE_BYTES = 100 * 1024 * 1024;
+const BASE_RETRY_MS = 1000;
+const MAX_RETRY_MS = 60_000;
 
 function indexedDbError(message: string, cause?: DOMException | null): Error {
   if (cause) return new Error(cause.message, {cause});
@@ -28,16 +32,24 @@ function indexedDbError(message: string, cause?: DOMException | null): Error {
 
 export class OfflineUploadQueue {
   private flushing = false;
+  private retryDelayMs = BASE_RETRY_MS;
+  private degraded = false;
 
   constructor(private api: ApiClientSurface) {}
 
+  isDegraded() {
+    return this.degraded;
+  }
+
   async enqueueChunk(input: Omit<QueuedChunk, 'kind'>) {
+    await this.enforceLimits(input.blob.size);
     await this.put({kind: 'chunk', ...input});
     void this.flush();
   }
 
   async enqueueEvents(replayId: string, events: ReplayEvent[]) {
     if (events.length === 0) return;
+    await this.enforceLimits(JSON.stringify(events).length);
     const item: Omit<QueuedEvents, 'id'> = {kind: 'events', replayId, events};
     await this.put(item);
     void this.flush();
@@ -56,12 +68,36 @@ export class OfflineUploadQueue {
             await this.api.uploadEvents(item.replayId, item.events);
           }
           await this.delete(item.id);
+          this.retryDelayMs = BASE_RETRY_MS;
         } catch {
+          this.retryDelayMs = Math.min(this.retryDelayMs * 2, MAX_RETRY_MS);
+          await new Promise((resolve) =>
+            setTimeout(resolve, this.retryDelayMs)
+          );
           break;
         }
       }
     } finally {
       this.flushing = false;
+    }
+  }
+
+  private async enforceLimits(incomingBytes: number) {
+    const items = await this.readAll();
+    let totalBytes = items.reduce(
+      (sum, item) => sum + estimateItemBytes(item),
+      0
+    );
+    while (
+      (items.length >= MAX_QUEUE_ITEMS ||
+        totalBytes + incomingBytes > MAX_QUEUE_BYTES) &&
+      items.length > 0
+    ) {
+      const dropped = items.shift();
+      if (!dropped) break;
+      await this.delete(dropped.id);
+      totalBytes -= estimateItemBytes(dropped);
+      this.degraded = true;
     }
   }
 
@@ -117,6 +153,11 @@ export class OfflineUploadQueue {
       };
     });
   }
+}
+
+function estimateItemBytes(item: QueueItem) {
+  if (item.kind === 'chunk') return item.blob.size;
+  return JSON.stringify(item.events).length;
 }
 
 export function installOfflineFlush(

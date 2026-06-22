@@ -1,4 +1,5 @@
 export * from './coerce.js';
+export * from './replayEventTypes.js';
 export * from './types.js';
 export * from './schema.js';
 export * from './events.js';

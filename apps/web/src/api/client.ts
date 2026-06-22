@@ -51,6 +51,8 @@ export interface ApiClientSurface
       | 'listReplayChunks'
       | 'fetchReplayChunkBlob'
       | 'assemblePartialReplayVideo'
+      | 'waitForReplayVideo'
+      | 'finalizeReplayVideo'
       | 'getReplay'
       | 'getReplayEvents'
       | 'getReplayComments'
@@ -88,6 +90,7 @@ export interface ApiClientSurface
   }): Promise<{
     sessionId: string;
     replayId: string;
+    writeToken: string;
     scenario: ScenarioDefinition;
   }>;
   subscribeSessionEvents(
@@ -113,6 +116,8 @@ export class ApiClient {
       'listReplayChunks',
       'fetchReplayChunkBlob',
       'assemblePartialReplayVideo',
+      'waitForReplayVideo',
+      'finalizeReplayVideo',
       'getReplay',
       'getReplayEvents',
       'getReplayComments',
@@ -146,9 +151,11 @@ export class ApiClient {
 
   async createSession(input: {difficulty?: Difficulty; scenarioId?: string}) {
     const data = await this.sessions.createSession(input);
+    this.http.setWriteToken(data.writeToken);
     return {
       sessionId: data.sessionId,
       replayId: data.replayId,
+      writeToken: data.writeToken,
       scenario: data.scenario,
     };
   }

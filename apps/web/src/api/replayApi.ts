@@ -31,7 +31,11 @@ export class ReplayApi {
 
   finishReplay(
     replayId: string,
-    input?: {browserInfo?: Record<string, unknown>; videoDurationMs?: number}
+    input?: {
+      browserInfo?: Record<string, unknown>;
+      videoDurationMs?: number;
+      consentRecorded?: boolean;
+    }
   ) {
     return this.http.post(
       `/api/replays/${encodeURIComponent(replayId)}/finish`,
@@ -53,15 +57,20 @@ export class ReplayApi {
     return response.blob();
   }
 
+  async waitForReplayVideo(replayId: string, timeoutMs = 120_000) {
+    const videoPath = `/api/replays/${encodeURIComponent(replayId)}/video`;
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      const response = await this.http.fetch(videoPath, {method: 'HEAD'});
+      if (response.ok) return videoPath;
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+    }
+    throw new Error('video not ready');
+  }
+
+  /** @deprecated Prefer waitForReplayVideo — avoids client-side chunk merging. */
   async assemblePartialReplayVideo(replayId: string) {
-    const chunks = await this.listReplayChunks(replayId);
-    if (chunks.length === 0) throw new Error('no chunks');
-    const blobs = await Promise.all(
-      chunks.map((chunk) => this.fetchReplayChunkBlob(replayId, chunk.seq))
-    );
-    return URL.createObjectURL(
-      new Blob(blobs, {type: blobs[0]?.type || 'video/webm'})
-    );
+    return this.waitForReplayVideo(replayId);
   }
 
   getReplay(replayId: string) {
@@ -91,6 +100,13 @@ export class ReplayApi {
     return this.http.post<ReplayComment>(
       `/api/replays/${encodeURIComponent(replayId)}/comments`,
       {atMs, body}
+    );
+  }
+
+  finalizeReplayVideo(replayId: string) {
+    return this.http.post<{key: string; size: number; status: string}>(
+      `/api/replays/${encodeURIComponent(replayId)}/finalize-video`,
+      {}
     );
   }
 }

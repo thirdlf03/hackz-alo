@@ -11,10 +11,19 @@ import type {Bindings} from '../types.js';
 
 const replayVideoContentType = 'video/webm';
 const eventKeySuffixLength = '000000.jsonl'.length;
+const maxReplayChunks = 720;
+
+export class ReplayChunkConflictError extends Error {
+  constructor(replayId: string, seq: number) {
+    super(`chunk conflict for ${replayId} seq ${String(seq)}`);
+    this.name = 'ReplayChunkConflictError';
+  }
+}
 
 interface ReplayChunkRow {
   seq: number;
   object_key: string;
+  byte_size: number;
 }
 
 export async function putReplayChunk(
@@ -28,6 +37,9 @@ export async function putReplayChunk(
     endedAtMs?: number | undefined;
   }
 ) {
+  if (input.seq < 0 || input.seq >= maxReplayChunks) {
+    throw new Error('chunk seq out of range');
+  }
   const key = replayChunkKey(input.replayId, input.seq);
   const now = new Date().toISOString();
   const contentType =
@@ -37,6 +49,14 @@ export async function putReplayChunk(
   const object = await env.REPLAY_BUCKET.put(key, input.body, {
     httpMetadata: {contentType},
   });
+  const existing = await env.DB.prepare(
+    'select byte_size from replay_chunks where replay_id = ? and seq = ?'
+  )
+    .bind(input.replayId, input.seq)
+    .first<{byte_size: number}>();
+  if (existing && existing.byte_size !== object.size) {
+    throw new ReplayChunkConflictError(input.replayId, input.seq);
+  }
   await env.DB.prepare(
     `insert or replace into replay_chunks
      (replay_id, seq, object_key, byte_size, started_at_ms, ended_at_ms, sha256, uploaded_at)
@@ -238,11 +258,30 @@ export async function completeMultipartUpload(env: Bindings, replayId: string) {
   return {key: row.object_key, size: object.size};
 }
 
+export async function finalizeReplayVideo(env: Bindings, replayId: string) {
+  const key = replayVideoKey(replayId);
+  const existing = await env.REPLAY_BUCKET.head(key);
+  if (existing) {
+    return {key, size: existing.size, status: 'ready' as const};
+  }
+  const assembled = await assembleReplayVideo(env, replayId, key);
+  if (!assembled) return {key: '', size: 0, status: 'missing' as const};
+  return {key, size: assembled.size, status: 'ready' as const};
+}
+
 export async function getReplayObject(env: Bindings, replayId: string) {
   const key = replayVideoKey(replayId);
   const object = await env.REPLAY_BUCKET.get(key);
   if (object) return object;
   return assembleReplayVideo(env, replayId, key);
+}
+
+export async function headStoredReplayVideo(env: Bindings, replayId: string) {
+  return env.REPLAY_BUCKET.head(replayVideoKey(replayId));
+}
+
+export async function getStoredReplayVideo(env: Bindings, replayId: string) {
+  return env.REPLAY_BUCKET.get(replayVideoKey(replayId));
 }
 
 export function replayThumbnailObjectKey(replayId: string) {
@@ -351,21 +390,25 @@ async function assembleReplayVideo(
   const chunks = await listReplayChunks(env, replayId);
   if (chunks.length === 0) return null;
 
-  const buffers: ArrayBuffer[] = [];
   let contentType = replayVideoContentType;
-  for (const chunk of chunks) {
-    const object = await env.REPLAY_BUCKET.get(chunk.object_key);
-    if (!object) return null;
-    contentType =
-      buffers.length === 0
-        ? (object.httpMetadata?.contentType ?? contentType)
-        : contentType;
-    buffers.push(await object.arrayBuffer());
-  }
+  const firstObject = await env.REPLAY_BUCKET.get(chunks[0]?.object_key ?? '');
+  if (!firstObject) return null;
+  contentType = firstObject.httpMetadata?.contentType ?? contentType;
 
-  await env.REPLAY_BUCKET.put(key, new Blob(buffers, {type: contentType}), {
-    httpMetadata: {contentType},
-  });
+  const totalSize = chunks.reduce((sum, chunk) => sum + chunk.byte_size, 0);
+  if (totalSize <= 0) return null;
+
+  const {readable, writable} = new FixedLengthStream(totalSize);
+  const pump = pumpReplayChunks(env, chunks, writable);
+  try {
+    await env.REPLAY_BUCKET.put(key, readable, {
+      httpMetadata: {contentType},
+    });
+    await pump;
+  } catch (error: unknown) {
+    await pump.catch(() => undefined);
+    throw error;
+  }
   await env.DB.prepare(
     'update replays set video_object_key = ?, mime_type = coalesce(mime_type, ?), updated_at = ? where id = ?'
   )
@@ -374,11 +417,50 @@ async function assembleReplayVideo(
   return env.REPLAY_BUCKET.get(key);
 }
 
+async function pumpReplayChunks(
+  env: Bindings,
+  chunks: ReplayChunkRow[],
+  writable: WritableStream<Uint8Array>
+) {
+  const writer = writable.getWriter();
+  try {
+    for (const chunk of chunks) {
+      const object = await env.REPLAY_BUCKET.get(chunk.object_key);
+      if (!object?.body) {
+        throw new Error('chunk missing during finalize');
+      }
+      const reader = object.body.getReader();
+      let readResult: ReadableStreamReadResult<Uint8Array> =
+        await reader.read();
+      while (!readResult.done) {
+        await writer.write(readResult.value);
+        readResult = await reader.read();
+      }
+    }
+  } finally {
+    await writer.close();
+  }
+}
+
 async function listReplayChunks(env: Bindings, replayId: string) {
   const rows = await env.DB.prepare(
-    'select seq, object_key from replay_chunks where replay_id = ? order by seq asc'
+    'select seq, object_key, byte_size from replay_chunks where replay_id = ? order by seq asc'
   )
     .bind(replayId)
-    .all<ReplayChunkRow>();
-  return rows.results;
+    .all<{seq: number; object_key: string; byte_size: number | null}>();
+  const chunks: ReplayChunkRow[] = [];
+  for (const row of rows.results) {
+    let byteSize = row.byte_size ?? 0;
+    if (byteSize <= 0) {
+      const meta = await env.REPLAY_BUCKET.head(row.object_key);
+      byteSize = meta?.size ?? 0;
+    }
+    if (byteSize <= 0) return [];
+    chunks.push({
+      seq: row.seq,
+      object_key: row.object_key,
+      byte_size: byteSize,
+    });
+  }
+  return chunks;
 }

@@ -41,6 +41,7 @@ test('ApiClient facade wraps createSession and delegates listScenarios', async (
         data: {
           sessionId: 'session-1',
           replayId: 'replay-1',
+          writeToken: 'test-write-token',
           scenario: {id: 'demo', title: 'Demo'},
         },
       });

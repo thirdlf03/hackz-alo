@@ -177,13 +177,12 @@ test('SessionApi notifySessionTimeout falls back to fetch when sendBeacon is una
   assert.match(String(posts[0]?.url), /timeout$/);
 });
 
-test('ReplayApi fetches chunks and assembles partial replay video', async () => {
+test('ReplayApi waits for server video instead of client-side chunk merge', async () => {
   const http = mockHttp();
   const replays = new ReplayApi(http);
-  globalThis.URL.createObjectURL = (blob) => `blob:${blob.type}`;
 
-  const url = await replays.assemblePartialReplayVideo('replay-1');
-  assert.equal(url, 'blob:video/webm');
+  const url = await replays.waitForReplayVideo('replay-1', 1000);
+  assert.equal(url, '/api/replays/replay-1/video');
   assert.equal(http.calls.filter((call) => call.method === 'FETCH').length, 1);
 
   await replays.finishReplay('replay-1', {videoDurationMs: 1200});
@@ -208,14 +207,13 @@ test('ReplayApi covers replay metadata, chunks, and upload helpers', async () =>
   );
 
   const emptyHttp = mockHttp();
-  emptyHttp.get = async (path) => {
-    emptyHttp.calls.push({method: 'GET', path});
-    if (path.endsWith('/chunks')) return [];
-    return {id: 'replay-empty'};
+  emptyHttp.fetch = async (path, init) => {
+    emptyHttp.calls.push({method: 'FETCH', path, init});
+    return new Response('', {status: 404});
   };
   await assert.rejects(
-    () => new ReplayApi(emptyHttp).assemblePartialReplayVideo('replay-empty'),
-    /no chunks/
+    () => new ReplayApi(emptyHttp).waitForReplayVideo('replay-empty', 10),
+    /video not ready/
   );
 
   await upload.createMultipartUpload('replay-1');

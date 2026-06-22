@@ -198,9 +198,6 @@ export function useSessionRuntime(options: {
 
     terminalBridgeRef.current?.destroyTerminal();
 
-    const recordingStatus = recording
-      ? await recording.finishRecording(session, shouldSaveVideo)
-      : 'idle';
     const status =
       mode === 'retire' ? 'retired' : resolved ? 'resolved' : 'failed';
     setGameState((current) =>
@@ -210,13 +207,28 @@ export function useSessionRuntime(options: {
             session: {...current.session, status},
             recording: {
               ...current.recording,
+              status: shouldSaveVideo ? 'stopping' : 'idle',
+            },
+          }
+        : current
+    );
+    setScreen('result');
+
+    const recordingStatus = recording
+      ? await recording.finishRecording(session, shouldSaveVideo)
+      : 'idle';
+    setGameState((current) =>
+      current
+        ? {
+            ...current,
+            recording: {
+              ...current.recording,
               status: recordingStatus,
               saveEnabled: shouldSaveVideo,
             },
           }
         : current
     );
-    setScreen('result');
   }
 
   const applyClockSnapshot = (clock: SessionClockResponse) => {

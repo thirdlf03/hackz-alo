@@ -1,3 +1,5 @@
+import type {ReplayEventType} from './replayEventTypes.js';
+
 export type Difficulty = 'beginner' | 'intermediate' | 'advanced';
 
 export type SessionStatus =
@@ -18,28 +20,8 @@ export type ReplayVisibility =
 
 export type Actor = 'player' | 'system' | 'scenario' | 'sandbox';
 
-export type ReplayEventType =
-  | 'session_start'
-  | 'session_end'
-  | 'scenario_event'
-  | 'alert'
-  | 'monitor_update'
-  | 'terminal_input'
-  | 'terminal_output'
-  | 'command_detected'
-  | 'ui_click'
-  | 'ui_panel_open'
-  | 'runbook_open'
-  | 'slack_message_read'
-  | 'file_opened'
-  | 'file_saved'
-  | 'service_restart'
-  | 'recovery_check'
-  | 'incident_resolved'
-  | 'player_note'
-  | 'recording_chunk_created'
-  | 'recording_error'
-  | 'sandbox_error';
+export type {ReplayEventType} from './replayEventTypes.js';
+export {REPLAY_EVENT_TYPES} from './replayEventTypes.js';
 
 export interface ReplayEvent {
   id: string;
