@@ -92,3 +92,62 @@ Generated output is intentionally ignored by git:
 
 `perf-baselines/main.json` can be added later as an optional comparison target.
 It is not required for local development or CI.
+
+## APAC Placement Verification (Japan users)
+
+Target audience is Japan-only. Placement changes pin Session Durable Objects to
+`apac-ne` and restrict sandbox containers to the `APAC` region.
+
+### Baselines
+
+- `perf-baselines/placement-before.json`: local perf journey before APAC
+  constraints (captured after sandbox preflight landed).
+- `perf-baselines/placement-after.json`: same journey after APAC deploy.
+
+Key spans to compare:
+
+- `incident.app.sandbox.prepare` (cold: `cached: false`)
+- `incident.app.sandbox.start`
+- Journey marks: `briefing_ready` → `game_started`
+
+### Capture a baseline
+
+```sh
+pnpm run perf:e2e
+pnpm run perf:report
+cp perf-reports/report.json perf-baselines/placement-before.json
+```
+
+### Infrastructure snapshot (before APAC constraints)
+
+Recorded 2026-06-22:
+
+```sh
+cd apps/worker
+pnpm exec wrangler d1 info incident-training --json
+# running_in_region: APAC
+
+pnpm exec wrangler containers info a036649d-ced0-4765-ad6f-aba55b537101
+# constraints.regions: not set (tiers only)
+
+curl -s -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+  "https://api.cloudflare.com/client/v4/accounts/$ACCOUNT_ID/workers/scripts/incident-training-worker/settings" \
+  | jq .result.placement
+# {}
+```
+
+### After deploy checklist
+
+1. `wrangler containers info` shows `constraints.regions` includes `APAC`.
+2. `wrangler d1 info` still shows `running_in_region: APAC`.
+3. New session only (existing DOs do not relocate).
+4. `pnpm run perf:placement:verify` compares before/after reports.
+5. Production tail: `session_prepared` logs include `reused` and duration.
+
+### Success criteria
+
+| Metric | Target |
+| --- | --- |
+| cold `sandbox.prepare` p95 | &lt; 2500ms or 30%+ better than before |
+| `sandbox.start` p95 | &lt; 2500ms |
+| warm `sandbox.prepare` (`cached: true`) | &lt; 200ms |

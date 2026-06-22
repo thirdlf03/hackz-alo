@@ -1,0 +1,132 @@
+{
+  "generatedAt": "2026-06-22T18:11:21.322Z",
+  "spans": {
+    "count": 53,
+    "byName": [
+      {
+        "name": "incident.app.api.request",
+        "count": 6,
+        "avgMs": 934.633,
+        "p95Ms": 3421,
+        "maxMs": 3421
+      },
+      {
+        "name": "incident.app.canvas.draw",
+        "count": 1,
+        "avgMs": 0,
+        "p95Ms": 0,
+        "maxMs": 0
+      },
+      {
+        "name": "incident.app.d1.query",
+        "count": 20,
+        "avgMs": 1.7,
+        "p95Ms": 4,
+        "maxMs": 6
+      },
+      {
+        "name": "incident.app.do.request",
+        "count": 8,
+        "avgMs": 1110.875,
+        "p95Ms": 3424,
+        "maxMs": 3424
+      },
+      {
+        "name": "incident.app.http.request",
+        "count": 10,
+        "avgMs": 549.2,
+        "p95Ms": 3414,
+        "maxMs": 3414
+      },
+      {
+        "name": "incident.app.sandbox.exec",
+        "count": 3,
+        "avgMs": 646.667,
+        "p95Ms": 1179,
+        "maxMs": 1179
+      },
+      {
+        "name": "incident.app.sandbox.prepare",
+        "count": 3,
+        "avgMs": 1208.333,
+        "p95Ms": 3423,
+        "maxMs": 3423
+      },
+      {
+        "name": "incident.app.sandbox.start",
+        "count": 1,
+        "avgMs": 1919,
+        "p95Ms": 1919,
+        "maxMs": 1919
+      },
+      {
+        "name": "incident.app.sandbox.terminal_proxy",
+        "count": 1,
+        "avgMs": 16,
+        "p95Ms": 16,
+        "maxMs": 16
+      }
+    ]
+  },
+  "marks": [
+    {
+      "name": "incident.app.journey.briefing_ready",
+      "count": 1
+    },
+    {
+      "name": "incident.app.journey.canvas_first_draw",
+      "count": 1
+    },
+    {
+      "name": "incident.app.journey.game_started",
+      "count": 1
+    },
+    {
+      "name": "incident.app.journey.scenarios_loaded",
+      "count": 1
+    },
+    {
+      "name": "incident.app.journey.session_created",
+      "count": 1
+    },
+    {
+      "name": "incident.app.journey.terminal_ready",
+      "count": 1
+    }
+  ],
+  "frames": {
+    "count": 2,
+    "p95DrawMs": 25.2,
+    "slowDrawCount": 0
+  },
+  "benchmarks": {
+    "advanceGameState": {
+      "name": "advanceGameState",
+      "iterations": 3000,
+      "totalMs": 4.456,
+      "meanMs": 0.001,
+      "p95Ms": 0.003
+    },
+    "buildMetricSections": {
+      "name": "buildMetricSections",
+      "iterations": 5000,
+      "totalMs": 12.686,
+      "meanMs": 0.003,
+      "p95Ms": 0.003
+    },
+    "buildCanvasViewModel": {
+      "name": "buildCanvasViewModel",
+      "iterations": 5000,
+      "totalMs": 2.12,
+      "meanMs": 0,
+      "p95Ms": 0.001
+    },
+    "visibleRunbooks": {
+      "name": "visibleRunbooks",
+      "iterations": 5000,
+      "totalMs": 0.518,
+      "meanMs": 0,
+      "p95Ms": 0
+    }
+  }
+}
