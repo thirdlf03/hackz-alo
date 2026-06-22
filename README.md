@@ -12,7 +12,7 @@ MVP implementation for the incident-response training game described in
 - `sandbox`: local scripts that model the sandbox services and fault injection
 - `migrations`: D1 schema
 - `tests`: unit, integration, and e2e tests
-- `docs/production`: runbook, edge protection, privacy, observability
+- `docs/production`: runbook, edge protection, privacy, observability, [ops-notes](docs/production/ops-notes.md)
 
 ## Local Checks
 

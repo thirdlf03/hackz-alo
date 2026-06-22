@@ -98,6 +98,8 @@ Admin API also accepts `x-admin-secret` when Access JWT is absent (`ADMIN_SECRET
 
 Pay-as-you-go accounts only (not Enterprise contracts).
 
+詳細（Budget vs Usage、Webhook の可否、Uptime Kuma）: [ops-notes.md](./ops-notes.md)
+
 ### Account-wide budget (recommended first)
 
 1. Dashboard → select account (top-left) → **Billing** → **Billable Usage**
@@ -111,7 +113,7 @@ Alternative path: **Notifications** → **Add** → **Billing** → **Budget Ale
 
 ### Product-specific usage alerts
 
-**Notifications** → **Add** → filter by product:
+**Notifications** → **Add** → **Usage Based Billing**（Email / **Webhook** / PagerDuty 可。閾値はメトリクス単位でドルではない）:
 
 | Product | Typical alert |
 | ------- | ------------- |

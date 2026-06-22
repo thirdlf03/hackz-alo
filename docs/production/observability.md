@@ -27,7 +27,10 @@ Each response includes `X-Request-Id`.
 | R2 egress                | week-over-week 2x       |
 | `[session-sweep]` errors | any in 15m              |
 
-### Automated setup
+Uptime は Cloudflare Health Checks（Pro 要）ではなく **Uptime Kuma 等の自前監視**。
+Billing の Webhook の可否は [ops-notes.md](./ops-notes.md) を参照。
+
+### Automated setup (`setup:ops`)
 
 ```sh
 export CLOUDFLARE_API_TOKEN=...   # see permissions below
@@ -39,23 +42,22 @@ API token permissions for `setup:ops` (add to deploy token or one-off token):
 
 | Permission | Scope |
 | ---------- | ----- |
-| Health Checks Edit | Zone `thirdlf03.com` |
-| Notifications Edit | Account |
+| Notifications Edit | Account (`--notify`) |
 | Logs Edit | Account (Logpush only) |
 
 Deploy token already has Workers Scripts Edit (for `ADMIN_SECRET` via wrangler).
+`--health` needs Zone Health Checks Edit (**Pro plan**); skip on Free.
 
 Retry a failed step without re-running admin:
 
 ```sh
-pnpm run setup:ops -- --health --notify --logpush
+pnpm run setup:ops -- --notify --logpush
 ```
 
 This configures:
 
 - `ADMIN_SECRET` on Worker + `INCIDENT_ADMIN_SECRET` in GitHub
-- Health check on `GET /api/ready` + email when unhealthy
-- Usage notifications (Workers requests, R2 egress, D1 rows read)
+- Usage notifications (Workers requests, R2 egress, D1 rows read) when `ALERT_EMAIL` is set
 - Logpush instructions (or API setup when R2 API keys are set)
 - Cloudflare Access steps for `/api/admin/*`
 
