@@ -2,6 +2,10 @@ import {proxyToSandbox} from '@cloudflare/sandbox';
 import {Hono} from 'hono';
 import {SessionDurableObject} from './durable/SessionDurableObject.js';
 import {logStructured} from './http/requestLog.js';
+import {
+  securityHeadersMiddleware,
+  serveAssetWithSecurityHeaders,
+} from './http/securityHeaders.js';
 import {requestIdMiddleware} from './http/writeAuthMiddleware.js';
 import {ok} from './http/response.js';
 import {registerAdminRoutes} from './routes/adminRoutes.js';
@@ -19,6 +23,7 @@ export {Sandbox} from '@cloudflare/sandbox';
 const app = new Hono<{Bindings: Bindings}>();
 
 app.use('*', requestIdMiddleware());
+app.use('*', securityHeadersMiddleware());
 
 app.post('/api/dev/terminal-debug', async (c) => {
   if (c.env.ENVIRONMENT === 'production') {
@@ -50,7 +55,11 @@ export default {
   async fetch(request: Request, env: Bindings, ctx: ExecutionContext) {
     const sandboxResponse = await proxyToSandbox(request, env);
     if (sandboxResponse) return sandboxResponse;
-    return app.fetch(request, env, ctx);
+    const pathname = new URL(request.url).pathname;
+    if (pathname.startsWith('/api/')) {
+      return app.fetch(request, env, ctx);
+    }
+    return serveAssetWithSecurityHeaders(request, env.ASSETS);
   },
   scheduled(_event: ScheduledEvent, env: Bindings, ctx: ExecutionContext) {
     ctx.waitUntil(

@@ -49,7 +49,11 @@ export type SessionSnapshotResponse = SessionClockResponse & {
 export class SessionApi {
   constructor(private http: HttpClient) {}
 
-  createSession(input: {difficulty?: Difficulty; scenarioId?: string}) {
+  createSession(input: {
+    difficulty?: Difficulty;
+    scenarioId?: string;
+    turnstileToken?: string;
+  }) {
     return this.http.post<{
       sessionId: string;
       replayId: string;

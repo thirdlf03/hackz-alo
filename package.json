@@ -17,6 +17,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "build": "pnpm -r run build",
     "setup:cloudflare": "node scripts/setup-cloudflare.mjs",
+    "setup:edge": "node scripts/setup-edge-security.mjs",
     "deploy": "node scripts/deploy.mjs",
     "cleanup:sessions": "node scripts/cleanup-sessions.mjs",
     "db:migrate:remote": "pnpm --filter @incident/worker run db:migrate:remote",

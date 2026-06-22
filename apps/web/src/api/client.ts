@@ -4,6 +4,7 @@ import type {
   ScenarioDefinition,
 } from '@incident/shared';
 import {bindApiMethods} from './bindApiMethods.js';
+import {requestTurnstileToken} from '../effect/turnstileClient.js';
 import {HttpClient} from './httpClient.js';
 import {
   RecordingUploadApi,
@@ -150,7 +151,11 @@ export class ApiClient {
   }
 
   async createSession(input: {difficulty?: Difficulty; scenarioId?: string}) {
-    const data = await this.sessions.createSession(input);
+    const turnstileToken = await requestTurnstileToken();
+    const data = await this.sessions.createSession({
+      ...input,
+      ...(turnstileToken === undefined ? {} : {turnstileToken}),
+    });
     this.http.setWriteToken(data.writeToken);
     return {
       sessionId: data.sessionId,

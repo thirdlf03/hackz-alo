@@ -54,6 +54,19 @@ export function registerReplayRoutes(app: WorkerApp) {
     bodySizeLimit(16 * 1024 * 1024),
     async (c) => {
       const replayId = replayIdParam(c);
+      const clientIp = c.req.header('cf-connecting-ip') ?? 'unknown';
+      if (shouldEnforceRateLimit(c.env)) {
+        const limited = await enforceRateLimit(
+          c.env,
+          `chunks:${clientIp}`,
+          120,
+          60
+        );
+        if (!limited.allowed) {
+          c.header('Retry-After', String(limited.retryAfter));
+          return c.json(err('rate_limited', 'too many chunk uploads'), 429);
+        }
+      }
       const denied = await requireReplayWriteAccess(c, replayId);
       if (denied) return denied;
       const replay = await getReplay(c.env, replayId);
