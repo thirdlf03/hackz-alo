@@ -2,6 +2,7 @@ name = "incident-training-worker"
 main = "src/index.ts"
 compatibility_date = "2026-06-20"
 compatibility_flags = ["nodejs_compat"]
+logpush = true
 
 # Frontend (Vite build output). Run `npm run build` before deploy.
 [assets]
@@ -12,6 +13,11 @@ run_worker_first = true
 
 [triggers]
 crons = ["*/10 * * * *"]
+
+# Custom domain (thirdlf03.com must be on Cloudflare). Deploy creates DNS + TLS.
+[[routes]]
+pattern = "incident.thirdlf03.com"
+custom_domain = true
 
 # Replace local-development IDs before the first remote deploy:
 #   npm run setup:cloudflare

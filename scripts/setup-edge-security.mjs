@@ -8,6 +8,7 @@ const workerDir = path.join(root, "apps/worker");
 const wranglerToml = path.join(workerDir, "wrangler.toml");
 
 const DEFAULT_HOST = "incident-training-worker.naokimiura15.workers.dev";
+const DEFAULT_CUSTOM_HOST = "incident.thirdlf03.com";
 const WIDGET_NAME = "incident-training session create";
 
 function readAccountId() {
@@ -73,10 +74,13 @@ async function findExistingWidget(token, accountId, host) {
 }
 
 async function createWidget(token, accountId, host) {
+  const domains = Array.from(
+    new Set([host, DEFAULT_CUSTOM_HOST, "localhost", "127.0.0.1"])
+  );
   return cfApi(token, "POST", `/accounts/${accountId}/challenges/widgets`, {
     name: WIDGET_NAME,
     mode: "invisible",
-    domains: [host, "localhost", "127.0.0.1"],
+    domains,
   });
 }
 
@@ -129,6 +133,28 @@ async function main() {
   let widget = await findExistingWidget(token, accountId, host);
   if (widget) {
     console.log(`Reusing Turnstile widget ${widget.sitekey}`);
+    const domains = Array.from(
+      new Set([
+        ...(widget.domains ?? []),
+        host,
+        DEFAULT_CUSTOM_HOST,
+        "localhost",
+        "127.0.0.1",
+      ])
+    );
+    if (domains.length !== (widget.domains ?? []).length) {
+      widget = await cfApi(
+        token,
+        "PUT",
+        `/accounts/${accountId}/challenges/widgets/${widget.sitekey}`,
+        {
+          name: widget.name,
+          mode: widget.mode ?? "invisible",
+          domains,
+        }
+      );
+      console.log(`Turnstile domains updated: ${domains.join(", ")}`);
+    }
   } else {
     widget = await createWidget(token, accountId, host);
     console.log(`Created Turnstile widget ${widget.sitekey}`);
@@ -156,7 +182,7 @@ async function main() {
   console.log("Next: redeploy so the web build embeds VITE_TURNSTILE_SITE_KEY.");
   console.log("  git tag v0.1.x && git push origin v0.1.x");
   console.log("");
-  console.log("WAF note: *.workers.dev has no customer zone. Use Worker rate limits + Turnstile.");
+  console.log("WAF note: not used; rely on Worker rate limits + Turnstile.");
   console.log("Security headers for HTML/JS are applied by the Worker (no Transform Rules needed).");
 }
 

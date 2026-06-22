@@ -27,6 +27,46 @@ Each response includes `X-Request-Id`.
 | R2 egress                | week-over-week 2x       |
 | `[session-sweep]` errors | any in 15m              |
 
+### Automated setup
+
+```sh
+export CLOUDFLARE_API_TOKEN=...   # see permissions below
+export ALERT_EMAIL=you@example.com
+pnpm run setup:ops
+```
+
+API token permissions for `setup:ops` (add to deploy token or one-off token):
+
+| Permission | Scope |
+| ---------- | ----- |
+| Health Checks Edit | Zone `thirdlf03.com` |
+| Notifications Edit | Account |
+| Logs Edit | Account (Logpush only) |
+
+Deploy token already has Workers Scripts Edit (for `ADMIN_SECRET` via wrangler).
+
+Retry a failed step without re-running admin:
+
+```sh
+pnpm run setup:ops -- --health --notify --logpush
+```
+
+This configures:
+
+- `ADMIN_SECRET` on Worker + `INCIDENT_ADMIN_SECRET` in GitHub
+- Health check on `GET /api/ready` + email when unhealthy
+- Usage notifications (Workers requests, R2 egress, D1 rows read)
+- Logpush instructions (or API setup when R2 API keys are set)
+- Cloudflare Access steps for `/api/admin/*`
+
+Flags: `--admin`, `--health`, `--notify`, `--logpush`, `--access-guide`
+
+Load test after setup:
+
+```sh
+INCIDENT_WORKER_URL=https://incident.thirdlf03.com pnpm run load-test
+```
+
 ## Logpush
 
 Optional: enable Workers Logpush to your SIEM for `/api/*` requests.

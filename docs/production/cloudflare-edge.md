@@ -24,23 +24,41 @@ security headers as `/api/*` in code. No dashboard rule is required for headers.
 
 If you add a custom domain later, you can mirror the same headers with Transform Rules as backup.
 
-## WAF (dashboard)
+## Custom domain (`incident.thirdlf03.com`)
 
-`*.workers.dev` is not a zone you control, so managed WAF rules for a custom hostname generally
-do not apply until you attach your own domain.
+`thirdlf03.com` must be on the same Cloudflare account as the Worker. Wrangler creates the
+DNS record and TLS certificate on deploy.
 
-Until then, rely on:
+```toml
+# apps/worker/wrangler.toml
+[[routes]]
+pattern = "incident.thirdlf03.com"
+custom_domain = true
+```
 
-- Worker KV rate limits (production only)
-- Turnstile on session create (after setup below)
-- Write token on replay uploads
+`*.workers.dev` remains available unless you set `workers_dev = false`.
 
-When you add a custom domain:
+### One-time setup
 
-1. Cloudflare dashboard → your zone
-2. **Security** → **WAF** → **Managed rules**
-3. Enable **Cloudflare OWASP Core Ruleset** scoped to `/api/*`
-4. Start in **Log**, then **Block** after review
+```sh
+export CLOUDFLARE_API_TOKEN=...   # Zone:Read + Turnstile:Edit
+pnpm run setup:domain            # zone check, Turnstile domains, INCIDENT_WORKER_URL secret
+git tag v0.1.x && git push origin v0.1.x
+```
+
+Override hostname or zone:
+
+```sh
+INCIDENT_WORKER_HOST=training.thirdlf03.com INCIDENT_ZONE=thirdlf03.com pnpm run setup:domain
+```
+
+After deploy:
+
+```sh
+curl -sf https://incident.thirdlf03.com/api/ready
+```
+
+API protection uses Worker KV rate limits and Turnstile (no dashboard WAF).
 
 ## Turnstile (automated setup)
 
@@ -78,9 +96,45 @@ Admin API also accepts `x-admin-secret` when Access JWT is absent (`ADMIN_SECRET
 
 ## Billing alerts
 
-1. Dashboard → **Notifications**
-2. Enable billing usage alerts for Workers, R2 egress, D1 rows read
-3. Set a monthly threshold you are comfortable with
+Pay-as-you-go accounts only (not Enterprise contracts).
+
+### Account-wide budget (recommended first)
+
+1. Dashboard → select account (top-left) → **Billing** → **Billable Usage**
+2. **Create budget alert** (or **Manage notifications**)
+3. Set a monthly USD threshold (e.g. $10, $25, $50) for **total account** usage
+4. Add email recipients
+
+You get alerts at 50%, 75%, 90%, and 100% of the budget.
+
+Alternative path: **Notifications** → **Add** → **Billing** → **Budget Alert**.
+
+### Product-specific usage alerts
+
+**Notifications** → **Add** → filter by product:
+
+| Product | Typical alert |
+| ------- | ------------- |
+| Workers | Requests, CPU time, duration |
+| R2 | Class A/B operations, egress |
+| D1 | Rows read/written, storage |
+| Durable Objects | Requests, duration |
+
+For this app, start with:
+
+- **Workers** — request count spike (abuse or traffic surge)
+- **R2** — egress (replay video downloads)
+- **D1** — rows read (session/replay queries)
+
+Set thresholds above your normal monthly baseline so alerts are actionable, not noise.
+
+### What to watch for incident-training
+
+- Sudden **Workers request** increase → bot traffic or replay chunk spam (KV limits help)
+- **R2 egress** → large replay views or hot objects
+- **D1 rows read** → list endpoints under load
+
+Review **Analytics & Logs** → **Workers** after an alert fires.
 
 ## Deploy checklist
 
@@ -91,6 +145,9 @@ pnpm exec wrangler secret put ENVIRONMENT -c apps/worker/wrangler.toml
 
 # optional bot protection (or: pnpm run setup:edge)
 pnpm run setup:edge
+
+# custom domain (thirdlf03.com on Cloudflare)
+pnpm run setup:domain
 
 # GitHub deploy secrets: CLOUDFLARE_API_TOKEN, INCIDENT_WORKER_URL, TURNSTILE_SITE_KEY
 git tag v0.1.x && git push origin v0.1.x
