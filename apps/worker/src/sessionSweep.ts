@@ -1,4 +1,5 @@
 import type {Bindings} from './types.js';
+import {getSessionDoStub} from './effect/sessionDoStub.js';
 
 const RUNNING_MAX_WALL_MINUTES = 30;
 const STALE_CREATED_MAX_MINUTES = 20;
@@ -48,8 +49,7 @@ export async function sweepStaleSessions(env: Bindings) {
 }
 
 async function finishStaleSession(env: Bindings, sessionId: string) {
-  const id = env.SESSION_DO.idFromName(sessionId);
-  const stub = env.SESSION_DO.get(id);
+  const stub = getSessionDoStub(env.SESSION_DO, sessionId);
   const timeoutUrl = new URL(
     `https://session.internal/internal/sessions/${encodeURIComponent(sessionId)}/timeout`
   );

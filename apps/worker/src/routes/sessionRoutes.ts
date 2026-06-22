@@ -10,6 +10,7 @@ import {err, messageFrom, ok} from '../http/response.js';
 import {createWriteToken, hashWriteToken} from '../pure/writeAuth.js';
 import {purgeReplayStorage} from '../storage/replayPurge.js';
 import type {Bindings} from '../types.js';
+import {getSessionDoStub} from '../effect/sessionDoStub.js';
 
 const difficulties = new Set<Difficulty>([
   'beginner',
@@ -247,8 +248,7 @@ async function proxySession(c: WorkerContext, action: string, body?: unknown) {
     if (!record) return c.json(err('not_found', 'session not found'), 404);
   }
 
-  const id = c.env.SESSION_DO.idFromName(sessionId);
-  const stub = c.env.SESSION_DO.get(id);
+  const stub = getSessionDoStub(c.env.SESSION_DO, sessionId);
   const target = new URL(c.req.url);
   target.pathname = `/internal/sessions/${sessionId}/${action}`;
   const request =
@@ -272,8 +272,7 @@ async function proxySessionDelete(c: WorkerContext, action: string) {
   const record = await getSession(c.env, sessionId);
   if (!record) return c.json(err('not_found', 'session not found'), 404);
   const replayId = record.replay_id;
-  const id = c.env.SESSION_DO.idFromName(sessionId);
-  const stub = c.env.SESSION_DO.get(id);
+  const stub = getSessionDoStub(c.env.SESSION_DO, sessionId);
   const target = new URL(
     `https://session.internal/internal/sessions/${sessionId}/${action}`
   );
@@ -292,8 +291,7 @@ async function fetchSessionObject(
   action: string,
   body: unknown
 ) {
-  const id = env.SESSION_DO.idFromName(sessionId);
-  const stub = env.SESSION_DO.get(id);
+  const stub = getSessionDoStub(env.SESSION_DO, sessionId);
   const target = new URL(
     `https://session.internal/internal/sessions/${encodeURIComponent(sessionId)}/${action}`
   );

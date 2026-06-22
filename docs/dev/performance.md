@@ -146,8 +146,8 @@ curl -s -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
 
 ### Success criteria
 
-| Metric | Target |
-| --- | --- |
-| cold `sandbox.prepare` p95 | &lt; 2500ms or 30%+ better than before |
-| `sandbox.start` p95 | &lt; 2500ms |
-| warm `sandbox.prepare` (`cached: true`) | &lt; 200ms |
+| Metric                                  | Target                                 |
+| --------------------------------------- | -------------------------------------- |
+| cold `sandbox.prepare` p95              | &lt; 2500ms or 30%+ better than before |
+| `sandbox.start` p95                     | &lt; 2500ms                            |
+| warm `sandbox.prepare` (`cached: true`) | &lt; 200ms                             |

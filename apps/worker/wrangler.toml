@@ -27,6 +27,9 @@ image = "../../sandbox/container/Dockerfile"
 instance_type = "lite"
 max_instances = 5
 
+[containers.constraints]
+regions = ["APAC"]
+
 [[d1_databases]]
 binding = "DB"
 database_name = "incident-training"
