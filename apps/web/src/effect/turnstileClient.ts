@@ -7,6 +7,7 @@ interface TurnstileApi {
     options: {
       sitekey: string;
       size?: 'normal' | 'compact' | 'invisible';
+      execution?: 'render' | 'execute';
       callback?: (token: string) => void;
       'error-callback'?: () => void;
       'expired-callback'?: () => void;
@@ -113,26 +114,27 @@ export async function requestTurnstileToken(siteKey = turnstileSiteKey()) {
       resolve(token);
     };
 
-    let widgetId: string | undefined;
+    const widget = {id: ''};
     try {
-      widgetId = turnstile.render(container, {
+      widget.id = turnstile.render(container, {
         sitekey: siteKey,
         size: 'invisible',
+        // Defer challenge until execute(); default "render" would race widgetId assignment.
+        execution: 'execute',
         callback: (token) => {
-          if (!widgetId) return;
-          succeed(widgetId, token);
+          succeed(widget.id, token);
         },
         'error-callback': () => {
-          fail(widgetId, 'turnstile challenge failed');
+          fail(widget.id, 'turnstile challenge failed');
         },
         'expired-callback': () => {
-          fail(widgetId, 'turnstile token expired');
+          fail(widget.id, 'turnstile token expired');
         },
       });
-      turnstile.execute(widgetId);
+      turnstile.execute(widget.id);
     } catch (error: unknown) {
       fail(
-        widgetId,
+        widget.id || undefined,
         error instanceof Error ? error.message : 'turnstile render failed'
       );
     }

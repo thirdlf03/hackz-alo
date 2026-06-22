@@ -115,12 +115,12 @@ Alternative path: **Notifications** → **Add** → **Billing** → **Budget Ale
 
 **Notifications** → **Add** → **Usage Based Billing**（Email / **Webhook** / PagerDuty 可。閾値はメトリクス単位でドルではない）:
 
-| Product | Typical alert |
-| ------- | ------------- |
-| Workers | Requests, CPU time, duration |
-| R2 | Class A/B operations, egress |
-| D1 | Rows read/written, storage |
-| Durable Objects | Requests, duration |
+| Product         | Typical alert                |
+| --------------- | ---------------------------- |
+| Workers         | Requests, CPU time, duration |
+| R2              | Class A/B operations, egress |
+| D1              | Rows read/written, storage   |
+| Durable Objects | Requests, duration           |
 
 For this app, start with:
 
@@ -151,6 +151,6 @@ pnpm run setup:edge
 # custom domain (thirdlf03.com on Cloudflare)
 pnpm run setup:domain
 
-# GitHub deploy secrets: CLOUDFLARE_API_TOKEN, INCIDENT_WORKER_URL, TURNSTILE_SITE_KEY
+# GitHub deploy secrets: CLOUDFLARE_API_TOKEN (include Zone → Workers Routes → Edit for custom domain in wrangler.toml), INCIDENT_WORKER_URL, TURNSTILE_SITE_KEY
 git tag v0.1.x && git push origin v0.1.x
 ```

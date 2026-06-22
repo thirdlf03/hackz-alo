@@ -49,8 +49,7 @@ async function cfApi(token, method, apiPath, body) {
 }
 
 async function ensureWidgetSecret(token, accountId, widget) {
-  if (widget.secret) return widget;
-  console.log(`Fetching secret for existing widget ${widget.sitekey}...`);
+  console.log(`Syncing secret for widget ${widget.sitekey}...`);
   const rotated = await cfApi(
     token,
     "POST",

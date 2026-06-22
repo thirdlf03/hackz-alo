@@ -48,7 +48,7 @@ export function registerSessionRoutes(app: WorkerApp) {
       difficulty?: string;
       turnstileToken?: string;
     };
-    if (!(await verifyTurnstileToken(c.env, body.turnstileToken))) {
+    if (!(await verifyTurnstileToken(c.env, body.turnstileToken, clientIp))) {
       return c.json(err('forbidden', 'turnstile verification failed'), 403);
     }
     const scenario = resolveRequestedScenario(body);

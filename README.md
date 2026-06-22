@@ -63,13 +63,13 @@ CI deploy uses `.github/workflows/deploy.yml` (tag `v*` or workflow_dispatch).
 
 ### GitHub Actions secrets (deploy workflow)
 
-| Secret                 | Purpose                                   |
-| ---------------------- | ----------------------------------------- |
-| `CLOUDFLARE_API_TOKEN` | Wrangler deploy + D1 remote migrations    |
+| Secret                 | Purpose                                                                              |
+| ---------------------- | ------------------------------------------------------------------------------------ |
+| `CLOUDFLARE_API_TOKEN` | Wrangler deploy + D1 remote migrations                                               |
 | `INCIDENT_WORKER_URL`  | Post-deploy `GET /api/ready` smoke (custom domain: `https://incident.thirdlf03.com`) |
-| `TURNSTILE_SITE_KEY`   | Optional Turnstile site key for web build |
+| `TURNSTILE_SITE_KEY`   | Optional Turnstile site key for web build                                            |
 
-Create a Cloudflare API token with **Workers Scripts Edit**, **D1 Edit**, **Containers Edit**, **Account Settings Read**, and optionally **Turnstile Edit** for `pnpm run setup:edge`, then:
+Create a Cloudflare API token with **Workers Scripts Edit**, **D1 Edit**, **Containers Edit**, **Account Settings Read**, **Zone → Workers Routes → Edit** (required for `incident.thirdlf03.com` in `wrangler.toml`), and optionally **Turnstile Edit** for `pnpm run setup:edge`, then:
 
 ```sh
 gh secret set CLOUDFLARE_API_TOKEN --repo thirdlf03/hackz-alo

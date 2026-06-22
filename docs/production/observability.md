@@ -40,10 +40,10 @@ pnpm run setup:ops
 
 API token permissions for `setup:ops` (add to deploy token or one-off token):
 
-| Permission | Scope |
-| ---------- | ----- |
-| Notifications Edit | Account (`--notify`) |
-| Logs Edit | Account (Logpush only) |
+| Permission         | Scope                  |
+| ------------------ | ---------------------- |
+| Notifications Edit | Account (`--notify`)   |
+| Logs Edit          | Account (Logpush only) |
 
 Deploy token already has Workers Scripts Edit (for `ADMIN_SECRET` via wrangler).
 `--health` needs Zone Health Checks Edit (**Pro plan**); skip on Free.

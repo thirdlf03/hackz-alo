@@ -48,6 +48,7 @@ export async function serveAssetWithSecurityHeaders(
 export function securityHeadersMiddleware() {
   return async (c: WorkerContext, next: () => Promise<void>) => {
     await next();
-    applySecurityHeaders(c.res.headers);
+    // DO / asset fetch responses expose immutable Headers; clone before applying.
+    c.res = withSecurityHeaders(c.res);
   };
 }
