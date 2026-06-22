@@ -47,6 +47,18 @@ async function cfApi(token, method, apiPath, body) {
   return payload.result;
 }
 
+async function ensureWidgetSecret(token, accountId, widget) {
+  if (widget.secret) return widget;
+  console.log(`Fetching secret for existing widget ${widget.sitekey}...`);
+  const rotated = await cfApi(
+    token,
+    "POST",
+    `/accounts/${accountId}/challenges/widgets/${widget.sitekey}/rotate_secret`,
+    { invalidate_immediately: true }
+  );
+  return { ...widget, secret: rotated.secret };
+}
+
 async function findExistingWidget(token, accountId, host) {
   const widgets = await cfApi(
     token,
@@ -88,7 +100,6 @@ function putWranglerSecret(name, value) {
       "secret",
       "put",
       name,
-      "--remote",
       "-c",
       "apps/worker/wrangler.toml",
     ],
@@ -123,8 +134,13 @@ async function main() {
     console.log(`Created Turnstile widget ${widget.sitekey}`);
   }
 
-  if (!widget.sitekey || !widget.secret) {
-    throw new Error("Turnstile widget response missing sitekey/secret");
+  if (!widget.sitekey) {
+    throw new Error("Turnstile widget response missing sitekey");
+  }
+  widget = await ensureWidgetSecret(token, accountId, widget);
+
+  if (!widget.secret) {
+    throw new Error("Turnstile widget response missing secret");
   }
 
   console.log("Setting Worker secret TURNSTILE_SECRET_KEY...");
