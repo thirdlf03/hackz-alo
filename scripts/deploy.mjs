@@ -21,22 +21,22 @@ function run(command, args, options = {}) {
 const wranglerConfig = readFileSync(wranglerToml, "utf8");
 if (wranglerConfig.includes('database_id = "local-development"')) {
   console.error("wrangler.toml still uses local-development D1 id.");
-  console.error("Run `npm run setup:cloudflare` before deploying.");
+  console.error("Run `pnpm run setup:cloudflare` before deploying.");
   process.exit(1);
 }
 
 if (wranglerConfig.includes('id = "local-development"')) {
   console.error("wrangler.toml still uses local-development KV id.");
-  console.error("Run `npm run setup:cloudflare` before deploying.");
+  console.error("Run `pnpm run setup:cloudflare` before deploying.");
   process.exit(1);
 }
 
-run("npm", ["run", "build:scenarios"]);
-run("npm", ["--workspace", "apps/web", "run", "build"]);
+run("pnpm", ["run", "build:scenarios"]);
+run("pnpm", ["--filter", "@incident/web", "run", "build"]);
 
 if (!existsSync(webDist)) {
   console.error(`missing frontend build output: ${webDist}`);
   process.exit(1);
 }
 
-run("npm", ["--workspace", "apps/worker", "run", "deploy"]);
+run("pnpm", ["--filter", "@incident/worker", "run", "deploy"]);

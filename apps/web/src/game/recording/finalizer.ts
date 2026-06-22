@@ -1,7 +1,10 @@
-import { recordingMultipartPartSize, splitBufferIntoParts } from "@incident/shared";
-import type { ApiClient } from "../../api/client.js";
+import {
+  recordingMultipartPartSize,
+  splitBufferIntoParts,
+} from '@incident/shared';
+import type {ApiClient} from '../../api/client.js';
 
-export { splitBufferIntoParts };
+export {splitBufferIntoParts};
 
 export class RecordingFinalizer {
   private parts: Uint8Array[] = [];
@@ -34,7 +37,11 @@ export class RecordingFinalizer {
     for (let index = 0; index < chunks.length; index += 1) {
       const part = chunks[index];
       if (!part || part.length === 0) continue;
-      await api.uploadMultipartPart(replayId, index + 1, new Blob([part as BlobPart]));
+      await api.uploadMultipartPart(
+        replayId,
+        index + 1,
+        new Blob([part as BlobPart])
+      );
     }
 
     await api.completeMultipartUpload(replayId);

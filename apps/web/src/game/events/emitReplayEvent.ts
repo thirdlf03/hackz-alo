@@ -1,15 +1,20 @@
-import { createReplayEvent, replayEventSummary, type ReplayEvent, type ReplayEventType } from "@incident/shared";
-import type { ApiClient } from "../../api/client.js";
-import { isTimelineEventType } from "../../replay/replayMediaUtils.js";
+import {
+  createReplayEvent,
+  replayEventSummary,
+  type ReplayEvent,
+  type ReplayEventType,
+} from '@incident/shared';
+import type {ApiClient} from '../../api/client.js';
+import {isTimelineEventType} from '../../replay/replayMediaUtils.js';
 
-type EmitOptions = {
+interface EmitOptions {
   replayId: string;
   type: ReplayEventType;
   at: number;
   payload?: Record<string, unknown>;
-  actor?: ReplayEvent["actor"];
-  visibility?: ReplayEvent["visibility"];
-};
+  actor?: ReplayEvent['actor'];
+  visibility?: ReplayEvent['visibility'];
+}
 
 export class ReplayEventEmitter {
   private dedupKeys = new Set<string>();
@@ -37,9 +42,9 @@ export class ReplayEventEmitter {
       replayId: options.replayId,
       type: options.type,
       at: options.at,
-      actor: options.actor ?? "player",
+      actor: options.actor ?? 'player',
       payload: options.payload ?? {},
-      visibility: options.visibility ?? "public_safe"
+      visibility: options.visibility ?? 'public_safe',
     });
     try {
       await this.api.uploadEvents(options.replayId, [event]);
@@ -52,20 +57,36 @@ export class ReplayEventEmitter {
   }
 }
 
-export function classifyCommandEvent(command: string): ReplayEventType | "recovery_check" | "service_restart" | "file_opened" | null {
+export function classifyCommandEvent(
+  command: string
+):
+  | ReplayEventType
+  | 'recovery_check'
+  | 'service_restart'
+  | 'file_opened'
+  | null {
   const normalized = command.trim();
-  if (/^unctl\s+restart\b/i.test(normalized)) return "service_restart";
-  if (/^curl\b/i.test(normalized) || /^unctl\s+status\b/i.test(normalized)) return "recovery_check";
-  const fileMatch = normalized.match(/^(cat|less|more|head|tail|vim|nano|vi)\s+(\S+)/i);
-  if (fileMatch) return "file_opened";
+  if (/^unctl\s+restart\b/i.test(normalized)) return 'service_restart';
+  if (/^curl\b/i.test(normalized) || /^unctl\s+status\b/i.test(normalized)) {
+    return 'recovery_check';
+  }
+  const fileMatch = normalized.match(
+    /^(cat|less|more|head|tail|vim|nano|vi)\s+(\S+)/i
+  );
+  if (fileMatch) return 'file_opened';
   return null;
 }
 
-export function commandEventPayload(command: string, type: ReturnType<typeof classifyCommandEvent>) {
-  if (type === "file_opened") {
-    const match = command.trim().match(/^(cat|less|more|head|tail|vim|nano|vi)\s+(\S+)/i);
-    return { command, path: match?.[2] ?? "" };
+export function commandEventPayload(
+  command: string,
+  type: ReturnType<typeof classifyCommandEvent>
+) {
+  if (type === 'file_opened') {
+    const match = command
+      .trim()
+      .match(/^(cat|less|more|head|tail|vim|nano|vi)\s+(\S+)/i);
+    return {command, path: match?.[2] ?? ''};
   }
-  if (type === "recovery_check" || type === "service_restart") return { command };
-  return { command };
+  if (type === 'recovery_check' || type === 'service_restart') return {command};
+  return {command};
 }

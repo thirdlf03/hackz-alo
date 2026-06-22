@@ -32,7 +32,7 @@ alerts:
   - id: fridge-cam
     atMs: 80000
     severity: info
-    message: "Fridge camera: beverage level dropping"
+    message: 'Fridge camera: beverage level dropping'
     source: monitor
 successConditions:
   - type: http_status

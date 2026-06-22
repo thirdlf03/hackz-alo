@@ -9,10 +9,10 @@ import {
   type ReplayEvent,
   type ScenarioDefinition,
   type SessionStatus,
-  type MetricsSnapshot
-} from "@incident/shared";
-import { getScenario } from "@incident/scenarios";
-import type { Bindings } from "../types.js";
+  type MetricsSnapshot,
+} from '@incident/shared';
+import {getScenario} from '@incident/scenarios';
+import type {Bindings} from '../types.js';
 import {
   destroySessionSandbox,
   evaluateSuccessCondition,
@@ -25,10 +25,10 @@ import {
   proxySessionTerminal,
   readSessionFile,
   writeSessionFile,
-  startScenarioSandbox
-} from "../sandbox/runtime.js";
+  startScenarioSandbox,
+} from '../sandbox/runtime.js';
 
-type StoredSession = {
+interface StoredSession {
   sessionId: string;
   replayId: string;
   scenarioId: string;
@@ -43,20 +43,23 @@ type StoredSession = {
   firedSlackIds: string[];
   eventSeq: number;
   bufferedEvents: ReplayEvent[];
-};
+}
 
-type SessionBootstrap = Pick<StoredSession, "sessionId" | "replayId" | "scenarioId">;
+type SessionBootstrap = Pick<
+  StoredSession,
+  'sessionId' | 'replayId' | 'scenarioId'
+>;
 
-type SuccessCheck = {
-  condition: ScenarioDefinition["successConditions"][number];
+interface SuccessCheck {
+  condition: ScenarioDefinition['successConditions'][number];
   ok: boolean;
-};
+}
 
-type PendingTimer = {
-  kind: "trigger" | "alert" | "slack";
+interface PendingTimer {
+  kind: 'trigger' | 'alert' | 'slack';
   id: string;
   handle: ReturnType<typeof setTimeout>;
-};
+}
 
 const SESSION_IDLE_TIMEOUT_MS = 3 * 60 * 1000;
 const BRIEFING_TIMEOUT_MS = 15 * 60 * 1000;
@@ -66,22 +69,26 @@ export class SessionDurableObject implements DurableObject {
   private metricsCache?: MetricsSnapshot;
   private metricsCachedAt = 0;
   private pendingTimers: PendingTimer[] = [];
-  private sseClients: Set<ReadableStreamDefaultController<Uint8Array>> = new Set();
+  private sseClients: Set<ReadableStreamDefaultController<Uint8Array>> =
+    new Set();
   private static readonly METRICS_TTL_MS = 3000;
 
-  constructor(private state: DurableObjectState, private env: Bindings) {}
+  constructor(
+    private state: DurableObjectState,
+    private env: Bindings
+  ) {}
 
   async alarm() {
     try {
-      const session = await this.state.storage.get<StoredSession>("session");
+      const session = await this.state.storage.get<StoredSession>('session');
       if (!session) return;
 
-      if (session.status === "briefing") {
+      if (session.status === 'briefing') {
         await this.deleteSession();
         return;
       }
 
-      if (session.status !== "running") return;
+      if (session.status !== 'running') return;
 
       const scenario = requireScenario(session.scenarioId);
       const timeLimitMs = scenario.timeLimitMinutes * 60 * 1000;
@@ -90,45 +97,85 @@ export class SessionDurableObject implements DurableObject {
         return;
       }
 
-      const lastActivity = (await this.state.storage.get<number>("lastClientActivityAt")) ?? 0;
-      if (this.sseClients.size === 0 && Date.now() - lastActivity >= SESSION_IDLE_TIMEOUT_MS) {
+      const lastActivity =
+        (await this.state.storage.get<number>('lastClientActivityAt')) ?? 0;
+      if (
+        this.sseClients.size === 0 &&
+        Date.now() - lastActivity >= SESSION_IDLE_TIMEOUT_MS
+      ) {
         await this.timeout();
         return;
       }
 
       await this.scheduleLifecycleAlarms(session, scenario);
     } catch (error) {
-      console.error("[session-alarm]", messageFrom(error));
+      console.error('[session-alarm]', messageFrom(error));
     }
   }
 
   async fetch(request: Request): Promise<Response> {
     try {
       const url = new URL(request.url);
-      const segments = url.pathname.split("/").filter(Boolean);
+      const segments = url.pathname.split('/').filter(Boolean);
       const action = segments.at(-1);
 
-      if (request.method === "POST" && action === "bootstrap") return this.bootstrap(request);
-      if (request.method === "POST" && action === "start") return this.start(request);
-      if (request.method === "POST" && action === "resolve") return this.resolve();
-      if (request.method === "POST" && action === "retire") return this.retire();
-      if (request.method === "POST" && action === "timeout") return this.timeout();
-      if (request.method === "DELETE" && action === "delete") return this.deleteSession();
-      if (request.method === "POST" && action === "clock") return this.updateClock(request);
-      if (request.method === "POST" && action === "terminal-resize") return this.terminalResize(request);
-      if (request.method === "GET" && action === "events") return this.events(request);
-      if (request.method === "GET" && action === "clock") return jsonOk(this.clockPayload(await this.requireSession()));
-      if (request.method === "GET" && action === "metrics") return this.metrics();
-      if (request.method === "GET" && action === "logs") return this.logs(request);
-      if (request.method === "GET" && action === "storage") return this.storage();
-      if (request.method === "GET" && action === "files") return this.files();
-      if (request.method === "GET" && action === "file") return this.readFile(request);
-      if (request.method === "PUT" && action === "file") return this.writeFile(request);
-      if (request.method === "GET" && action === "terminal") return this.terminal(request);
-      if (request.method === "POST" && action === "terminal-interrupt") return this.terminalInterrupt();
-      if (request.method === "GET") return jsonOk(await this.snapshot());
+      if (request.method === 'POST' && action === 'bootstrap') {
+        return await this.bootstrap(request);
+      }
+      if (request.method === 'POST' && action === 'start') {
+        return await this.start(request);
+      }
+      if (request.method === 'POST' && action === 'resolve') {
+        return await this.resolve();
+      }
+      if (request.method === 'POST' && action === 'retire') {
+        return await this.retire();
+      }
+      if (request.method === 'POST' && action === 'timeout') {
+        return await this.timeout();
+      }
+      if (request.method === 'DELETE' && action === 'delete') {
+        return await this.deleteSession();
+      }
+      if (request.method === 'POST' && action === 'clock') {
+        return await this.updateClock(request);
+      }
+      if (request.method === 'POST' && action === 'terminal-resize') {
+        return await this.terminalResize(request);
+      }
+      if (request.method === 'GET' && action === 'events') {
+        return await this.events(request);
+      }
+      if (request.method === 'GET' && action === 'clock') {
+        return jsonOk(this.clockPayload(await this.requireSession()));
+      }
+      if (request.method === 'GET' && action === 'metrics') {
+        return await this.metrics();
+      }
+      if (request.method === 'GET' && action === 'logs') {
+        return await this.logs(request);
+      }
+      if (request.method === 'GET' && action === 'storage') {
+        return await this.storage();
+      }
+      if (request.method === 'GET' && action === 'files') {
+        return await this.files();
+      }
+      if (request.method === 'GET' && action === 'file') {
+        return await this.readFile(request);
+      }
+      if (request.method === 'PUT' && action === 'file') {
+        return await this.writeFile(request);
+      }
+      if (request.method === 'GET' && action === 'terminal') {
+        return await this.terminal(request);
+      }
+      if (request.method === 'POST' && action === 'terminal-interrupt') {
+        return await this.terminalInterrupt();
+      }
+      if (request.method === 'GET') return jsonOk(await this.snapshot());
 
-      return jsonErr("not_found", "session action not found", 404);
+      return jsonErr('not_found', 'session action not found', 404);
     } catch (error) {
       return errorResponse(error);
     }
@@ -137,54 +184,68 @@ export class SessionDurableObject implements DurableObject {
   private async bootstrap(request: Request) {
     const session = await this.loadOrCreate(await readBootstrap(request));
     await this.persistSession(session);
-    if (session.status === "briefing") {
+    if (session.status === 'briefing') {
       await this.state.storage.setAlarm(Date.now() + BRIEFING_TIMEOUT_MS);
     }
-    return jsonOk({ session: await this.snapshotFor(session) });
+    return jsonOk({session: this.snapshotFor(session)});
   }
 
   private async start(request: Request) {
     const body = await readBootstrap(request);
     const session = await this.loadOrCreate(body);
-    if (session.status === "running") {
-      return jsonOk({ session: await this.snapshotFor(session), startup: [] });
+    if (session.status === 'running') {
+      return jsonOk({session: this.snapshotFor(session), startup: []});
     }
     if (isTerminalStatus(session.status)) {
-      throw new HttpError(409, "invalid_state", `session is already ${session.status}`);
+      throw new HttpError(
+        409,
+        'invalid_state',
+        `session is already ${session.status}`
+      );
     }
 
     const scenario = requireScenario(session.scenarioId);
     const started = new Date().toISOString();
     let running: StoredSession = {
       ...session,
-      status: "running",
+      status: 'running',
       startedAt: started,
       gameTimeMs: 0,
       gameSpeed: session.gameSpeed || 1,
-      gameClockWallMs: Date.now()
+      gameClockWallMs: Date.now(),
     };
-    await this.state.storage.put("session", running);
+    await this.state.storage.put('session', running);
     await this.persistSession(running);
     await this.persistReplayStart(running);
 
     let startup: Awaited<ReturnType<typeof startScenarioSandbox>>;
     try {
-      startup = await startScenarioSandbox(this.env, running.sessionId, scenario);
+      startup = await startScenarioSandbox(
+        this.env,
+        running.sessionId,
+        scenario
+      );
     } catch (error) {
-      const failed = await this.finishSession(running, "failed", "failed");
-      await this.emit(failed, "sandbox_error", this.getGameTimeMs(failed), "sandbox", {
-        message: messageFrom(error)
-      });
-      throw new HttpError(502, "sandbox_start_failed", messageFrom(error));
+      const failed = await this.finishSession(running, 'failed', 'failed');
+      await this.emit(
+        failed,
+        'sandbox_error',
+        this.getGameTimeMs(failed),
+        'sandbox',
+        {
+          message: messageFrom(error),
+        }
+      );
+      throw new HttpError(502, 'sandbox_start_failed', messageFrom(error));
     }
 
-    running = await this.emit(running, "session_start", 0, "system", {
+    running = await this.emit(running, 'session_start', 0, 'system', {
       scenarioId: scenario.id,
-      startup
+      startup,
     });
     await this.touchClientActivity();
     this.scheduleScenarioTimeline(running, scenario);
-    return jsonOk({ session: await this.snapshotFor(running), startup });
+    return jsonOk({session: this.snapshotFor(running), startup});
   }
 
   private async resolve() {
@@ -194,69 +255,90 @@ export class SessionDurableObject implements DurableObject {
     const checks: SuccessCheck[] = await Promise.all(
       scenario.successConditions.map(async (condition) => ({
         condition,
-        ok: await evaluateSuccessCondition(this.env, session.sessionId, condition)
+        ok: await evaluateSuccessCondition(
+          this.env,
+          session.sessionId,
+          condition
+        ),
       }))
     );
     const resolved = incidentStarted && checks.every((check) => check.ok);
     const finished = await this.finishSession(
       session,
-      resolved ? "resolved" : "failed",
-      resolved ? "resolved" : "false_resolve"
+      resolved ? 'resolved' : 'failed',
+      resolved ? 'resolved' : 'false_resolve'
     );
     const result = await this.emit(
       finished,
-      resolved ? "incident_resolved" : "session_end",
+      resolved ? 'incident_resolved' : 'session_end',
       this.getGameTimeMs(finished),
-      resolved ? "system" : "player",
-      resolved ? { checks } : { result: "false_resolve", checks }
+      resolved ? 'system' : 'player',
+      resolved ? {checks} : {result: 'false_resolve', checks}
     );
-    return jsonOk({ ok: resolved, checks, session: await this.snapshotFor(result) });
+    return jsonOk({
+      ok: resolved,
+      checks,
+      session: this.snapshotFor(result),
+    });
   }
 
   private async retire() {
     const session = await this.requireSession();
-    const retired = await this.finishSession(session, "retired", "retired");
-    const result = await this.emit(retired, "session_end", this.getGameTimeMs(retired), "player", { result: "retired" });
-    return jsonOk({ session: await this.snapshotFor(result) });
+    const retired = await this.finishSession(session, 'retired', 'retired');
+    const result = await this.emit(
+      retired,
+      'session_end',
+      this.getGameTimeMs(retired),
+      'player',
+      {result: 'retired'}
+    );
+    return jsonOk({session: this.snapshotFor(result)});
   }
 
   private async timeout() {
     const session = await this.requireSession();
     if (isTerminalStatus(session.status)) {
       await destroySessionSandbox(this.env, session.sessionId);
-      return jsonOk({ session: await this.snapshotFor(session) });
+      return jsonOk({session: this.snapshotFor(session)});
     }
-    const finished = await this.finishSession(session, "failed", "timeout");
+    const finished = await this.finishSession(session, 'failed', 'timeout');
     const result = await this.emit(
       finished,
-      "session_end",
+      'session_end',
       this.getGameTimeMs(finished),
-      "system",
-      { result: "timeout" }
+      'system',
+      {result: 'timeout'}
     );
-    return jsonOk({ session: await this.snapshotFor(result) });
+    return jsonOk({session: this.snapshotFor(result)});
   }
 
   private async deleteSession() {
     const session = await this.requireSession();
-    const aborted = await this.finishSession(session, "aborted", "aborted");
-    return jsonOk({ session: await this.snapshotFor(aborted) });
+    const aborted = await this.finishSession(session, 'aborted', 'aborted');
+    return jsonOk({session: this.snapshotFor(aborted)});
   }
 
   private async updateClock(request: Request) {
     const session = await this.requireSession();
-    if (session.status !== "running") {
-      throw new HttpError(409, "invalid_state", "clock updates require a running session");
+    if (session.status !== 'running') {
+      throw new HttpError(
+        409,
+        'invalid_state',
+        'clock updates require a running session'
+      );
     }
-    const body = (await request.json().catch(() => ({}))) as { speed?: number };
-    const speed = typeof body.speed === "number" && body.speed > 0 && body.speed <= 8 ? body.speed : session.gameSpeed;
+    const body = (await request.json().catch(() => ({}))) as {speed?: number};
+    const speed =
+      typeof body.speed === 'number' && body.speed > 0 && body.speed <= 8
+        ? body.speed
+        : session.gameSpeed;
     const synced: StoredSession = {
       ...session,
       gameTimeMs: this.getGameTimeMs(session),
       gameSpeed: speed,
-      gameClockWallMs: Date.now()
+      gameClockWallMs: Date.now(),
     };
-    await this.state.storage.put("session", synced);
+    await this.state.storage.put('session', synced);
     const scenario = requireScenario(synced.scenarioId);
     this.rescheduleScenarioTimeline(synced, scenario);
     await this.touchClientActivity();
@@ -271,31 +353,41 @@ export class SessionDurableObject implements DurableObject {
         this.sseClients.add(controller);
         void this.touchClientActivity();
         request.signal.addEventListener(
-          "abort",
+          'abort',
           () => {
             this.sseClients.delete(controller);
             void this.rescheduleIdleAlarm();
-            try { controller.close(); } catch { /* ignore */ }
+            try {
+              controller.close();
+            } catch {
+              /* ignore */
+            }
           },
-          { once: true }
+          {once: true}
         );
         const snapshot = await this.snapshot();
-        controller.enqueue(encoder.encode(`event: snapshot\ndata: ${JSON.stringify(snapshot)}\n\n`));
+        controller.enqueue(
+          encoder.encode(
+            `event: snapshot\ndata: ${JSON.stringify(snapshot)}\n\n`
+          )
+        );
         const session = await this.requireSession();
         for (const event of session.bufferedEvents.slice(-50)) {
-          controller.enqueue(encoder.encode(`event: replay\ndata: ${JSON.stringify(event)}\n\n`));
+          controller.enqueue(
+            encoder.encode(`event: replay\ndata: ${JSON.stringify(event)}\n\n`)
+          );
         }
       },
       cancel: () => {
         // Removed on abort above or broadcast error handling.
-      }
+      },
     });
     return new Response(stream, {
       headers: {
-        "content-type": "text/event-stream",
-        "cache-control": "no-cache",
-        connection: "keep-alive"
-      }
+        'content-type': 'text/event-stream',
+        'cache-control': 'no-cache',
+        connection: 'keep-alive',
+      },
     });
   }
 
@@ -307,37 +399,61 @@ export class SessionDurableObject implements DurableObject {
     await this.touchClientActivity();
     return proxySessionTerminal(this.env, session.sessionId, request, {
       cols: this.terminalCols,
-      rows: this.terminalRows
+      rows: this.terminalRows,
     });
   }
 
   private async terminalResize(request: Request) {
-    const body = (await request.json().catch(() => ({}))) as { cols?: number; rows?: number };
-    if (typeof body.cols === "number" && body.cols >= 40 && body.cols <= 200) this.terminalCols = body.cols;
-    if (typeof body.rows === "number" && body.rows >= 10 && body.rows <= 60) this.terminalRows = body.rows;
-    return jsonOk({ cols: this.terminalCols, rows: this.terminalRows });
+    const body = (await request.json().catch(() => ({}))) as {
+      cols?: number;
+      rows?: number;
+    };
+    if (typeof body.cols === 'number' && body.cols >= 40 && body.cols <= 200) {
+      this.terminalCols = body.cols;
+    }
+    if (typeof body.rows === 'number' && body.rows >= 10 && body.rows <= 60) {
+      this.terminalRows = body.rows;
+    }
+    return jsonOk({cols: this.terminalCols, rows: this.terminalRows});
   }
 
   private async terminalInterrupt() {
     const session = await this.requireSession();
-    if (session.status !== "running") {
-      throw new HttpError(409, "invalid_state", "terminal interrupt is only available while the session is running");
+    if (session.status !== 'running') {
+      throw new HttpError(
+        409,
+        'invalid_state',
+        'terminal interrupt is only available while the session is running'
+      );
     }
     await interruptSessionTerminal(this.env, session.sessionId);
-    return jsonOk({ interrupted: true });
+    return jsonOk({interrupted: true});
   }
 
   private async metrics() {
     const session = await this.requireSession();
-    if (session.status !== "running") {
-      throw new HttpError(409, "invalid_state", "metrics are only available while the session is running");
+    if (session.status !== 'running') {
+      throw new HttpError(
+        409,
+        'invalid_state',
+        'metrics are only available while the session is running'
+      );
     }
     const now = Date.now();
-    if (this.metricsCache && now - this.metricsCachedAt < SessionDurableObject.METRICS_TTL_MS) {
+    if (
+      this.metricsCache &&
+      now - this.metricsCachedAt < SessionDurableObject.METRICS_TTL_MS
+    ) {
       return jsonOk(this.metricsCache);
     }
     const metrics = await fetchSessionMetrics(this.env, session.sessionId);
-    if (!metrics) throw new HttpError(502, "sandbox_unavailable", "failed to fetch sandbox metrics");
+    if (!metrics) {
+      throw new HttpError(
+        502,
+        'sandbox_unavailable',
+        'failed to fetch sandbox metrics'
+      );
+    }
     this.metricsCache = metrics;
     this.metricsCachedAt = now;
     await this.touchClientActivity();
@@ -346,47 +462,78 @@ export class SessionDurableObject implements DurableObject {
 
   private async logs(request: Request) {
     const session = await this.requireSession();
-    if (session.status !== "running") {
-      throw new HttpError(409, "invalid_state", "logs are only available while the session is running");
+    if (session.status !== 'running') {
+      throw new HttpError(
+        409,
+        'invalid_state',
+        'logs are only available while the session is running'
+      );
     }
     const url = new URL(request.url);
-    const file = url.searchParams.get("file") ?? "access";
-    const tail = Number(url.searchParams.get("tail") ?? "50");
-    const lines = await fetchSessionLogs(this.env, session.sessionId, file, tail);
-    return jsonOk({ file, lines });
+    const file = url.searchParams.get('file') ?? 'access';
+    const tail = Number(url.searchParams.get('tail') ?? '50');
+    const lines = await fetchSessionLogs(
+      this.env,
+      session.sessionId,
+      file,
+      tail
+    );
+    return jsonOk({file, lines});
   }
 
   private async storage() {
     const session = await this.requireSession();
-    if (session.status !== "running") {
-      throw new HttpError(409, "invalid_state", "storage is only available while the session is running");
+    if (session.status !== 'running') {
+      throw new HttpError(
+        409,
+        'invalid_state',
+        'storage is only available while the session is running'
+      );
     }
     const entries = await fetchSessionStorage(this.env, session.sessionId);
-    return jsonOk({ entries });
+    return jsonOk({entries});
   }
 
   private async files() {
-    const session = await this.requireRunningSession("files are only available while the session is running");
+    const session = await this.requireRunningSession(
+      'files are only available while the session is running'
+    );
     const files = await listSessionFiles(this.env, session.sessionId);
     await this.touchClientActivity();
-    return jsonOk({ files });
+    return jsonOk({files});
   }
 
   private async readFile(request: Request) {
-    const session = await this.requireRunningSession("files are only available while the session is running");
-    const path = new URL(request.url).searchParams.get("path") ?? "";
-    if (!path) throw new HttpError(400, "bad_request", "path is required");
+    const session = await this.requireRunningSession(
+      'files are only available while the session is running'
+    );
+    const path = new URL(request.url).searchParams.get('path') ?? '';
+    if (!path) throw new HttpError(400, 'bad_request', 'path is required');
     const file = await readSessionFile(this.env, session.sessionId, path);
     await this.touchClientActivity();
     return jsonOk(file);
   }
 
   private async writeFile(request: Request) {
-    const session = await this.requireRunningSession("files are only available while the session is running");
-    const body = (await request.json().catch(() => ({}))) as { path?: unknown; content?: unknown };
-    if (typeof body.path !== "string") throw new HttpError(400, "bad_request", "path is required");
-    if (typeof body.content !== "string") throw new HttpError(400, "bad_request", "content is required");
-    const file = await writeSessionFile(this.env, session.sessionId, body.path, body.content);
+    const session = await this.requireRunningSession(
+      'files are only available while the session is running'
+    );
+    const body = (await request.json().catch(() => ({}))) as {
+      path?: unknown;
+      content?: unknown;
+    };
+    if (typeof body.path !== 'string') {
+      throw new HttpError(400, 'bad_request', 'path is required');
+    }
+    if (typeof body.content !== 'string') {
+      throw new HttpError(400, 'bad_request', 'content is required');
+    }
+    const file = await writeSessionFile(
+      this.env,
+      session.sessionId,
+      body.path,
+      body.content
+    );
     await this.touchClientActivity();
     return jsonOk(file);
   }
@@ -401,7 +548,7 @@ export class SessionDurableObject implements DurableObject {
     return this.snapshotFor(session);
   }
 
-  private async snapshotFor(session: StoredSession) {
+  private snapshotFor(session: StoredSession) {
     const scenario = requireScenario(session.scenarioId);
     return {
       ...session,
@@ -409,7 +556,7 @@ export class SessionDurableObject implements DurableObject {
       elapsedMs: this.getGameTimeMs(session),
       alerts: this.firedAlerts(scenario, session),
       slackMessages: this.firedSlackMessages(scenario, session),
-      scenario
+      scenario,
     };
   }
 
@@ -420,55 +567,84 @@ export class SessionDurableObject implements DurableObject {
       gameSpeed: session.gameSpeed,
       timeLimitMs: scenario.timeLimitMinutes * 60 * 1000,
       alerts: this.firedAlerts(scenario, session),
-      slackMessages: this.firedSlackMessages(scenario, session)
+      slackMessages: this.firedSlackMessages(scenario, session),
     };
   }
 
-  private firedAlerts(scenario: ScenarioDefinition, session: StoredSession): AlertDefinition[] {
-    return scenario.alerts.filter((alert) => session.firedAlertIds.includes(alert.id));
+  private firedAlerts(
+    scenario: ScenarioDefinition,
+    session: StoredSession
+  ): AlertDefinition[] {
+    return scenario.alerts.filter((alert) =>
+      session.firedAlertIds.includes(alert.id)
+    );
   }
 
-  private firedSlackMessages(scenario: ScenarioDefinition, session: StoredSession) {
-    return scenario.slackMessages.filter((message) => session.firedSlackIds.includes(message.id));
+  private firedSlackMessages(
+    scenario: ScenarioDefinition,
+    session: StoredSession
+  ) {
+    return scenario.slackMessages.filter((message) =>
+      session.firedSlackIds.includes(message.id)
+    );
   }
 
-  private async loadOrCreate(input: Partial<SessionBootstrap>): Promise<StoredSession> {
-    const existing = await this.state.storage.get<StoredSession>("session");
+  private async loadOrCreate(
+    input: Partial<SessionBootstrap>
+  ): Promise<StoredSession> {
+    const existing = await this.state.storage.get<StoredSession>('session');
     if (existing) return existing;
     if (!input.sessionId || !input.replayId || !input.scenarioId) {
-      throw new HttpError(400, "bad_request", "missing session bootstrap fields");
+      throw new HttpError(
+        400,
+        'bad_request',
+        'missing session bootstrap fields'
+      );
     }
     return {
       sessionId: input.sessionId,
       replayId: input.replayId,
       scenarioId: input.scenarioId,
-      status: "briefing",
+      status: 'briefing',
       gameTimeMs: 0,
       gameSpeed: 1,
       triggeredIds: [],
       firedAlertIds: [],
       firedSlackIds: [],
       eventSeq: 0,
-      bufferedEvents: []
+      bufferedEvents: [],
     };
   }
 
   private async requireSession() {
-    const session = await this.state.storage.get<StoredSession>("session");
-    if (!session) throw new HttpError(409, "session_not_initialized", "session not initialized");
+    const session = await this.state.storage.get<StoredSession>('session');
+    if (!session) {
+      throw new HttpError(
+        409,
+        'session_not_initialized',
+        'session not initialized'
+      );
+    }
     return session;
   }
 
   private async requireRunningSession(message: string) {
     const session = await this.requireSession();
-    if (session.status !== "running") throw new HttpError(409, "invalid_state", message);
+    if (session.status !== 'running') {
+      throw new HttpError(409, 'invalid_state', message);
+    }
     return session;
   }
 
   private getGameTimeMs(session: StoredSession) {
-    if (session.status !== "running" || !session.gameClockWallMs) return session.gameTimeMs;
+    if (session.status !== 'running' || !session.gameClockWallMs) {
+      return session.gameTimeMs;
+    }
     const wallDelta = Date.now() - session.gameClockWallMs;
-    return Math.max(0, Math.round(session.gameTimeMs + wallDelta * session.gameSpeed));
+    return Math.max(
+      0,
+      Math.round(session.gameTimeMs + wallDelta * session.gameSpeed)
+    );
   }
 
   private clearPendingTimers() {
@@ -477,123 +653,205 @@ export class SessionDurableObject implements DurableObject {
   }
 
   private async touchClientActivity() {
-    await this.state.storage.put("lastClientActivityAt", Date.now());
-    const session = await this.state.storage.get<StoredSession>("session");
-    if (session?.status === "running") {
-      await this.scheduleLifecycleAlarms(session, requireScenario(session.scenarioId));
+    await this.state.storage.put('lastClientActivityAt', Date.now());
+    const session = await this.state.storage.get<StoredSession>('session');
+    if (session?.status === 'running') {
+      await this.scheduleLifecycleAlarms(
+        session,
+        requireScenario(session.scenarioId)
+      );
     }
   }
 
   private async rescheduleIdleAlarm() {
-    const session = await this.state.storage.get<StoredSession>("session");
-    if (session?.status === "running") {
-      await this.scheduleLifecycleAlarms(session, requireScenario(session.scenarioId));
+    const session = await this.state.storage.get<StoredSession>('session');
+    if (session?.status === 'running') {
+      await this.scheduleLifecycleAlarms(
+        session,
+        requireScenario(session.scenarioId)
+      );
     }
   }
 
-  private async scheduleLifecycleAlarms(session: StoredSession, scenario: ScenarioDefinition) {
-    if (session.status !== "running") return;
+  private async scheduleLifecycleAlarms(
+    session: StoredSession,
+    scenario: ScenarioDefinition
+  ) {
+    if (session.status !== 'running') return;
 
     const timeLimitMs = scenario.timeLimitMinutes * 60 * 1000;
-    const remainingGameMs = Math.max(0, timeLimitMs - this.getGameTimeMs(session));
-    const wallMsUntilGameEnd = remainingGameMs / Math.max(session.gameSpeed, 0.1) + GAME_END_BUFFER_MS;
+    const remainingGameMs = Math.max(
+      0,
+      timeLimitMs - this.getGameTimeMs(session)
+    );
+    const wallMsUntilGameEnd =
+      remainingGameMs / Math.max(session.gameSpeed, 0.1) + GAME_END_BUFFER_MS;
     const gameDeadline = Date.now() + wallMsUntilGameEnd;
 
-    const lastActivity = (await this.state.storage.get<number>("lastClientActivityAt")) ?? Date.now();
+    const lastActivity =
+      (await this.state.storage.get<number>('lastClientActivityAt')) ??
+      Date.now();
     const idleDeadline =
-      this.sseClients.size === 0 ? lastActivity + SESSION_IDLE_TIMEOUT_MS : Number.POSITIVE_INFINITY;
+      this.sseClients.size === 0
+        ? lastActivity + SESSION_IDLE_TIMEOUT_MS
+        : Number.POSITIVE_INFINITY;
 
-    await this.state.storage.setAlarm(Math.ceil(Math.min(idleDeadline, gameDeadline)));
+    await this.state.storage.setAlarm(
+      Math.ceil(Math.min(idleDeadline, gameDeadline))
+    );
   }
 
   private async clearLifecycleAlarms() {
     await this.state.storage.deleteAlarm();
-    await this.state.storage.delete("lastClientActivityAt");
+    await this.state.storage.delete('lastClientActivityAt');
   }
 
-  private rescheduleScenarioTimeline(session: StoredSession, scenario: ScenarioDefinition) {
+  private rescheduleScenarioTimeline(
+    session: StoredSession,
+    scenario: ScenarioDefinition
+  ) {
     this.clearPendingTimers();
-    if (session.status !== "running") return;
+    if (session.status !== 'running') return;
     this.scheduleScenarioTimeline(session, scenario);
   }
 
-  private scheduleScenarioTimeline(session: StoredSession, scenario: ScenarioDefinition) {
+  private scheduleScenarioTimeline(
+    session: StoredSession,
+    scenario: ScenarioDefinition
+  ) {
     for (const trigger of scenario.triggers) {
       if (session.triggeredIds.includes(trigger.id)) continue;
-      this.scheduleAtGameTime(session, trigger.atMs, "trigger", trigger.id, async () => {
-        const latest = await this.requireSession();
-        if (latest.status !== "running" || latest.triggeredIds.includes(trigger.id)) return;
-        try {
-          await injectFault(this.env, latest.sessionId, trigger.type, trigger.params);
-          let triggered: StoredSession = {
-            ...latest,
-            triggeredIds: [...latest.triggeredIds, trigger.id]
-          };
-          await this.state.storage.put("session", triggered);
-          triggered = await this.emit(triggered, "scenario_event", trigger.atMs, "scenario", { trigger });
-          this.broadcastSse("snapshot", await this.snapshotFor(triggered));
-        } catch (error) {
-          await this.emit(latest, "sandbox_error", trigger.atMs, "sandbox", {
-            triggerId: trigger.id,
-            message: messageFrom(error)
-          });
+      this.scheduleAtGameTime(
+        session,
+        trigger.atMs,
+        'trigger',
+        trigger.id,
+        async () => {
+          const latest = await this.requireSession();
+          if (
+            latest.status !== 'running' ||
+            latest.triggeredIds.includes(trigger.id)
+          ) {
+            return;
+          }
+          try {
+            await injectFault(
+              this.env,
+              latest.sessionId,
+              trigger.type,
+              trigger.params
+            );
+            let triggered: StoredSession = {
+              ...latest,
+              triggeredIds: [...latest.triggeredIds, trigger.id],
+            };
+            await this.state.storage.put('session', triggered);
+            triggered = await this.emit(
+              triggered,
+              'scenario_event',
+              trigger.atMs,
+              'scenario',
+              {trigger}
+            );
+            this.broadcastSse('snapshot', this.snapshotFor(triggered));
+          } catch (error) {
+            await this.emit(latest, 'sandbox_error', trigger.atMs, 'sandbox', {
+              triggerId: trigger.id,
+              message: messageFrom(error),
+            });
+          }
         }
-      });
+      );
     }
 
     for (const alert of scenario.alerts) {
       if (session.firedAlertIds.includes(alert.id)) continue;
-      this.scheduleAtGameTime(session, alert.atMs, "alert", alert.id, async () => {
-        const latest = await this.requireSession();
-        if (latest.status !== "running" || latest.firedAlertIds.includes(alert.id)) return;
-        const next: StoredSession = {
-          ...latest,
-          firedAlertIds: [...latest.firedAlertIds, alert.id]
-        };
-        await this.state.storage.put("session", next);
-        const updated = await this.emit(next, "alert", alert.atMs, "scenario", {
-          alertId: alert.id,
-          message: alert.message,
-          severity: alert.severity
-        });
-        this.broadcastSse("replay", updated.bufferedEvents.at(-1));
-        this.broadcastSse("snapshot", await this.snapshotFor(updated));
-      });
+      this.scheduleAtGameTime(
+        session,
+        alert.atMs,
+        'alert',
+        alert.id,
+        async () => {
+          const latest = await this.requireSession();
+          if (
+            latest.status !== 'running' ||
+            latest.firedAlertIds.includes(alert.id)
+          ) {
+            return;
+          }
+          const next: StoredSession = {
+            ...latest,
+            firedAlertIds: [...latest.firedAlertIds, alert.id],
+          };
+          await this.state.storage.put('session', next);
+          const updated = await this.emit(
+            next,
+            'alert',
+            alert.atMs,
+            'scenario',
+            {
+              alertId: alert.id,
+              message: alert.message,
+              severity: alert.severity,
+            }
+          );
+          this.broadcastSse('replay', updated.bufferedEvents.at(-1));
+          this.broadcastSse('snapshot', this.snapshotFor(updated));
+        }
+      );
     }
 
     for (const message of scenario.slackMessages) {
       if (session.firedSlackIds.includes(message.id)) continue;
-      this.scheduleAtGameTime(session, message.atMs, "slack", message.id, async () => {
-        const latest = await this.requireSession();
-        if (latest.status !== "running" || latest.firedSlackIds.includes(message.id)) return;
-        const next: StoredSession = {
-          ...latest,
-          firedSlackIds: [...latest.firedSlackIds, message.id]
-        };
-        await this.state.storage.put("session", next);
-        this.broadcastSse("snapshot", await this.snapshotFor(next));
-      });
+      this.scheduleAtGameTime(
+        session,
+        message.atMs,
+        'slack',
+        message.id,
+        async () => {
+          const latest = await this.requireSession();
+          if (
+            latest.status !== 'running' ||
+            latest.firedSlackIds.includes(message.id)
+          ) {
+            return;
+          }
+          const next: StoredSession = {
+            ...latest,
+            firedSlackIds: [...latest.firedSlackIds, message.id],
+          };
+          await this.state.storage.put('session', next);
+          this.broadcastSse('snapshot', this.snapshotFor(next));
+        }
+      );
     }
   }
 
   private scheduleAtGameTime(
     session: StoredSession,
     atMs: number,
-    kind: PendingTimer["kind"],
+    kind: PendingTimer['kind'],
     id: string,
     run: () => Promise<void>
   ) {
-    const delay = Math.max(0, (atMs - this.getGameTimeMs(session)) / Math.max(session.gameSpeed, 0.1));
+    const delay = Math.max(
+      0,
+      (atMs - this.getGameTimeMs(session)) / Math.max(session.gameSpeed, 0.1)
+    );
     const handle = setTimeout(() => {
-      this.pendingTimers = this.pendingTimers.filter((timer) => timer.handle !== handle);
+      this.pendingTimers = this.pendingTimers.filter(
+        (timer) => timer.handle !== handle
+      );
       void run();
     }, delay);
-    this.pendingTimers.push({ kind, id, handle });
+    this.pendingTimers.push({kind, id, handle});
   }
 
   private broadcastSse(event: string, data: unknown) {
     const encoder = new TextEncoder();
-    const chunk = encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    const chunk = encoder.encode(
+      `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`
+    );
     for (const client of this.sseClients) {
       try {
         client.enqueue(chunk);
@@ -603,7 +861,11 @@ export class SessionDurableObject implements DurableObject {
     }
   }
 
-  private async finishSession(session: StoredSession, status: SessionStatus, result: string) {
+  private async finishSession(
+    session: StoredSession,
+    status: SessionStatus,
+    result: string
+  ) {
     this.clearPendingTimers();
     this.clearMetricsCache();
     await this.clearLifecycleAlarms();
@@ -611,10 +873,10 @@ export class SessionDurableObject implements DurableObject {
       ...session,
       status,
       gameTimeMs: this.getGameTimeMs(session),
-      finishedAt: new Date().toISOString()
+      finishedAt: new Date().toISOString(),
     };
     delete finished.gameClockWallMs;
-    await this.state.storage.put("session", finished);
+    await this.state.storage.put('session', finished);
     try {
       await this.persistSession(finished, result);
       await this.persistReplayResult(finished, result);
@@ -626,25 +888,31 @@ export class SessionDurableObject implements DurableObject {
 
   private async emit(
     session: StoredSession,
-    type: ReplayEvent["type"],
+    type: ReplayEvent['type'],
     at: number,
-    actor: ReplayEvent["actor"],
+    actor: ReplayEvent['actor'],
     payload: Record<string, unknown>
   ): Promise<StoredSession> {
-    const event = createReplayEvent({ replayId: session.replayId, type, at, actor, payload });
+    const event = createReplayEvent({
+      replayId: session.replayId,
+      type,
+      at,
+      actor,
+      payload,
+    });
     const next = {
       ...session,
       eventSeq: session.eventSeq + 1,
-      bufferedEvents: [...session.bufferedEvents, event].slice(-200)
+      bufferedEvents: [...session.bufferedEvents, event].slice(-200),
     };
-    await this.state.storage.put("session", next);
+    await this.state.storage.put('session', next);
     await this.persistReplayEvent(event);
-    this.broadcastSse("replay", event);
+    this.broadcastSse('replay', event);
     return next;
   }
 
   private async persistSession(session: StoredSession, result?: string) {
-    const dbResult = normalizeReplayResult(result ?? "") || null;
+    const dbResult = normalizeReplayResult(result ?? '') || null;
     await this.env.DB.prepare(
       `update play_sessions
        set status = ?, started_at = ?, finished_at = ?, result = ?, duration_ms = ?
@@ -666,7 +934,7 @@ export class SessionDurableObject implements DurableObject {
     await this.env.DB.prepare(
       `update replays set started_at = ?, recording_status = ?, updated_at = ? where id = ?`
     )
-      .bind(session.startedAt ?? now, "recording", now, session.replayId)
+      .bind(session.startedAt ?? now, 'recording', now, session.replayId)
       .run();
   }
 
@@ -694,52 +962,68 @@ export class SessionDurableObject implements DurableObject {
        (replay_id, event_id, type, at_ms, summary, visibility)
        values (?, ?, ?, ?, ?, ?)`
     )
-      .bind(event.replayId, event.id, event.type, event.at, replayEventSummary(event), event.visibility)
+      .bind(
+        event.replayId,
+        event.id,
+        event.type,
+        event.at,
+        replayEventSummary(event),
+        event.visibility
+      )
       .run();
   }
 }
 
 function requireScenario(id: string) {
   const scenario = getScenario(id);
-  if (!scenario) throw new HttpError(400, "bad_request", `unknown scenario: ${id}`);
+  if (!scenario) {
+    throw new HttpError(400, 'bad_request', `unknown scenario: ${id}`);
+  }
   return scenario;
 }
 
-async function readBootstrap(request: Request): Promise<Partial<SessionBootstrap>> {
+async function readBootstrap(
+  request: Request
+): Promise<Partial<SessionBootstrap>> {
   const value = await request.json().catch(() => ({}));
-  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
   return value as Partial<SessionBootstrap>;
 }
 
 function isTerminalStatus(status: SessionStatus) {
-  return status === "resolved" || status === "failed" || status === "retired" || status === "aborted";
+  return (
+    status === 'resolved' ||
+    status === 'failed' ||
+    status === 'retired' ||
+    status === 'aborted'
+  );
 }
 
 function ok<T>(data: T): ApiResult<T> {
-  return { ok: true, data };
+  return {ok: true, data};
 }
 
 function err(code: string, message: string): ApiResult<never> {
-  return { ok: false, error: { code, message } };
+  return {ok: false, error: {code, message}};
 }
 
-function jsonOk<T>(data: T, init?: ResponseInit) {
+function jsonOk(data: unknown, init?: ResponseInit) {
   return json(ok(data), init);
 }
 
 function jsonErr(code: string, message: string, status = 500) {
-  return json(err(code, message), { status });
+  return json(err(code, message), {status});
 }
 
 function errorResponse(error: unknown) {
   if (error instanceof HttpError) {
     return jsonErr(error.code, error.message, error.status);
   }
-  return jsonErr("internal_error", messageFrom(error), 500);
+  return jsonErr('internal_error', messageFrom(error), 500);
 }
 
 function messageFrom(error: unknown) {
-  return error instanceof Error ? error.message : "session request failed";
+  return error instanceof Error ? error.message : 'session request failed';
 }
 
 class HttpError extends Error {
@@ -754,9 +1038,9 @@ class HttpError extends Error {
 
 function json<T>(payload: ApiResult<T>, init: ResponseInit = {}) {
   const headers = new Headers(init.headers);
-  headers.set("content-type", "application/json");
+  headers.set('content-type', 'application/json');
   return new Response(JSON.stringify(payload), {
     ...init,
-    headers
+    headers,
   });
 }

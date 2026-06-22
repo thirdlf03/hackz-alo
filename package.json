@@ -3,37 +3,41 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "packageManager": "npm@11.10.1",
-  "workspaces": [
-    "apps/*",
-    "packages/*"
-  ],
   "scripts": {
     "dev": "node scripts/dev.mjs",
     "test": "node --test tests/unit/*.mjs",
     "test:e2e": "playwright test",
     "build:scenarios": "tsx scripts/build-scenarios.mjs",
-    "db:migrate:local": "npm --workspace apps/worker run db:migrate:local",
+    "db:migrate:local": "pnpm --filter @incident/worker run db:migrate:local",
     "db:reset:local": "node scripts/db-reset-local.mjs",
     "sync:sandbox-assets": "node scripts/sync-sandbox-assets.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "build": "npm --workspaces --if-present run build",
+    "build": "pnpm -r run build",
     "setup:cloudflare": "node scripts/setup-cloudflare.mjs",
     "deploy": "node scripts/deploy.mjs",
     "cleanup:sessions": "node scripts/cleanup-sessions.mjs",
-    "db:migrate:remote": "npm --workspace apps/worker run db:migrate:remote",
-    "dev:web": "npm --workspace apps/web run dev",
-    "dev:worker": "npm --workspace apps/worker run dev",
-    "worktrees:list": "git worktree list"
+    "db:migrate:remote": "pnpm --filter @incident/worker run db:migrate:remote",
+    "dev:web": "pnpm --filter @incident/web run dev",
+    "dev:worker": "pnpm --filter @incident/worker run dev",
+    "worktrees:list": "git worktree list",
+    "fmt": "oxfmt",
+    "fmt:check": "oxfmt --check",
+    "lint": "oxlint --type-aware",
+    "lint:fix": "oxlint --type-aware --fix"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "latest",
     "@types/node": "latest",
+    "oxfmt": "latest",
+    "oxlint": "latest",
+    "oxlint-config-presets": "latest",
+    "oxlint-tsgolint": "latest",
     "playwright": "latest",
     "tsx": "latest",
     "typescript": "latest",
     "vite": "latest",
     "wrangler": "latest",
     "yaml": "^2.9.0"
-  }
+  },
+  "packageManager": "pnpm@10.12.1"
 }

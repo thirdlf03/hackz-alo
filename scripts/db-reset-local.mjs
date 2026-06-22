@@ -13,8 +13,8 @@ if (existsSync(d1StateDir)) {
 }
 
 const result = spawnSync(
-  "npx",
-  ["wrangler", "d1", "migrations", "apply", "incident-training", "--local"],
+  "pnpm",
+  ["exec", "wrangler", "d1", "migrations", "apply", "incident-training", "--local"],
   { cwd: workerDir, stdio: "inherit", env: process.env }
 );
 

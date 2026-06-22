@@ -1,15 +1,25 @@
-import type { GameRenderState, MetricsSnapshot, MetricsSource, ScenarioDefinition } from "@incident/shared";
-import { mergedSlackMessages, unreadNotificationCount, visibleRunbooks } from "../state/gameState.js";
-import { parseAnsiLine, stripAnsi, type AnsiSpan } from "../terminal/ansi.js";
-import officeMonitorBackdropUrl from "../../assets/office-monitor-backdrop.avif";
+import type {
+  GameRenderState,
+  MetricsSnapshot,
+  MetricsSource,
+  RunbookDefinition,
+  ScenarioDefinition,
+} from '@incident/shared';
+import {
+  mergedSlackMessages,
+  unreadNotificationCount,
+  visibleRunbooks,
+} from '../state/gameState.js';
+import {parseAnsiLine, stripAnsi, type AnsiSpan} from '../terminal/ansi.js';
+import officeMonitorBackdropUrl from '../../assets/office-monitor-backdrop.avif';
 import {
   gamePalette as palette,
   toneColor,
   severityColor,
   uiFont,
   monoFont,
-  type MetricTone
-} from "./gamePalette.js";
+  type MetricTone,
+} from './gamePalette.js';
 
 const logicalWidth = 1920;
 const logicalHeight = 1080;
@@ -19,7 +29,6 @@ const terminalContentWidth = 496;
 const runbookContentX = 1332;
 const runbookContentY = 204;
 
-const RUNBOOK_TAB_HEIGHT = 40;
 const RUNBOOK_TAB_MIN_WIDTH = 132;
 const RUNBOOK_TAB_MAX_WIDTH = 240;
 const RUNBOOK_TAB_GAP = 8;
@@ -28,8 +37,8 @@ const RUNBOOK_TAB_HIT_PAD = 8;
 const RUNBOOK_CONTENT_GAP = 28;
 
 const RIGHT_PANEL_PRIMARY_TABS = [
-  { id: "runbook" as const, label: "Runbook", width: 108 },
-  { id: "slack" as const, label: "Slack", width: 88 }
+  {id: 'runbook' as const, label: 'Runbook', width: 108},
+  {id: 'slack' as const, label: 'Slack', width: 88},
 ];
 const RIGHT_PANEL_PRIMARY_TAB_HEIGHT = 40;
 const RIGHT_PANEL_SECONDARY_TAB_HEIGHT = 40;
@@ -40,37 +49,39 @@ const CENTER_TOOL_TAB_WIDTH = 118;
 const CENTER_TOOL_TAB_HEIGHT = 34;
 const CENTER_TOOL_TAB_GAP = 8;
 
-type RightPanelTab = "runbook" | "slack";
+type RightPanelTab = 'runbook' | 'slack';
 
-function rightPanelLayout(
-  activeTab: RightPanelTab,
-  hasRunbooks: boolean
-) {
+function rightPanelLayout(activeTab: RightPanelTab, hasRunbooks: boolean) {
   const primaryTop = 0;
-  const secondaryTop = primaryTop + RIGHT_PANEL_PRIMARY_TAB_HEIGHT + RIGHT_PANEL_TAB_ROW_GAP;
+  const secondaryTop =
+    primaryTop + RIGHT_PANEL_PRIMARY_TAB_HEIGHT + RIGHT_PANEL_TAB_ROW_GAP;
   const runbookContentTop = hasRunbooks
     ? secondaryTop + RIGHT_PANEL_SECONDARY_TAB_HEIGHT + RUNBOOK_CONTENT_GAP
     : primaryTop + RIGHT_PANEL_PRIMARY_TAB_HEIGHT + RUNBOOK_CONTENT_GAP;
-  const slackMessagesTop = primaryTop + RIGHT_PANEL_PRIMARY_TAB_HEIGHT + RUNBOOK_CONTENT_GAP;
-  const composeTop = monitorContentHeight - RIGHT_PANEL_COMPOSE_HEIGHT - RIGHT_PANEL_COMPOSE_PADDING;
+  const slackMessagesTop =
+    primaryTop + RIGHT_PANEL_PRIMARY_TAB_HEIGHT + RUNBOOK_CONTENT_GAP;
+  const composeTop =
+    monitorContentHeight -
+    RIGHT_PANEL_COMPOSE_HEIGHT -
+    RIGHT_PANEL_COMPOSE_PADDING;
 
   return {
     primaryTop,
     secondaryTop,
-    contentTop: activeTab === "runbook" ? runbookContentTop : slackMessagesTop,
+    contentTop: activeTab === 'runbook' ? runbookContentTop : slackMessagesTop,
     composeTop,
     slackMessagesTop,
-    slackMessagesBottom: composeTop - 12
+    slackMessagesBottom: composeTop - 12,
   };
 }
 
 let runbookTabMeasureCtx: CanvasRenderingContext2D | null | undefined;
 
 function runbookTabMeasureTextWidth(text: string) {
-  if (typeof document !== "undefined") {
+  if (typeof document !== 'undefined') {
     if (runbookTabMeasureCtx === undefined) {
-      const canvas = document.createElement("canvas");
-      runbookTabMeasureCtx = canvas.getContext("2d");
+      const canvas = document.createElement('canvas');
+      runbookTabMeasureCtx = canvas.getContext('2d');
     }
     if (runbookTabMeasureCtx) {
       runbookTabMeasureCtx.font = uiFont(16);
@@ -80,7 +91,10 @@ function runbookTabMeasureTextWidth(text: string) {
   return text.length * 16;
 }
 
-export function measureRunbookTabWidth(title: string, measure?: (text: string) => number) {
+export function measureRunbookTabWidth(
+  title: string,
+  measure?: (text: string) => number
+) {
   const width = (measure ?? runbookTabMeasureTextWidth)(title);
   return Math.max(
     RUNBOOK_TAB_MIN_WIDTH,
@@ -88,38 +102,86 @@ export function measureRunbookTabWidth(title: string, measure?: (text: string) =
   );
 }
 
-export type MonitorId = "metrics" | "terminal" | "runbook";
+export type MonitorId = 'metrics' | 'terminal' | 'runbook';
 
 export const monitorLayouts = [
-  { id: "metrics" as const, x: 70, y: 140, width: 540, height: 620, title: "METRICS" },
-  { id: "terminal" as const, x: 690, y: 140, width: 540, height: 620, title: "TERMINAL" },
-  { id: "runbook" as const, x: 1310, y: 140, width: 540, height: 620, title: "RUNBOOK / SLACK" }
+  {
+    id: 'metrics' as const,
+    x: 70,
+    y: 140,
+    width: 540,
+    height: 620,
+    title: 'METRICS',
+  },
+  {
+    id: 'terminal' as const,
+    x: 690,
+    y: 140,
+    width: 540,
+    height: 620,
+    title: 'TERMINAL',
+  },
+  {
+    id: 'runbook' as const,
+    x: 1310,
+    y: 140,
+    width: 540,
+    height: 620,
+    title: 'RUNBOOK / SLACK',
+  },
 ] as const;
 
-export const expandedMonitorLayout = { x: 260, y: 50, width: 1400, height: 780 } as const;
+type MonitorLayoutId = (typeof monitorLayouts)[number]['id'];
 
-function monitorContentRegion(monitor: { x: number; y: number; width: number; height: number }) {
+function monitorLayout(id: MonitorLayoutId) {
+  const monitor = monitorLayouts.find((item) => item.id === id);
+  if (!monitor) {
+    throw new Error(`missing monitor layout: ${id}`);
+  }
+  return monitor;
+}
+
+export const expandedMonitorLayout = {
+  x: 260,
+  y: 50,
+  width: 1400,
+  height: 780,
+} as const;
+
+function monitorContentRegion(monitor: {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}) {
   return {
     x: monitor.x + 22,
     y: monitor.y + 64,
     width: monitor.width - 44,
-    height: monitor.height - 80
+    height: monitor.height - 80,
   };
 }
 
 function runbookContentTransform(expandedRunbook: boolean) {
-  const monitor = monitorLayouts.find((item) => item.id === "runbook")!;
+  const monitor = monitorLayout('runbook');
   const frameX = expandedRunbook ? expandedMonitorLayout.x : monitor.x;
   const frameY = expandedRunbook ? expandedMonitorLayout.y : monitor.y;
-  const frameWidth = expandedRunbook ? expandedMonitorLayout.width : monitor.width;
-  const frameHeight = expandedRunbook ? expandedMonitorLayout.height : monitor.height;
+  const frameWidth = expandedRunbook
+    ? expandedMonitorLayout.width
+    : monitor.width;
+  const frameHeight = expandedRunbook
+    ? expandedMonitorLayout.height
+    : monitor.height;
   const contentWidth = frameWidth - 44;
   const contentHeight = frameHeight - 80;
-  const scale = Math.min(contentWidth / monitorContentWidth, contentHeight / monitorContentHeight);
+  const scale = Math.min(
+    contentWidth / monitorContentWidth,
+    contentHeight / monitorContentHeight
+  );
   return {
     x: frameX + 22,
     y: frameY + 64,
-    scale
+    scale,
   };
 }
 
@@ -128,16 +190,15 @@ export const monitorMagnifyRegions = monitorLayouts.map((monitor) => ({
   x: monitor.x + monitor.width - 50,
   y: monitor.y + 4,
   width: 44,
-  height: 44
+  height: 44,
 }));
 
-const monitorPoses: Record<MonitorId, { scaleX: number }> = {
-  metrics: { scaleX: 0.958 },
-  terminal: { scaleX: 1 },
-  runbook: { scaleX: 0.958 }
+const monitorPoses: Record<MonitorId, {scaleX: number}> = {
+  metrics: {scaleX: 0.958},
+  terminal: {scaleX: 1},
+  runbook: {scaleX: 0.958},
 };
 
-const METRICS_BANNER_HEIGHT = 40;
 const METRICS_SCROLL_TOP = 56;
 
 export class CanvasRenderer {
@@ -146,28 +207,36 @@ export class CanvasRenderer {
   private staticCtx: CanvasRenderingContext2D;
   private roomBackdrop: HTMLImageElement;
   private roomBackdropLoaded = false;
-  private lastRendered?: { state: GameRenderState; scenario?: ScenarioDefinition };
-  private terminalLineCache = new Map<string, { spans: AnsiSpan[]; plain: string }>();
+  private lastRendered?: {
+    state: GameRenderState;
+    scenario?: ScenarioDefinition;
+  };
+  private terminalLineCache = new Map<
+    string,
+    {spans: AnsiSpan[]; plain: string}
+  >();
   private metricsScrollY = 0;
   private metricsScrollMax = 0;
 
   constructor(private canvas: HTMLCanvasElement) {
-    const ctx = canvas.getContext("2d");
-    if (!ctx) throw new Error("2d canvas is required");
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('2d canvas is required');
     this.ctx = ctx;
     this.canvas.width = logicalWidth;
     this.canvas.height = logicalHeight;
-    this.staticCanvas = document.createElement("canvas");
+    this.staticCanvas = document.createElement('canvas');
     this.staticCanvas.width = logicalWidth;
     this.staticCanvas.height = logicalHeight;
-    const staticCtx = this.staticCanvas.getContext("2d");
-    if (!staticCtx) throw new Error("2d canvas is required");
+    const staticCtx = this.staticCanvas.getContext('2d');
+    if (!staticCtx) throw new Error('2d canvas is required');
     this.staticCtx = staticCtx;
     this.roomBackdrop = new Image();
     this.roomBackdrop.onload = () => {
       this.roomBackdropLoaded = true;
       this.drawStaticLayer();
-      if (this.lastRendered) this.draw(this.lastRendered.state, this.lastRendered.scenario);
+      if (this.lastRendered) {
+        this.draw(this.lastRendered.state, this.lastRendered.scenario);
+      }
     };
     this.roomBackdrop.src = officeMonitorBackdropUrl;
     this.drawStaticLayer();
@@ -178,36 +247,58 @@ export class CanvasRenderer {
     const next = clamp(this.metricsScrollY + deltaY, 0, this.metricsScrollMax);
     if (next === this.metricsScrollY) return false;
     this.metricsScrollY = next;
-    if (this.lastRendered) this.draw(this.lastRendered.state, this.lastRendered.scenario);
+    if (this.lastRendered) {
+      this.draw(this.lastRendered.state, this.lastRendered.scenario);
+    }
     return true;
   }
 
   draw(state: GameRenderState, scenario?: ScenarioDefinition) {
-    this.lastRendered = scenario ? { state, scenario } : { state };
+    this.lastRendered = scenario ? {state, scenario} : {state};
     const ctx = this.ctx;
     ctx.save();
     try {
-      ctx.setTransform(this.canvas.width / logicalWidth, 0, 0, this.canvas.height / logicalHeight, 0, 0);
+      ctx.setTransform(
+        this.canvas.width / logicalWidth,
+        0,
+        0,
+        this.canvas.height / logicalHeight,
+        0,
+        0
+      );
       ctx.clearRect(0, 0, logicalWidth, logicalHeight);
       ctx.drawImage(this.staticCanvas, 0, 0);
       this.drawHeader(state);
       for (const monitor of monitorLayouts) {
         this.withMonitorPose(monitor, () => {
-          this.drawMonitor(monitor.x, monitor.y, monitor.width, monitor.height, monitor.title, (content) => {
-            if (monitor.id === "metrics") this.drawMetricsPanel(state.monitors.left, content.height);
-            else if (monitor.id === "terminal") this.drawCenterPanel(state, content.width);
-            else this.drawRightPanel(state, scenario);
-          });
+          this.drawMonitor(
+            monitor.x,
+            monitor.y,
+            monitor.width,
+            monitor.height,
+            monitor.title,
+            (content) => {
+              if (monitor.id === 'metrics') {
+                this.drawMetricsPanel(state.monitors.left, content.height);
+              } else if (monitor.id === 'terminal') {
+                this.drawCenterPanel(state, content.width);
+              } else this.drawRightPanel(state, scenario);
+            }
+          );
         });
       }
       this.drawCenterToolTabs(state);
       this.drawMonitorMagnifyIcons();
       this.drawAlerts(state);
-      if (state.warning && state.warning.flashMs > 0) this.drawCommandWarning(state.warning);
+      if (state.warning && state.warning.flashMs > 0) {
+        this.drawCommandWarning(state.warning);
+      }
       this.drawNavigationOverlay(state, scenario);
       this.drawInputDock(state);
       this.drawNotifications(state);
-      if (state.world.expandedMonitor) this.drawExpandedMonitorOverlay(state, scenario);
+      if (state.world.expandedMonitor) {
+        this.drawExpandedMonitorOverlay(state, scenario);
+      }
       this.drawCursor(state);
     } finally {
       ctx.restore();
@@ -222,7 +313,13 @@ export class CanvasRenderer {
       this.drawRoom();
       for (const monitor of monitorLayouts) {
         this.withMonitorPose(monitor, () => {
-          this.drawMonitorFrame(monitor.x, monitor.y, monitor.width, monitor.height, monitor.title);
+          this.drawMonitorFrame(
+            monitor.x,
+            monitor.y,
+            monitor.width,
+            monitor.height,
+            monitor.title
+          );
         });
       }
     } finally {
@@ -236,7 +333,7 @@ export class CanvasRenderer {
 
     if (this.roomBackdropLoaded) {
       drawCoverImage(this.ctx, this.roomBackdrop, 0, 0, logicalWidth, 840);
-      this.ctx.fillStyle = "rgba(5, 6, 9, 0.38)";
+      this.ctx.fillStyle = 'rgba(5, 6, 9, 0.38)';
       this.ctx.fillRect(0, 0, logicalWidth, 840);
     } else {
       this.ctx.fillStyle = palette.bgRoomTop;
@@ -245,11 +342,14 @@ export class CanvasRenderer {
 
     this.ctx.fillStyle = palette.bgDesk;
     this.ctx.fillRect(0, 840, logicalWidth, 240);
-    this.ctx.fillStyle = "rgba(255, 255, 255, 0.035)";
+    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.035)';
     this.ctx.fillRect(0, 838, logicalWidth, 2);
   }
 
-  private withMonitorPose(monitor: (typeof monitorLayouts)[number], draw: () => void) {
+  private withMonitorPose(
+    monitor: (typeof monitorLayouts)[number],
+    draw: () => void
+  ) {
     const pose = monitorPoses[monitor.id];
     if (pose.scaleX === 1) {
       draw();
@@ -273,15 +373,19 @@ export class CanvasRenderer {
     this.ctx.font = uiFont(24);
     this.ctx.fillStyle = palette.textSecondary;
     this.ctx.fillText(
-      `${formatDifficulty(state.session.difficulty)} / ${formatTime(state.clock.elapsedMs)} / ${formatTime(state.clock.timeLimitMs)} / ${state.clock.speed}x`,
+      `${formatDifficulty(state.session.difficulty)} / ${formatTime(state.clock.elapsedMs)} / ${formatTime(state.clock.timeLimitMs)} / ${String(state.clock.speed)}x`,
       70,
       108
     );
     this.ctx.fillStyle = palette.textClock;
-    this.ctx.font = monoFont(26, "bold");
-    this.ctx.fillText(formatNarrativeClock(state.world.narrativeHour), 1280, 70);
+    this.ctx.font = monoFont(26, 'bold');
+    this.ctx.fillText(
+      formatNarrativeClock(state.world.narrativeHour),
+      1280,
+      70
+    );
     this.ctx.fillStyle = state.recording.saveEnabled
-      ? state.recording.status === "recording"
+      ? state.recording.status === 'recording'
         ? palette.statusRecording
         : palette.textMuted
       : palette.textMuted;
@@ -290,7 +394,14 @@ export class CanvasRenderer {
     this.ctx.fill();
     this.ctx.fillStyle = palette.textPrimary;
     this.ctx.font = uiFont(24);
-    this.ctx.fillText(formatRecordingStatus(state.recording.status, state.recording.saveEnabled), 1792, 78);
+    this.ctx.fillText(
+      formatRecordingStatus(
+        state.recording.status,
+        state.recording.saveEnabled
+      ),
+      1792,
+      78
+    );
   }
 
   private drawNotifications(state: GameRenderState) {
@@ -300,31 +411,53 @@ export class CanvasRenderer {
 
     if (pulsing) {
       const ringOpacity = Math.min(0.55, state.notifications.pulseMs / 2400);
-      this.ctx.strokeStyle = `rgba(248, 113, 113, ${ringOpacity})`;
+      this.ctx.strokeStyle = `rgba(248, 113, 113, ${String(ringOpacity)})`;
       this.ctx.lineWidth = 3;
       this.ctx.beginPath();
-      this.ctx.arc(bell.x + bell.width / 2, bell.y + bell.height / 2, bell.width * 0.62, 0, Math.PI * 2);
+      this.ctx.arc(
+        bell.x + bell.width / 2,
+        bell.y + bell.height / 2,
+        bell.width * 0.62,
+        0,
+        Math.PI * 2
+      );
       this.ctx.stroke();
     }
 
     this.ctx.fillStyle = pulsing ? palette.bgButtonDanger : palette.bgCard;
     roundRect(this.ctx, bell.x, bell.y, bell.width, bell.height, 10);
     this.ctx.fill();
-    this.ctx.strokeStyle = unread > 0 ? palette.borderUnread : palette.textMuted;
+    this.ctx.strokeStyle =
+      unread > 0 ? palette.borderUnread : palette.textMuted;
     this.ctx.lineWidth = 2;
     this.ctx.stroke();
 
-    this.drawBellGlyph(bell.x + bell.width / 2, bell.y + bell.height / 2 - 2, unread > 0 || pulsing);
+    this.drawBellGlyph(
+      bell.x + bell.width / 2,
+      bell.y + bell.height / 2 - 2,
+      unread > 0 || pulsing
+    );
 
     if (unread > 0) {
       const badge = String(Math.min(unread, 9));
       const badgeWidth = badge.length > 1 ? 28 : 22;
       this.ctx.fillStyle = palette.statusCritical;
-      roundRect(this.ctx, bell.x + bell.width - badgeWidth + 4, bell.y - 4, badgeWidth, 22, 11);
+      roundRect(
+        this.ctx,
+        bell.x + bell.width - badgeWidth + 4,
+        bell.y - 4,
+        badgeWidth,
+        22,
+        11
+      );
       this.ctx.fill();
       this.ctx.fillStyle = palette.textBadge;
-      this.ctx.font = uiFont(14, "bold");
-      this.ctx.fillText(badge, bell.x + bell.width - badgeWidth + 11, bell.y + 12);
+      this.ctx.font = uiFont(14, 'bold');
+      this.ctx.fillText(
+        badge,
+        bell.x + bell.width - badgeWidth + 11,
+        bell.y + 12
+      );
     }
 
     if (state.notifications.panelOpen) {
@@ -336,7 +469,9 @@ export class CanvasRenderer {
     this.ctx.save();
     this.ctx.translate(cx, cy);
     this.ctx.fillStyle = active ? palette.textWarningFg : palette.textSecondary;
-    this.ctx.strokeStyle = active ? palette.textWarningFg : palette.textSecondary;
+    this.ctx.strokeStyle = active
+      ? palette.textWarningFg
+      : palette.textSecondary;
     this.ctx.lineWidth = 2;
     this.ctx.beginPath();
     this.ctx.moveTo(-14, 4);
@@ -363,35 +498,37 @@ export class CanvasRenderer {
 
     this.ctx.fillStyle = palette.textPrimary;
     this.ctx.font = uiFont(18);
-    this.ctx.fillText("通知", panel.x + 18, panel.y + 30);
+    this.ctx.fillText('通知', panel.x + 18, panel.y + 30);
     this.ctx.fillStyle = palette.textSecondary;
     this.ctx.font = uiFont(14);
-    this.ctx.fillText("障害アラート / Slack", panel.x + 18, panel.y + 50);
+    this.ctx.fillText('障害アラート / Slack', panel.x + 18, panel.y + 50);
 
     const items = [
       ...state.monitors.left.alerts.map((alert) => ({
-        kind: "alert" as const,
+        kind: 'alert' as const,
         atMs: alert.atMs,
-        alert
+        alert,
       })),
       ...mergedSlackMessages(state).map((message) => ({
-        kind: "slack" as const,
+        kind: 'slack' as const,
         atMs: message.atMs,
-        message
-      }))
+        message,
+      })),
     ].sort((left, right) => right.atMs - left.atMs);
 
     if (items.length === 0) {
       this.ctx.fillStyle = palette.textMuted;
       this.ctx.font = uiFont(16);
-      this.ctx.fillText("通知はまだありません", panel.x + 18, panel.y + 90);
+      this.ctx.fillText('通知はまだありません', panel.x + 18, panel.y + 90);
       return;
     }
 
     let y = panel.y + 72;
     for (const item of items.slice(0, 7)) {
-      if (item.kind === "alert") {
-        const unread = !state.notifications.readAlertIds.includes(item.alert.id);
+      if (item.kind === 'alert') {
+        const unread = !state.notifications.readAlertIds.includes(
+          item.alert.id
+        );
         const color = severityColor(item.alert.severity);
         this.ctx.fillStyle = unread ? palette.bgCard : palette.bgCardDark;
         roundRect(this.ctx, panel.x + 12, y, panel.width - 24, 54, 8);
@@ -406,11 +543,23 @@ export class CanvasRenderer {
         this.ctx.arc(panel.x + 26, y + 27, 5, 0, Math.PI * 2);
         this.ctx.fill();
         this.ctx.fillStyle = palette.textPrimary;
-        this.ctx.font = monoFont(14, "bold");
-        this.ctx.fillText(item.alert.severity.toUpperCase(), panel.x + 40, y + 22);
+        this.ctx.font = monoFont(14, 'bold');
+        this.ctx.fillText(
+          item.alert.severity.toUpperCase(),
+          panel.x + 40,
+          y + 22
+        );
         this.ctx.fillStyle = palette.textSecondary;
         this.ctx.font = uiFont(14);
-        wrapText(this.ctx, item.alert.message, panel.x + 40, y + 40, panel.width - 56, 18, 2);
+        wrapText(
+          this.ctx,
+          item.alert.message,
+          panel.x + 40,
+          y + 40,
+          panel.width - 56,
+          18,
+          2
+        );
         y += 62;
         continue;
       }
@@ -429,8 +578,8 @@ export class CanvasRenderer {
       this.ctx.arc(panel.x + 26, y + 27, 5, 0, Math.PI * 2);
       this.ctx.fill();
       this.ctx.fillStyle = palette.textPrimary;
-      this.ctx.font = monoFont(14, "bold");
-      this.ctx.fillText("SLACK", panel.x + 40, y + 22);
+      this.ctx.font = monoFont(14, 'bold');
+      this.ctx.fillText('SLACK', panel.x + 40, y + 22);
       this.ctx.fillStyle = palette.textSecondary;
       this.ctx.font = uiFont(14);
       wrapText(
@@ -452,8 +601,8 @@ export class CanvasRenderer {
     width: number,
     height: number,
     _title: string,
-    drawContent: (content: { width: number; height: number }) => void,
-    options: { contentScale?: number } = {}
+    drawContent: (content: {width: number; height: number}) => void,
+    options: {contentScale?: number} = {}
   ) {
     const contentX = x + 22;
     const contentY = y + 64;
@@ -461,7 +610,10 @@ export class CanvasRenderer {
     const contentHeight = height - 80;
     const scale =
       options.contentScale ??
-      Math.min(contentWidth / monitorContentWidth, contentHeight / monitorContentHeight);
+      Math.min(
+        contentWidth / monitorContentWidth,
+        contentHeight / monitorContentHeight
+      );
 
     this.ctx.save();
     this.ctx.beginPath();
@@ -469,13 +621,15 @@ export class CanvasRenderer {
     this.ctx.clip();
     this.ctx.translate(contentX, contentY);
     if (scale !== 1) this.ctx.scale(scale, scale);
-    drawContent({ width: contentWidth / scale, height: contentHeight / scale });
+    drawContent({width: contentWidth / scale, height: contentHeight / scale});
     this.ctx.restore();
   }
 
   private drawMonitorMagnifyIcons() {
     for (const monitor of monitorLayouts) {
-      const region = monitorMagnifyRegions.find((item) => item.id === monitor.id);
+      const region = monitorMagnifyRegions.find(
+        (item) => item.id === monitor.id
+      );
       if (!region) continue;
       this.withMonitorPose(monitor, () => {
         drawMagnifyIcon(this.ctx, region.x + 10, region.y + 10, 24);
@@ -485,7 +639,7 @@ export class CanvasRenderer {
 
   private drawExpandedMonitorOverlay(
     state: GameRenderState,
-    scenario?: import("@incident/shared").ScenarioDefinition
+    scenario?: ScenarioDefinition
   ) {
     const monitorId = state.world.expandedMonitor;
     if (!monitorId) return;
@@ -493,20 +647,40 @@ export class CanvasRenderer {
     const monitor = monitorLayouts.find((item) => item.id === monitorId);
     if (!monitor) return;
 
-    this.ctx.fillStyle = "rgba(2, 6, 23, 0.78)";
+    this.ctx.fillStyle = 'rgba(2, 6, 23, 0.78)';
     this.ctx.fillRect(0, 0, logicalWidth, logicalHeight);
 
     const layout = expandedMonitorLayout;
-    this.drawMonitorFrame(layout.x, layout.y, layout.width, layout.height, monitor.title, { stand: false });
-    this.drawMonitor(layout.x, layout.y, layout.width, layout.height, monitor.title, (content) => {
-      if (monitorId === "metrics") this.drawMetricsPanel(state.monitors.left, content.height);
-      else if (monitorId === "terminal") this.drawCenterPanel(state, content.width);
-      else this.drawRightPanel(state, scenario);
-    });
+    this.drawMonitorFrame(
+      layout.x,
+      layout.y,
+      layout.width,
+      layout.height,
+      monitor.title,
+      {stand: false}
+    );
+    this.drawMonitor(
+      layout.x,
+      layout.y,
+      layout.width,
+      layout.height,
+      monitor.title,
+      (content) => {
+        if (monitorId === 'metrics') {
+          this.drawMetricsPanel(state.monitors.left, content.height);
+        } else if (monitorId === 'terminal') {
+          this.drawCenterPanel(state, content.width);
+        } else this.drawRightPanel(state, scenario);
+      }
+    );
 
     this.ctx.fillStyle = palette.textMuted;
     this.ctx.font = uiFont(14);
-    this.ctx.fillText("背景をクリックで閉じる", layout.x + layout.width - 168, layout.y + 28);
+    this.ctx.fillText(
+      '背景をクリックで閉じる',
+      layout.x + layout.width - 168,
+      layout.y + 28
+    );
   }
 
   private drawMonitorFrame(
@@ -515,7 +689,7 @@ export class CanvasRenderer {
     width: number,
     height: number,
     title: string,
-    options: { stand?: boolean } = {}
+    options: {stand?: boolean} = {}
   ) {
     if (options.stand ?? true) {
       this.drawMonitorStand(x, y, width, height);
@@ -535,7 +709,12 @@ export class CanvasRenderer {
     this.ctx.fillText(title, x + 22, y + 36);
   }
 
-  private drawMonitorStand(x: number, y: number, width: number, height: number) {
+  private drawMonitorStand(
+    x: number,
+    y: number,
+    width: number,
+    height: number
+  ) {
     const frameBottom = y + height + 16;
     const centerX = x + width / 2;
     const postWidth = 34;
@@ -547,19 +726,40 @@ export class CanvasRenderer {
 
     this.ctx.save();
 
-    this.ctx.fillStyle = "rgba(0, 0, 0, 0.22)";
-    roundRect(this.ctx, centerX - baseWidth / 2 + 12, baseTop + 10, baseWidth - 24, 10, 5);
+    this.ctx.fillStyle = 'rgba(0, 0, 0, 0.22)';
+    roundRect(
+      this.ctx,
+      centerX - baseWidth / 2 + 12,
+      baseTop + 10,
+      baseWidth - 24,
+      10,
+      5
+    );
     this.ctx.fill();
 
     this.ctx.fillStyle = palette.bgMonitor;
-    roundRect(this.ctx, centerX - postWidth / 2, postTop, postWidth, postHeight, 3);
+    roundRect(
+      this.ctx,
+      centerX - postWidth / 2,
+      postTop,
+      postWidth,
+      postHeight,
+      3
+    );
     this.ctx.fill();
     this.ctx.strokeStyle = palette.borderMuted;
     this.ctx.lineWidth = 2;
     this.ctx.stroke();
 
     this.ctx.fillStyle = palette.bgMonitor;
-    roundRect(this.ctx, centerX - baseWidth / 2, baseTop, baseWidth, baseHeight, 4);
+    roundRect(
+      this.ctx,
+      centerX - baseWidth / 2,
+      baseTop,
+      baseWidth,
+      baseHeight,
+      4
+    );
     this.ctx.fill();
     this.ctx.strokeStyle = palette.borderMuted;
     this.ctx.lineWidth = 2;
@@ -568,8 +768,11 @@ export class CanvasRenderer {
     this.ctx.restore();
   }
 
-  private drawMetricsPanel(left: GameRenderState["monitors"]["left"], viewportHeight = monitorContentHeight) {
-    const { metrics, metricsHistory, metricsSource } = left;
+  private drawMetricsPanel(
+    left: GameRenderState['monitors']['left'],
+    viewportHeight = monitorContentHeight
+  ) {
+    const {metrics, metricsHistory, metricsSource} = left;
     const health = summarizeMetricsHealth(metrics);
     const panelWidth = 496;
     const cardHeight = 88;
@@ -579,98 +782,101 @@ export class CanvasRenderer {
 
     this.drawMetricsHealthBanner(health, metricsSource, panelWidth);
 
-    type MetricCardSpec = {
+    interface MetricCardSpec {
       label: string;
       value: number;
       suffix: string;
       max: number;
       color: string;
       pickHistory: (snapshot: MetricsSnapshot) => number;
-    };
+    }
 
-    const sections: Array<{ title: string; cards: MetricCardSpec[] }> = [
+    const sections: Array<{title: string; cards: MetricCardSpec[]}> = [
       {
-        title: "RESOURCES",
+        title: 'RESOURCES',
         cards: [
           {
-            label: "CPU",
+            label: 'CPU',
             value: metrics.cpu,
-            suffix: "%",
+            suffix: '%',
             max: 100,
             color: toneColor(metricTone(metrics.cpu, 70, 85)),
-            pickHistory: (snapshot) => snapshot.cpu
+            pickHistory: (snapshot) => snapshot.cpu,
           },
           {
-            label: "Memory",
+            label: 'Memory',
             value: metrics.memory,
-            suffix: "%",
+            suffix: '%',
             max: 100,
             color: toneColor(metricTone(metrics.memory, 75, 90)),
-            pickHistory: (snapshot) => snapshot.memory
+            pickHistory: (snapshot) => snapshot.memory,
           },
           {
-            label: "Disk",
+            label: 'Disk',
             value: metrics.disk,
-            suffix: "%",
+            suffix: '%',
             max: 100,
             color: toneColor(metricTone(metrics.disk, 80, 92)),
-            pickHistory: (snapshot) => snapshot.disk
-          }
-        ]
+            pickHistory: (snapshot) => snapshot.disk,
+          },
+        ],
       },
       {
-        title: "TRAFFIC",
+        title: 'TRAFFIC',
         cards: [
           {
-            label: "HTTP 5xx",
+            label: 'HTTP 5xx',
             value: Math.round(metrics.http5xxRate * 100),
-            suffix: "%",
+            suffix: '%',
             max: 100,
-            color: toneColor(metrics.http5xxRate > 0 ? "critical" : "healthy"),
-            pickHistory: (snapshot) => Math.round(snapshot.http5xxRate * 100)
+            color: toneColor(metrics.http5xxRate > 0 ? 'critical' : 'healthy'),
+            pickHistory: (snapshot) => Math.round(snapshot.http5xxRate * 100),
           },
           {
-            label: "Latency p95",
+            label: 'Latency p95',
             value: metrics.latencyP95Ms,
-            suffix: "ms",
+            suffix: 'ms',
             max: 2000,
             color: toneColor(metricTone(metrics.latencyP95Ms, 800, 1500)),
-            pickHistory: (snapshot) => snapshot.latencyP95Ms
+            pickHistory: (snapshot) => snapshot.latencyP95Ms,
           },
           {
-            label: "RPS",
+            label: 'RPS',
             value: metrics.rps,
-            suffix: "",
+            suffix: '',
             max: 80,
             color: palette.accentPurple,
-            pickHistory: (snapshot) => snapshot.rps
-          }
-        ]
+            pickHistory: (snapshot) => snapshot.rps,
+          },
+        ],
       },
       {
-        title: "DATASTORE",
+        title: 'DATASTORE',
         cards: [
           {
-            label: "DB Conn",
+            label: 'DB Conn',
             value: metrics.dbConnections,
-            suffix: "",
+            suffix: '',
             max: 40,
             color: palette.accentPink,
-            pickHistory: (snapshot) => snapshot.dbConnections
+            pickHistory: (snapshot) => snapshot.dbConnections,
           },
           {
-            label: "Queue",
+            label: 'Queue',
             value: metrics.queueDepth,
-            suffix: "",
+            suffix: '',
             max: 40,
             color: toneColor(metricTone(metrics.queueDepth, 12, 24)),
-            pickHistory: (snapshot) => snapshot.queueDepth
-          }
-        ]
-      }
+            pickHistory: (snapshot) => snapshot.queueDepth,
+          },
+        ],
+      },
     ];
 
-    const scrollViewportHeight = Math.max(0, viewportHeight - METRICS_SCROLL_TOP);
+    const scrollViewportHeight = Math.max(
+      0,
+      viewportHeight - METRICS_SCROLL_TOP
+    );
     let contentHeight = 0;
     for (const section of sections) {
       const rows = Math.ceil(section.cards.length / 2);
@@ -705,7 +911,7 @@ export class CanvasRenderer {
           suffix: card.suffix,
           max: card.max,
           color: card.color,
-          historyValues
+          historyValues,
         });
       });
 
@@ -713,7 +919,12 @@ export class CanvasRenderer {
       y += rows * rowStride + sectionGap;
     }
     this.ctx.restore();
-    this.drawMetricsScrollbar(panelWidth, METRICS_SCROLL_TOP, scrollViewportHeight, contentHeight);
+    this.drawMetricsScrollbar(
+      panelWidth,
+      METRICS_SCROLL_TOP,
+      scrollViewportHeight,
+      contentHeight
+    );
   }
 
   private drawMetricsHealthBanner(
@@ -732,11 +943,17 @@ export class CanvasRenderer {
 
     this.ctx.fillStyle = palette.textPrimary;
     this.ctx.font = uiFont(16);
-    this.ctx.fillText("SERVICE HEALTH", 28, 18);
+    this.ctx.fillText('SERVICE HEALTH', 28, 18);
 
     const badge = health.label;
-    const sourceLabel = source === "live" ? "LIVE" : source === "loading" ? "SYNC" : "OFFLINE";
-    const sourceColor = source === "live" ? palette.statusLive : source === "loading" ? palette.statusLoading : palette.statusError;
+    const sourceLabel =
+      source === 'live' ? 'LIVE' : source === 'loading' ? 'SYNC' : 'OFFLINE';
+    const sourceColor =
+      source === 'live'
+        ? palette.statusLive
+        : source === 'loading'
+          ? palette.statusLoading
+          : palette.statusError;
     this.ctx.font = monoFont(14);
     const badgeWidth = this.ctx.measureText(badge).width + 20;
     const sourceWidth = this.ctx.measureText(sourceLabel).width;
@@ -747,7 +964,11 @@ export class CanvasRenderer {
     this.ctx.fillStyle = palette.textSecondary;
     this.ctx.font = monoFont(14);
     const detailMaxWidth = Math.max(72, dotX - 30);
-    this.ctx.fillText(truncateToWidth(this.ctx, health.detail, detailMaxWidth), 28, 33);
+    this.ctx.fillText(
+      truncateToWidth(this.ctx, health.detail, detailMaxWidth),
+      28,
+      33
+    );
 
     this.ctx.fillStyle = palette.bgInput;
     roundRect(this.ctx, badgeX, 8, badgeWidth, 24, 6);
@@ -791,8 +1012,8 @@ export class CanvasRenderer {
     this.ctx.fillText(card.label, x + 12, y + 18);
 
     this.ctx.fillStyle = palette.textPrimary;
-    this.ctx.font = monoFont(22, "bold");
-    this.ctx.fillText(`${card.value}${card.suffix}`, x + 12, y + 44);
+    this.ctx.font = monoFont(22, 'bold');
+    this.ctx.fillText(`${String(card.value)}${card.suffix}`, x + 12, y + 44);
 
     drawSparkline(
       this.ctx,
@@ -806,39 +1027,71 @@ export class CanvasRenderer {
     );
   }
 
-  private drawMetricsScrollbar(panelWidth: number, top: number, viewportHeight: number, contentHeight: number) {
-    if (this.metricsScrollMax <= 0 || viewportHeight <= 0 || contentHeight <= 0) return;
+  private drawMetricsScrollbar(
+    panelWidth: number,
+    top: number,
+    viewportHeight: number,
+    contentHeight: number
+  ) {
+    if (
+      this.metricsScrollMax <= 0 ||
+      viewportHeight <= 0 ||
+      contentHeight <= 0
+    ) {
+      return;
+    }
     const trackX = panelWidth - 7;
     const trackY = top + 2;
     const trackHeight = viewportHeight - 4;
-    const thumbHeight = Math.max(28, Math.round((viewportHeight / contentHeight) * trackHeight));
-    const thumbY = trackY + Math.round((this.metricsScrollY / this.metricsScrollMax) * (trackHeight - thumbHeight));
+    const thumbHeight = Math.max(
+      28,
+      Math.round((viewportHeight / contentHeight) * trackHeight)
+    );
+    const thumbY =
+      trackY +
+      Math.round(
+        (this.metricsScrollY / this.metricsScrollMax) *
+          (trackHeight - thumbHeight)
+      );
 
-    this.ctx.fillStyle = "rgba(148, 163, 184, 0.16)";
+    this.ctx.fillStyle = 'rgba(148, 163, 184, 0.16)';
     roundRect(this.ctx, trackX, trackY, 4, trackHeight, 2);
     this.ctx.fill();
-    this.ctx.fillStyle = "rgba(148, 163, 184, 0.58)";
+    this.ctx.fillStyle = 'rgba(148, 163, 184, 0.58)';
     roundRect(this.ctx, trackX, thumbY, 4, thumbHeight, 2);
     this.ctx.fill();
   }
 
-  private drawCenterPanel(state: GameRenderState, contentWidth = terminalContentWidth) {
-    if (state.monitors.center.activeTool === "editor") {
+  private drawCenterPanel(
+    state: GameRenderState,
+    contentWidth = terminalContentWidth
+  ) {
+    if (state.monitors.center.activeTool === 'editor') {
       this.drawEditorPanel(state.monitors.center.editor, contentWidth);
       return;
     }
     this.drawTerminal(state, contentWidth);
   }
 
-  private drawTerminal(state: GameRenderState, contentWidth = terminalContentWidth) {
+  private drawTerminal(
+    state: GameRenderState,
+    _contentWidth = terminalContentWidth
+  ) {
     const terminal = state.monitors.center.terminal;
     const contentHeight = 540;
     const lineHeight = 22;
     this.ctx.font = monoFont(18);
-    const cellWidth = this.ctx.measureText("M").width;
+    const cellWidth = this.ctx.measureText('M').width;
     const visualLines = this.layoutTerminalLines(terminal.lines);
-    const cursorVisualLine = findTerminalCursorVisualLine(visualLines, terminal.cursor.y, terminal.cursor.x);
-    const effectiveCursorLine = cursorVisualLine >= 0 ? cursorVisualLine : Math.max(0, visualLines.length - 1);
+    const cursorVisualLine = findTerminalCursorVisualLine(
+      visualLines,
+      terminal.cursor.y,
+      terminal.cursor.x
+    );
+    const effectiveCursorLine =
+      cursorVisualLine >= 0
+        ? cursorVisualLine
+        : Math.max(0, visualLines.length - 1);
     const maxLines = Math.floor(contentHeight / lineHeight);
     const startLine =
       visualLines.length <= maxLines
@@ -857,24 +1110,40 @@ export class CanvasRenderer {
       let x = 0;
       for (const span of line.spans) {
         this.ctx.fillStyle = span.color ?? palette.textTerminal;
-        this.ctx.font = monoFont(18, span.bold ? "bold" : span.dim ? "lighter" : "normal");
+        this.ctx.font = monoFont(
+          18,
+          span.bold ? 'bold' : span.dim ? 'lighter' : 'normal'
+        );
         this.ctx.fillText(span.text, x, y);
         x += this.ctx.measureText(span.text).width;
       }
     });
 
     const cursorLine = effectiveCursorLine - startLine;
-    if (terminal.cursor.visible && cursorLine >= 0 && cursorLine < visibleLines.length) {
+    if (
+      terminal.cursor.visible &&
+      cursorLine >= 0 &&
+      cursorLine < visibleLines.length
+    ) {
       const line = visibleLines[cursorLine];
       if (!line) return;
       this.ctx.font = monoFont(18);
-      const cursorX = Math.max(0, terminal.cursor.x - line.startColumn) * cellWidth;
+      const cursorX =
+        Math.max(0, terminal.cursor.x - line.startColumn) * cellWidth;
       this.ctx.fillStyle = palette.textTerminal;
-      this.ctx.fillRect(cursorX, baseY + cursorLine * lineHeight - 16, Math.max(2, cellWidth * 0.6), 20);
+      this.ctx.fillRect(
+        cursorX,
+        baseY + cursorLine * lineHeight - 16,
+        Math.max(2, cellWidth * 0.6),
+        20
+      );
     }
   }
 
-  private drawEditorPanel(editor: GameRenderState["monitors"]["center"]["editor"], contentWidth = terminalContentWidth) {
+  private drawEditorPanel(
+    editor: GameRenderState['monitors']['center']['editor'],
+    contentWidth = terminalContentWidth
+  ) {
     const headerHeight = 54;
     this.ctx.fillStyle = palette.bgCardDark;
     roundRect(this.ctx, 0, 0, contentWidth, headerHeight, 6);
@@ -882,15 +1151,27 @@ export class CanvasRenderer {
 
     this.ctx.fillStyle = palette.textMuted;
     this.ctx.font = monoFont(13);
-    this.ctx.fillText("FILES", 12, 18);
-    this.ctx.fillStyle = editor.dirty ? palette.textWarningFg : editor.status === "error" ? palette.statusCritical : palette.textTerminalMuted;
-    this.ctx.font = uiFont(15, "bold");
-    const status = editor.status === "saving" ? "SAVING" : editor.dirty ? "UNSAVED" : editor.status === "error" ? "ERROR" : "SAVED";
+    this.ctx.fillText('FILES', 12, 18);
+    this.ctx.fillStyle = editor.dirty
+      ? palette.textWarningFg
+      : editor.status === 'error'
+        ? palette.statusCritical
+        : palette.textTerminalMuted;
+    this.ctx.font = uiFont(15, 'bold');
+    const status =
+      editor.status === 'saving'
+        ? 'SAVING'
+        : editor.dirty
+          ? 'UNSAVED'
+          : editor.status === 'error'
+            ? 'ERROR'
+            : 'SAVED';
     this.ctx.fillText(status, contentWidth - 90, 18);
 
     this.ctx.fillStyle = palette.textPrimary;
-    this.ctx.font = monoFont(16, "bold");
-    const currentPath = editor.currentPath ?? editor.files[0]?.path ?? "/workspace";
+    this.ctx.font = monoFont(16, 'bold');
+    const currentPath =
+      editor.currentPath ?? editor.files[0]?.path ?? '/workspace';
     this.ctx.fillText(shortenPath(currentPath, 54), 12, 42);
 
     const fileListTop = headerHeight + 12;
@@ -908,7 +1189,11 @@ export class CanvasRenderer {
         this.ctx.fill();
       }
       this.ctx.fillStyle = active ? palette.textPrimary : palette.textSecondary;
-      this.ctx.fillText(shortenPath(file.path.replace("/workspace/", ""), 18), 12, fileY);
+      this.ctx.fillText(
+        shortenPath(file.path.replace('/workspace/', ''), 18),
+        12,
+        fileY
+      );
       fileY += 28;
     }
 
@@ -919,44 +1204,68 @@ export class CanvasRenderer {
     this.ctx.fillStyle = palette.bgTerminal;
     roundRect(this.ctx, editorX, editorY, editorWidth, editorHeight, 6);
     this.ctx.fill();
-    this.ctx.strokeStyle = editor.status === "error" ? palette.statusCritical : palette.borderDefault;
+    this.ctx.strokeStyle =
+      editor.status === 'error'
+        ? palette.statusCritical
+        : palette.borderDefault;
     this.ctx.lineWidth = 2;
     this.ctx.stroke();
 
-    if (editor.status === "loading") {
+    if (editor.status === 'loading') {
       this.ctx.fillStyle = palette.textMuted;
       this.ctx.font = uiFont(17);
-      this.ctx.fillText("読み込み中...", editorX + 16, editorY + 34);
+      this.ctx.fillText('読み込み中...', editorX + 16, editorY + 34);
       return;
     }
-    if (editor.status === "error" && editor.error) {
+    if (editor.status === 'error' && editor.error) {
       this.ctx.fillStyle = palette.statusCritical;
-      this.ctx.font = uiFont(16, "bold");
-      wrapText(this.ctx, editor.error, editorX + 16, editorY + 34, editorWidth - 32, 22, 4);
+      this.ctx.font = uiFont(16, 'bold');
+      wrapText(
+        this.ctx,
+        editor.error,
+        editorX + 16,
+        editorY + 34,
+        editorWidth - 32,
+        22,
+        4
+      );
     }
 
     this.ctx.font = monoFont(15);
     const lineHeight = 21;
-    const lines = editor.content.split("\n");
+    const lines = editor.content.split('\n');
     const maxLines = Math.floor((editorHeight - 24) / lineHeight);
     const cursorLine = Math.max(1, editor.cursor.line);
-    const start = Math.max(0, Math.min(Math.max(0, lines.length - maxLines), cursorLine - maxLines));
-    for (let index = 0; index < Math.min(maxLines, lines.length - start); index += 1) {
+    const start = Math.max(
+      0,
+      Math.min(Math.max(0, lines.length - maxLines), cursorLine - maxLines)
+    );
+    for (
+      let index = 0;
+      index < Math.min(maxLines, lines.length - start);
+      index += 1
+    ) {
       const lineNumber = start + index + 1;
       const y = editorY + 24 + index * lineHeight;
       this.ctx.fillStyle = palette.textMuted;
-      this.ctx.fillText(String(lineNumber).padStart(3, " "), editorX + 10, y);
+      this.ctx.fillText(String(lineNumber).padStart(3, ' '), editorX + 10, y);
       this.ctx.fillStyle = palette.textTerminal;
-      this.ctx.fillText((lines[start + index] ?? "").slice(0, 42), editorX + 52, y);
+      this.ctx.fillText(
+        (lines[start + index] ?? '').slice(0, 42),
+        editorX + 52,
+        y
+      );
     }
   }
 
   private drawCenterToolTabs(state: GameRenderState) {
-    const monitor = monitorLayouts.find((item) => item.id === "terminal")!;
+    const monitor = monitorLayout('terminal');
     const tabs = centerToolTabRegions();
     for (const tab of tabs) {
       const active = state.monitors.center.activeTool === tab.id;
-      this.ctx.fillStyle = active ? palette.bgButtonPrimary : palette.bgTerminal;
+      this.ctx.fillStyle = active
+        ? palette.bgButtonPrimary
+        : palette.bgTerminal;
       roundRect(this.ctx, tab.x, tab.y, tab.width, tab.height, 5);
       this.ctx.fill();
       this.ctx.strokeStyle = active ? palette.borderFocus : palette.borderMuted;
@@ -964,28 +1273,43 @@ export class CanvasRenderer {
       this.ctx.stroke();
       this.ctx.fillStyle = active ? palette.textPrimary : palette.textLink;
       this.ctx.font = monoFont(18);
-      centeredText(this.ctx, tab.label, tab.x, tab.y + 1, tab.width, tab.height);
+      centeredText(
+        this.ctx,
+        tab.label,
+        tab.x,
+        tab.y + 1,
+        tab.width,
+        tab.height
+      );
     }
     const editor = state.monitors.center.editor;
     if (editor.dirty) {
-      const editorTab = tabs.find((item) => item.id === "editor");
+      const editorTab = tabs.find((item) => item.id === 'editor');
       if (editorTab) {
         this.ctx.fillStyle = palette.statusCritical;
         this.ctx.beginPath();
-        this.ctx.arc(editorTab.x + editorTab.width - 10, editorTab.y + 9, 5, 0, Math.PI * 2);
+        this.ctx.arc(
+          editorTab.x + editorTab.width - 10,
+          editorTab.y + 9,
+          5,
+          0,
+          Math.PI * 2
+        );
         this.ctx.fill();
       }
     }
     this.ctx.fillStyle = palette.textMuted;
     this.ctx.font = uiFont(13);
-    this.ctx.fillText("TAB", monitor.x + 22, monitor.y - 2);
+    this.ctx.fillText('TAB', monitor.x + 22, monitor.y - 2);
   }
 
   private layoutTerminalLines(lines: string[]): TerminalVisualLine[] {
     const visualLines: TerminalVisualLine[] = [];
     for (let sourceIndex = 0; sourceIndex < lines.length; sourceIndex += 1) {
-      const cached = this.getCachedTerminalLine(lines[sourceIndex] ?? "");
-      visualLines.push(mirrorTerminalVisualLine(cached.spans, cached.plain, sourceIndex));
+      const cached = this.getCachedTerminalLine(lines[sourceIndex] ?? '');
+      visualLines.push(
+        mirrorTerminalVisualLine(cached.spans, cached.plain, sourceIndex)
+      );
     }
     return visualLines.length > 0 ? visualLines : [emptyTerminalVisualLine(0)];
   }
@@ -996,7 +1320,7 @@ export class CanvasRenderer {
     if (cached) return cached;
     const parsed = {
       spans: parseAnsiLine(source),
-      plain: stripAnsi(source)
+      plain: stripAnsi(source),
     };
     this.terminalLineCache.set(source, parsed);
     if (this.terminalLineCache.size > 500) {
@@ -1006,49 +1330,91 @@ export class CanvasRenderer {
     return parsed;
   }
 
-  private drawRightPanel(state: GameRenderState, scenario?: ScenarioDefinition) {
-    const expanded = state.world.expandedMonitor === "runbook";
-    const activePanelTab = state.monitors.right.activePanelTab ?? "runbook";
+  private drawRightPanel(
+    state: GameRenderState,
+    scenario?: ScenarioDefinition
+  ) {
+    const activePanelTab = state.monitors.right.activePanelTab;
     const runbooks = scenario
       ? visibleRunbooks(scenario, state.clock.elapsedMs)
-      : (state.monitors.right.activeRunbook ? [state.monitors.right.activeRunbook] : []);
+      : state.monitors.right.activeRunbook
+        ? [state.monitors.right.activeRunbook]
+        : [];
     const layout = rightPanelLayout(activePanelTab, runbooks.length > 0);
 
     this.drawPrimaryPanelTabs(state, layout.primaryTop);
 
-    if (activePanelTab === "runbook") {
+    if (activePanelTab === 'runbook') {
       this.drawRunbookDocumentTabs(state, runbooks, layout.secondaryTop);
       const titleTop = layout.contentTop;
       const bodyTop = titleTop + 36;
-      const maxRunbookLines = Math.max(10, Math.floor((monitorContentHeight - bodyTop - 16) / 24));
+      const maxRunbookLines = Math.max(
+        10,
+        Math.floor((monitorContentHeight - bodyTop - 16) / 24)
+      );
       this.ctx.fillStyle = palette.textPrimary;
       this.ctx.font = uiFont(22);
       if (runbooks.length === 0) {
-        this.ctx.fillText("Runbook", 0, titleTop);
+        this.ctx.fillText('Runbook', 0, titleTop);
         this.ctx.font = uiFont(17);
-        wrapText(this.ctx, "Runbook はまだ届いていない。", 0, bodyTop, 470, 24, maxRunbookLines);
+        wrapText(
+          this.ctx,
+          'Runbook はまだ届いていない。',
+          0,
+          bodyTop,
+          470,
+          24,
+          maxRunbookLines
+        );
         return;
       }
-      this.ctx.fillText(state.monitors.right.activeRunbook?.title ?? "Runbook", 0, titleTop);
+      this.ctx.fillText(
+        state.monitors.right.activeRunbook?.title ?? 'Runbook',
+        0,
+        titleTop
+      );
       this.ctx.font = uiFont(17);
-      wrapText(this.ctx, state.monitors.right.activeRunbook?.body ?? "", 0, bodyTop, 470, 24, maxRunbookLines);
+      wrapText(
+        this.ctx,
+        state.monitors.right.activeRunbook?.body ?? '',
+        0,
+        bodyTop,
+        470,
+        24,
+        maxRunbookLines
+      );
       return;
     }
 
     this.ctx.fillStyle = palette.textPrimary;
     this.ctx.font = uiFont(20);
-    this.ctx.fillText("Slack", 0, layout.slackMessagesTop);
+    this.ctx.fillText('Slack', 0, layout.slackMessagesTop);
     this.ctx.font = uiFont(16);
     const messageLineHeight = 22;
-    const maxSlackLines = Math.max(4, Math.floor((layout.slackMessagesBottom - layout.slackMessagesTop - 24) / messageLineHeight));
+    const maxSlackLines = Math.max(
+      4,
+      Math.floor(
+        (layout.slackMessagesBottom - layout.slackMessagesTop - 24) /
+          messageLineHeight
+      )
+    );
     let y = layout.slackMessagesTop + 30;
     let drawnLines = 0;
     for (const message of mergedSlackMessages(state).slice(-12)) {
       if (drawnLines >= maxSlackLines) break;
-      const prefix = message.from === "あなた" ? "▸ " : "";
-      const color = message.from === "あなた" ? palette.textLink : palette.textPrimary;
+      const prefix = message.from === 'あなた' ? '▸ ' : '';
+      const color =
+        message.from === 'あなた' ? palette.textLink : palette.textPrimary;
       this.ctx.fillStyle = color;
-      const nextY = wrapText(this.ctx, `${prefix}${message.from}: ${message.body}`, 0, y, 470, messageLineHeight, 3);
+      const nextY = wrapText(
+        this.ctx,
+        `${prefix}${message.from}: ${message.body}`,
+        0,
+        y,
+        470,
+        messageLineHeight,
+        3
+      );
       drawnLines += Math.max(1, Math.round((nextY - y) / messageLineHeight));
       y = nextY + 8;
     }
@@ -1057,18 +1423,27 @@ export class CanvasRenderer {
   }
 
   private drawPrimaryPanelTabs(state: GameRenderState, top: number) {
-    const activePanelTab = state.monitors.right.activePanelTab ?? "runbook";
-    const unreadSlack = mergedSlackMessages(state).some((message) => !state.seenSlackIds.includes(message.id));
+    const activePanelTab = state.monitors.right.activePanelTab;
+    const unreadSlack = mergedSlackMessages(state).some(
+      (message) => !state.seenSlackIds.includes(message.id)
+    );
     this.ctx.font = uiFont(16);
     let tabX = 0;
     for (const tab of RIGHT_PANEL_PRIMARY_TABS) {
       const active = activePanelTab === tab.id;
       this.ctx.fillStyle = active ? palette.bgCard : palette.bgCardActive;
-      roundRect(this.ctx, tabX, top, tab.width, RIGHT_PANEL_PRIMARY_TAB_HEIGHT, 6);
+      roundRect(
+        this.ctx,
+        tabX,
+        top,
+        tab.width,
+        RIGHT_PANEL_PRIMARY_TAB_HEIGHT,
+        6
+      );
       this.ctx.fill();
       this.ctx.fillStyle = active ? palette.textPrimary : palette.textMuted;
       this.ctx.fillText(tab.label, tabX + RUNBOOK_TAB_PAD_X, top + 26);
-      if (tab.id === "slack" && unreadSlack && !active) {
+      if (tab.id === 'slack' && unreadSlack && !active) {
         this.ctx.fillStyle = palette.statusCritical;
         this.ctx.beginPath();
         this.ctx.arc(tabX + tab.width - 12, top + 12, 5, 0, Math.PI * 2);
@@ -1080,7 +1455,7 @@ export class CanvasRenderer {
 
   private drawRunbookDocumentTabs(
     state: GameRenderState,
-    runbooks: import("@incident/shared").RunbookDefinition[],
+    runbooks: RunbookDefinition[],
     top: number
   ) {
     this.ctx.font = uiFont(16);
@@ -1089,9 +1464,19 @@ export class CanvasRenderer {
       const runbook = runbooks[index];
       if (!runbook) continue;
       const active = index === state.monitors.right.activeRunbookIndex;
-      const width = measureRunbookTabWidth(runbook.title, (title) => this.ctx.measureText(title).width);
+      const width = measureRunbookTabWidth(
+        runbook.title,
+        (title) => this.ctx.measureText(title).width
+      );
       this.ctx.fillStyle = active ? palette.bgCard : palette.bgCardActive;
-      roundRect(this.ctx, tabX, top, width, RIGHT_PANEL_SECONDARY_TAB_HEIGHT, 6);
+      roundRect(
+        this.ctx,
+        tabX,
+        top,
+        width,
+        RIGHT_PANEL_SECONDARY_TAB_HEIGHT,
+        6
+      );
       this.ctx.fill();
       this.ctx.fillStyle = active ? palette.textPrimary : palette.textMuted;
       this.ctx.fillText(runbook.title, tabX + RUNBOOK_TAB_PAD_X, top + 26);
@@ -1101,7 +1486,9 @@ export class CanvasRenderer {
 
   private drawSlackCompose(state: GameRenderState, boxY = 484) {
     const active = state.slackCompose.active;
-    this.ctx.fillStyle = active ? palette.bgDevtoolsActive : palette.bgDevtoolsIdle;
+    this.ctx.fillStyle = active
+      ? palette.bgDevtoolsActive
+      : palette.bgDevtoolsIdle;
     roundRect(this.ctx, 0, boxY, 470, 44, 6);
     this.ctx.fill();
     this.ctx.strokeStyle = active ? palette.accentBlue : palette.borderDefault;
@@ -1111,7 +1498,7 @@ export class CanvasRenderer {
     this.ctx.fillStyle = active ? palette.textLink : palette.textMuted;
     this.ctx.font = uiFont(16);
     const draft = state.slackCompose.draft;
-    const placeholder = "状況を報告... (クリックして入力)";
+    const placeholder = '状況を報告... (クリックして入力)';
     const text = draft.length > 0 ? draft : placeholder;
     this.ctx.fillText(text.slice(0, 42), 12, boxY + 28);
 
@@ -1120,28 +1507,33 @@ export class CanvasRenderer {
       roundRect(this.ctx, 404, boxY + 8, 56, 28, 4);
       this.ctx.fill();
       this.ctx.fillStyle = palette.accentGreenBg;
-      this.ctx.font = uiFont(14, "bold");
-      this.ctx.fillText("送信", 416, boxY + 27);
+      this.ctx.font = uiFont(14, 'bold');
+      this.ctx.fillText('送信', 416, boxY + 27);
     }
   }
 
-  private drawCommandWarning(warning: { message: string; flashMs: number }) {
+  private drawCommandWarning(warning: {message: string; flashMs: number}) {
     const opacity = Math.min(1, warning.flashMs / 800);
-    const box = { x: 70, y: 118, width: logicalWidth - 140, height: 52 };
-    this.ctx.fillStyle = `rgba(127, 29, 29, ${0.92 * opacity})`;
+    const box = {x: 70, y: 118, width: logicalWidth - 140, height: 52};
+    this.ctx.fillStyle = `rgba(127, 29, 29, ${String(0.92 * opacity)})`;
     roundRect(this.ctx, box.x, box.y, box.width, box.height, 8);
     this.ctx.fill();
-    this.ctx.strokeStyle = `rgba(248, 113, 113, ${opacity})`;
+    this.ctx.strokeStyle = `rgba(248, 113, 113, ${String(opacity)})`;
     this.ctx.lineWidth = 2;
     this.ctx.stroke();
-    this.ctx.fillStyle = `rgba(254, 226, 226, ${opacity})`;
-    this.ctx.font = uiFont(20, "bold");
+    this.ctx.fillStyle = `rgba(254, 226, 226, ${String(opacity)})`;
+    this.ctx.font = uiFont(20, 'bold');
     this.ctx.fillText(warning.message, box.x + 16, box.y + 34);
   }
 
-  private drawNavigationOverlay(state: GameRenderState, scenario?: import("@incident/shared").ScenarioDefinition) {
-    const step = scenario?.navigationSteps?.find((item) => item.id === state.navigation.activeStepId);
-    if (!step || state.session.difficulty !== "beginner") return;
+  private drawNavigationOverlay(
+    state: GameRenderState,
+    scenario?: ScenarioDefinition
+  ) {
+    const step = scenario?.navigationSteps?.find(
+      (item) => item.id === state.navigation.activeStepId
+    );
+    if (!step || state.session.difficulty !== 'beginner') return;
 
     const box = navigationOverlayRect;
     this.ctx.fillStyle = palette.bgOverlay;
@@ -1152,21 +1544,34 @@ export class CanvasRenderer {
     this.ctx.stroke();
     this.ctx.fillStyle = palette.borderFocus;
     this.ctx.font = uiFont(14);
-    this.ctx.fillText("NAV", box.x + 16, box.y + 28);
+    this.ctx.fillText('NAV', box.x + 16, box.y + 28);
     this.ctx.fillStyle = palette.textPrimary;
     this.ctx.font = uiFont(18);
-    wrapText(this.ctx, step.hint, box.x + 16, box.y + 52, box.width - 32, 24, 3);
+    wrapText(
+      this.ctx,
+      step.hint,
+      box.x + 16,
+      box.y + 52,
+      box.width - 32,
+      24,
+      3
+    );
     if (step.suggestedCommand) {
       this.ctx.fillStyle = palette.textSecondary;
       this.ctx.font = monoFont(14);
-      this.ctx.fillText(`例: ${step.suggestedCommand}`, box.x + 16, box.y + box.height - 24);
+      this.ctx.fillText(
+        `例: ${step.suggestedCommand}`,
+        box.x + 16,
+        box.y + box.height - 24
+      );
     }
   }
 
   private drawAlerts(state: GameRenderState) {
-    const alert = state.monitors.left.alerts[state.monitors.left.alerts.length - 1];
+    const alert =
+      state.monitors.left.alerts[state.monitors.left.alerts.length - 1];
     if (!alert) return;
-    this.ctx.fillStyle = "rgba(239, 68, 68, 0.92)";
+    this.ctx.fillStyle = 'rgba(239, 68, 68, 0.92)';
     roundRect(this.ctx, 70, 778, 1780, 48, 8);
     this.ctx.fill();
     this.ctx.fillStyle = palette.textBadge;
@@ -1177,22 +1582,30 @@ export class CanvasRenderer {
   private drawInputDock(state: GameRenderState) {
     const input = inputDockRects.input;
     const button = inputDockRects.button;
-    const enabled = state.session.status === "running";
+    const enabled = state.session.status === 'running';
     const focused = state.commandInputFocused;
-    const typed = extractTypedCommand(state.monitors.center.terminal.commandDraft);
-    const caretVisible = enabled && focused && Math.floor(performance.now() / 530) % 2 === 0;
+    const typed = extractTypedCommand(
+      state.monitors.center.terminal.commandDraft
+    );
+    const caretVisible =
+      enabled && focused && Math.floor(performance.now() / 530) % 2 === 0;
 
     this.ctx.fillStyle = palette.bgPanelDark;
     this.ctx.fillRect(0, 850, logicalWidth, 170);
 
     this.ctx.fillStyle = palette.textMuted;
     this.ctx.font = monoFont(14);
-    this.ctx.fillText("INPUT", input.x, input.y - 10);
+    this.ctx.fillText('INPUT', input.x, input.y - 10);
 
     this.ctx.fillStyle = palette.bgTerminal;
     roundRect(this.ctx, input.x, input.y, input.width, input.height, 8);
     this.ctx.fill();
-    this.ctx.strokeStyle = enabled && focused ? palette.borderFocus : enabled ? palette.borderDefault : palette.bgCard;
+    this.ctx.strokeStyle =
+      enabled && focused
+        ? palette.borderFocus
+        : enabled
+          ? palette.borderDefault
+          : palette.bgCard;
     this.ctx.lineWidth = 2;
     this.ctx.stroke();
 
@@ -1204,10 +1617,16 @@ export class CanvasRenderer {
       this.ctx.fillText(typed, textStartX, inputTextY);
     } else if (!focused) {
       this.ctx.fillStyle = palette.textMuted;
-      this.ctx.fillText(enabled ? "コマンドを入力…" : "セッション開始後に入力できます", textStartX, inputTextY);
+      this.ctx.fillText(
+        enabled ? 'コマンドを入力…' : 'セッション開始後に入力できます',
+        textStartX,
+        inputTextY
+      );
     }
     if (caretVisible) {
-      const caretX = typed ? inputCaretX(this.ctx, typed, textStartX) : textStartX;
+      const caretX = typed
+        ? inputCaretX(this.ctx, typed, textStartX)
+        : textStartX;
       this.ctx.fillStyle = palette.textTerminal;
       this.ctx.fillRect(caretX, inputTextY - 20, 2, 24);
     }
@@ -1220,18 +1639,36 @@ export class CanvasRenderer {
     this.ctx.stroke();
     this.ctx.fillStyle = enabled ? palette.textPrimary : palette.textSecondary;
     this.ctx.font = uiFont(24);
-    centeredText(this.ctx, "復旧完了", button.x, button.y + 2, button.width, button.height);
+    centeredText(
+      this.ctx,
+      '復旧完了',
+      button.x,
+      button.y + 2,
+      button.width,
+      button.height
+    );
 
     const retire = inputDockRects.retire;
-    this.ctx.fillStyle = enabled ? palette.bgButtonDanger : palette.bgButtonDangerDisabled;
+    this.ctx.fillStyle = enabled
+      ? palette.bgButtonDanger
+      : palette.bgButtonDangerDisabled;
     roundRect(this.ctx, retire.x, retire.y, retire.width, retire.height, 8);
     this.ctx.fill();
     this.ctx.strokeStyle = palette.borderDanger;
     this.ctx.lineWidth = 2;
     this.ctx.stroke();
-    this.ctx.fillStyle = enabled ? palette.textWarningFg : palette.textSecondary;
+    this.ctx.fillStyle = enabled
+      ? palette.textWarningFg
+      : palette.textSecondary;
     this.ctx.font = uiFont(22);
-    centeredText(this.ctx, "リタイア", retire.x, retire.y + 2, retire.width, retire.height);
+    centeredText(
+      this.ctx,
+      'リタイア',
+      retire.x,
+      retire.y + 2,
+      retire.width,
+      retire.height
+    );
   }
 
   private drawCursor(state: GameRenderState) {
@@ -1246,44 +1683,69 @@ export class CanvasRenderer {
   }
 }
 
-type TerminalVisualLine = {
+interface TerminalVisualLine {
   sourceIndex: number;
   startColumn: number;
   endColumn: number;
   plain: string;
   spans: AnsiSpan[];
-};
+}
 
-export const notificationBellRegion = { x: 1508, y: 34, width: 52, height: 52 } as const;
-
-export const notificationPanelRegion = { x: 1188, y: 92, width: 372, height: 420 } as const;
-
-export const inputDockRects = {
-  input: { x: 70, y: 878, width: 1280, height: 96 },
-  retire: { x: 1370, y: 878, width: 140, height: 96 },
-  button: { x: 1530, y: 878, width: 160, height: 96 }
+export const notificationBellRegion = {
+  x: 1508,
+  y: 34,
+  width: 52,
+  height: 52,
 } as const;
 
-export const navigationOverlayRect = { x: 720, y: 860, width: 480, height: 120 } as const;
+export const notificationPanelRegion = {
+  x: 1188,
+  y: 92,
+  width: 372,
+  height: 420,
+} as const;
+
+export const inputDockRects = {
+  input: {x: 70, y: 878, width: 1280, height: 96},
+  retire: {x: 1370, y: 878, width: 140, height: 96},
+  button: {x: 1530, y: 878, width: 160, height: 96},
+} as const;
+
+export const navigationOverlayRect = {
+  x: 720,
+  y: 860,
+  width: 480,
+  height: 120,
+} as const;
 
 export function centerToolTabRegions() {
-  const monitor = monitorLayouts.find((item) => item.id === "terminal")!;
+  const monitor = monitorLayout('terminal');
   const y = monitor.y + 10;
   const firstX = monitor.x + 22;
   return [
-    { id: "terminal" as const, label: "TERMINAL", x: firstX, y, width: CENTER_TOOL_TAB_WIDTH, height: CENTER_TOOL_TAB_HEIGHT },
     {
-      id: "editor" as const,
-      label: "EDITOR",
+      id: 'terminal' as const,
+      label: 'TERMINAL',
+      x: firstX,
+      y,
+      width: CENTER_TOOL_TAB_WIDTH,
+      height: CENTER_TOOL_TAB_HEIGHT,
+    },
+    {
+      id: 'editor' as const,
+      label: 'EDITOR',
       x: firstX + CENTER_TOOL_TAB_WIDTH + CENTER_TOOL_TAB_GAP,
       y,
       width: CENTER_TOOL_TAB_WIDTH,
-      height: CENTER_TOOL_TAB_HEIGHT
-    }
+      height: CENTER_TOOL_TAB_HEIGHT,
+    },
   ];
 }
 
-export function centerToolAt(x: number, y: number): "terminal" | "editor" | null {
+export function centerToolAt(
+  x: number,
+  y: number
+): 'terminal' | 'editor' | null {
   for (const tab of centerToolTabRegions()) {
     if (containsCanvasPoint(tab, x, y)) return tab.id;
   }
@@ -1291,38 +1753,44 @@ export function centerToolAt(x: number, y: number): "terminal" | "editor" | null
 }
 
 export function centerEditorOverlayRegion(expanded = false) {
-  const monitor = expanded ? expandedMonitorLayout : monitorLayouts.find((item) => item.id === "terminal")!;
+  const monitor = expanded ? expandedMonitorLayout : monitorLayout('terminal');
   const content = monitorContentRegion(monitor);
-  const scale = Math.min(content.width / monitorContentWidth, content.height / monitorContentHeight);
+  const scale = Math.min(
+    content.width / monitorContentWidth,
+    content.height / monitorContentHeight
+  );
   const editorX = 156;
   const editorY = 66;
   return {
     x: content.x + editorX * scale,
     y: content.y + editorY * scale,
     width: (content.width / scale - editorX) * scale,
-    height: 470 * scale
+    height: 470 * scale,
   };
 }
 
 export function metricsPanelScrollRegion(expanded = false) {
-  const monitor = expanded ? expandedMonitorLayout : monitorLayouts.find((item) => item.id === "metrics")!;
+  const monitor = expanded ? expandedMonitorLayout : monitorLayout('metrics');
   const content = monitorContentRegion(monitor);
-  const scale = Math.min(content.width / monitorContentWidth, content.height / monitorContentHeight);
+  const scale = Math.min(
+    content.width / monitorContentWidth,
+    content.height / monitorContentHeight
+  );
   return {
     x: content.x,
     y: content.y + METRICS_SCROLL_TOP * scale,
     width: content.width,
-    height: Math.max(0, content.height - METRICS_SCROLL_TOP * scale)
+    height: Math.max(0, content.height - METRICS_SCROLL_TOP * scale),
   };
 }
 
 export const runbookTabRegion = () => {
-  const layout = rightPanelLayout("runbook", true);
+  const layout = rightPanelLayout('runbook', true);
   return {
     x: runbookContentX,
     y: runbookContentY + layout.secondaryTop - RUNBOOK_TAB_HIT_PAD,
     width: 516,
-    height: RIGHT_PANEL_SECONDARY_TAB_HEIGHT + RUNBOOK_TAB_HIT_PAD * 2
+    height: RIGHT_PANEL_SECONDARY_TAB_HEIGHT + RUNBOOK_TAB_HIT_PAD * 2,
   };
 };
 
@@ -1330,33 +1798,39 @@ function slackComposeScreenRegion(
   activePanelTab: RightPanelTab,
   expandedMonitor: MonitorId | null | undefined
 ) {
-  if (activePanelTab !== "slack") return null;
-  const layout = rightPanelLayout("slack", false);
-  const content = runbookContentTransform(expandedMonitor === "runbook");
+  if (activePanelTab !== 'slack') return null;
+  const layout = rightPanelLayout('slack', false);
+  const content = runbookContentTransform(expandedMonitor === 'runbook');
   return {
     x: content.x,
     y: content.y + layout.composeTop * content.scale,
     width: 470 * content.scale,
-    height: RIGHT_PANEL_COMPOSE_HEIGHT * content.scale
+    height: RIGHT_PANEL_COMPOSE_HEIGHT * content.scale,
   };
 }
 
 export const slackComposeRegion = (
-  activePanelTab: RightPanelTab = "slack",
+  activePanelTab: RightPanelTab = 'slack',
   expandedMonitor: MonitorId | null = null
-) => slackComposeScreenRegion(activePanelTab, expandedMonitor) ?? { x: 0, y: -1000, width: 0, height: 0 };
+) =>
+  slackComposeScreenRegion(activePanelTab, expandedMonitor) ?? {
+    x: 0,
+    y: -1000,
+    width: 0,
+    height: 0,
+  };
 
 export const slackSendButtonRegion = (
-  activePanelTab: RightPanelTab = "slack",
+  activePanelTab: RightPanelTab = 'slack',
   expandedMonitor: MonitorId | null = null
 ) => {
   const compose = slackComposeScreenRegion(activePanelTab, expandedMonitor);
-  if (!compose) return { x: 0, y: -1000, width: 0, height: 0 };
+  if (!compose) return {x: 0, y: -1000, width: 0, height: 0};
   return {
-    x: compose.x + 404 * compose.width / 470,
-    y: compose.y + 8 * compose.height / RIGHT_PANEL_COMPOSE_HEIGHT,
-    width: 56 * compose.width / 470,
-    height: 28 * compose.height / RIGHT_PANEL_COMPOSE_HEIGHT
+    x: compose.x + (404 * compose.width) / 470,
+    y: compose.y + (8 * compose.height) / RIGHT_PANEL_COMPOSE_HEIGHT,
+    width: (56 * compose.width) / 470,
+    height: (28 * compose.height) / RIGHT_PANEL_COMPOSE_HEIGHT,
   };
 };
 
@@ -1370,14 +1844,17 @@ export function monitorMagnifyAt(x: number, y: number): MonitorId | null {
 export function slackComposeAt(
   x: number,
   y: number,
-  activePanelTab: RightPanelTab = "slack",
+  activePanelTab: RightPanelTab = 'slack',
   expandedMonitor: MonitorId | null = null
 ) {
-  const composeRegion = slackComposeScreenRegion(activePanelTab, expandedMonitor);
+  const composeRegion = slackComposeScreenRegion(
+    activePanelTab,
+    expandedMonitor
+  );
   if (!composeRegion || !containsCanvasPoint(composeRegion, x, y)) return null;
   const sendRegion = slackSendButtonRegion(activePanelTab, expandedMonitor);
-  if (containsCanvasPoint(sendRegion, x, y)) return "send" as const;
-  return "compose" as const;
+  if (containsCanvasPoint(sendRegion, x, y)) return 'send' as const;
+  return 'compose' as const;
 }
 
 export function rightPanelPrimaryTabAt(
@@ -1385,21 +1862,23 @@ export function rightPanelPrimaryTabAt(
   y: number,
   expandedMonitor?: MonitorId | null
 ): RightPanelTab | null {
-  if (expandedMonitor && expandedMonitor !== "runbook") return null;
+  if (expandedMonitor && expandedMonitor !== 'runbook') return null;
 
-  const layout = rightPanelLayout("runbook", true);
-  const content = runbookContentTransform(expandedMonitor === "runbook");
+  const layout = rightPanelLayout('runbook', true);
+  const content = runbookContentTransform(expandedMonitor === 'runbook');
   const localY = (y - content.y) / content.scale;
   if (
     localY < layout.primaryTop - RUNBOOK_TAB_HIT_PAD ||
-    localY > layout.primaryTop + RIGHT_PANEL_PRIMARY_TAB_HEIGHT + RUNBOOK_TAB_HIT_PAD
+    localY >
+      layout.primaryTop + RIGHT_PANEL_PRIMARY_TAB_HEIGHT + RUNBOOK_TAB_HIT_PAD
   ) {
     return null;
   }
 
   let tabX = 0;
   for (const tab of RIGHT_PANEL_PRIMARY_TABS) {
-    const hitLeft = content.x + tabX * content.scale - RUNBOOK_TAB_HIT_PAD * content.scale;
+    const hitLeft =
+      content.x + tabX * content.scale - RUNBOOK_TAB_HIT_PAD * content.scale;
     const hitWidth = (tab.width + RUNBOOK_TAB_HIT_PAD * 2) * content.scale;
     if (x >= hitLeft && x <= hitLeft + hitWidth) return tab.id;
     tabX += tab.width + RUNBOOK_TAB_GAP;
@@ -1413,25 +1892,29 @@ export function runbookTabAt(
   runbookCount: number,
   titles: string[],
   expandedMonitor?: MonitorId | null,
-  activePanelTab: RightPanelTab = "runbook"
+  activePanelTab: RightPanelTab = 'runbook'
 ) {
-  if (runbookCount === 0 || activePanelTab !== "runbook") return -1;
-  if (expandedMonitor && expandedMonitor !== "runbook") return -1;
+  if (runbookCount === 0 || activePanelTab !== 'runbook') return -1;
+  if (expandedMonitor && expandedMonitor !== 'runbook') return -1;
 
-  const layout = rightPanelLayout("runbook", true);
-  const content = runbookContentTransform(expandedMonitor === "runbook");
+  const layout = rightPanelLayout('runbook', true);
+  const content = runbookContentTransform(expandedMonitor === 'runbook');
   const localY = (y - content.y) / content.scale;
   if (
     localY < layout.secondaryTop - RUNBOOK_TAB_HIT_PAD ||
-    localY > layout.secondaryTop + RIGHT_PANEL_SECONDARY_TAB_HEIGHT + RUNBOOK_TAB_HIT_PAD
+    localY >
+      layout.secondaryTop +
+        RIGHT_PANEL_SECONDARY_TAB_HEIGHT +
+        RUNBOOK_TAB_HIT_PAD
   ) {
     return -1;
   }
 
   let tabX = 0;
   for (let index = 0; index < runbookCount; index += 1) {
-    const width = measureRunbookTabWidth(titles[index] ?? "");
-    const hitLeft = content.x + tabX * content.scale - RUNBOOK_TAB_HIT_PAD * content.scale;
+    const width = measureRunbookTabWidth(titles[index] ?? '');
+    const hitLeft =
+      content.x + tabX * content.scale - RUNBOOK_TAB_HIT_PAD * content.scale;
     const hitWidth = (width + RUNBOOK_TAB_HIT_PAD * 2) * content.scale;
     if (x >= hitLeft && x <= hitLeft + hitWidth) return index;
     tabX += width + RUNBOOK_TAB_GAP;
@@ -1444,8 +1927,17 @@ function shortenPath(path: string, maxChars: number) {
   return `...${path.slice(-(maxChars - 3))}`;
 }
 
-function containsCanvasPoint(rect: { x: number; y: number; width: number; height: number }, x: number, y: number) {
-  return x >= rect.x && x <= rect.x + rect.width && y >= rect.y && y <= rect.y + rect.height;
+function containsCanvasPoint(
+  rect: {x: number; y: number; width: number; height: number},
+  x: number,
+  y: number
+) {
+  return (
+    x >= rect.x &&
+    x <= rect.x + rect.width &&
+    y >= rect.y &&
+    y <= rect.y + rect.height
+  );
 }
 
 function clamp(value: number, min: number, max: number) {
@@ -1466,8 +1958,11 @@ function drawSparkline(
 
   const peak = Math.max(scaleMax, ...values, 1);
   const points = values.map((value, index) => ({
-    x: values.length === 1 ? x + width / 2 : x + (index / (values.length - 1)) * width,
-    y: y + height - (Math.max(0, value) / peak) * (height - 2) - 1
+    x:
+      values.length === 1
+        ? x + width / 2
+        : x + (index / (values.length - 1)) * width,
+    y: y + height - (Math.max(0, value) / peak) * (height - 2) - 1,
   }));
   const first = points[0];
   const last = points[points.length - 1];
@@ -1506,8 +2001,8 @@ function drawSparkline(
 
   ctx.strokeStyle = color;
   ctx.lineWidth = 1.5;
-  ctx.lineJoin = "round";
-  ctx.lineCap = "round";
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
   ctx.beginPath();
   ctx.moveTo(first.x, first.y);
   for (let index = 1; index < points.length; index += 1) {
@@ -1520,19 +2015,27 @@ function drawSparkline(
 }
 
 function withAlpha(color: string, alpha: number) {
-  if (color.startsWith("#") && (color.length === 7 || color.length === 4)) {
-    const hex = color.length === 4
-      ? `#${color[1]}${color[1]}${color[2]}${color[2]}${color[3]}${color[3]}`
-      : color;
+  if (color.startsWith('#') && (color.length === 7 || color.length === 4)) {
+    const hex =
+      color.length === 4
+        ? `#${color.charAt(1)}${color.charAt(1)}${color.charAt(2)}${color.charAt(2)}${color.charAt(3)}${color.charAt(3)}`
+        : color;
     const r = Number.parseInt(hex.slice(1, 3), 16);
     const g = Number.parseInt(hex.slice(3, 5), 16);
     const b = Number.parseInt(hex.slice(5, 7), 16);
-    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+    return `rgba(${String(r)}, ${String(g)}, ${String(b)}, ${String(alpha)})`;
   }
   return color;
 }
 
-function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, radius: number) {
+function roundRect(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  radius: number
+) {
   const right = x + width;
   const bottom = y + height;
   ctx.beginPath();
@@ -1550,7 +2053,7 @@ function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, width: n
 
 function drawCoverImage(
   ctx: CanvasRenderingContext2D,
-  image: CanvasImageSource & { width: number; height: number },
+  image: CanvasImageSource & {width: number; height: number},
   x: number,
   y: number,
   width: number,
@@ -1571,16 +2074,30 @@ function drawCoverImage(
     sourceY = (image.height - sourceHeight) / 2;
   }
 
-  ctx.drawImage(image, sourceX, sourceY, sourceWidth, sourceHeight, x, y, width, height);
+  ctx.drawImage(
+    image,
+    sourceX,
+    sourceY,
+    sourceWidth,
+    sourceHeight,
+    x,
+    y,
+    width,
+    height
+  );
 }
 
 function normalizeMultilineText(text: string) {
-  return text.replace(/\\n/g, "\n");
+  return text.replace(/\\n/g, '\n');
 }
 
-function wrapCharacters(ctx: CanvasRenderingContext2D, text: string, maxWidth: number) {
+function wrapCharacters(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  maxWidth: number
+) {
   const lines: string[] = [];
-  let line = "";
+  let line = '';
   for (const char of text) {
     const candidate = `${line}${char}`;
     if (ctx.measureText(candidate).width > maxWidth && line) {
@@ -1591,7 +2108,7 @@ function wrapCharacters(ctx: CanvasRenderingContext2D, text: string, maxWidth: n
     }
   }
   if (line) lines.push(line);
-  return lines.length > 0 ? lines : [""];
+  return lines.length > 0 ? lines : [''];
 }
 
 function wrapText(
@@ -1605,7 +2122,7 @@ function wrapText(
 ) {
   let drawn = 0;
 
-  for (const paragraph of normalizeMultilineText(text).split("\n")) {
+  for (const paragraph of normalizeMultilineText(text).split('\n')) {
     if (drawn >= maxLines) return y;
     if (!paragraph.trim()) {
       y += lineHeight;
@@ -1615,15 +2132,15 @@ function wrapText(
 
     const listMatch = paragraph.trim().match(/^(\d+\.\s*)([\s\S]*)$/);
     if (listMatch) {
-      const prefix = listMatch[1] ?? "";
-      const body = listMatch[2] ?? "";
+      const prefix = listMatch[1] ?? '';
+      const body = listMatch[2] ?? '';
       const prefixWidth = ctx.measureText(prefix).width;
       const bodyWidth = Math.max(48, maxWidth - prefixWidth);
       const bodyLines = wrapCharacters(ctx, body, bodyWidth);
 
       for (let index = 0; index < bodyLines.length; index += 1) {
         if (drawn >= maxLines) return y;
-        const segment = bodyLines[index] ?? "";
+        const segment = bodyLines[index] ?? '';
         if (index === 0) {
           ctx.fillText(`${prefix}${segment}`, x, y);
         } else {
@@ -1635,9 +2152,11 @@ function wrapText(
       continue;
     }
 
-    const words = paragraph.includes(" ") ? paragraph.trim().split(/\s+/) : Array.from(paragraph.trim());
-    const separator = paragraph.includes(" ") ? " " : "";
-    let line = "";
+    const words = paragraph.includes(' ')
+      ? paragraph.trim().split(/\s+/)
+      : Array.from(paragraph.trim());
+    const separator = paragraph.includes(' ') ? ' ' : '';
+    let line = '';
 
     for (const word of words) {
       const candidate = line ? `${line}${separator}${word}` : word;
@@ -1662,7 +2181,12 @@ function wrapText(
   return y;
 }
 
-function drawMagnifyIcon(ctx: CanvasRenderingContext2D, x: number, y: number, size: number) {
+function drawMagnifyIcon(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  size: number
+) {
   ctx.save();
   ctx.fillStyle = palette.bgOverlayLight;
   roundRect(ctx, x - 2, y - 2, size + 4, size + 4, 4);
@@ -1682,87 +2206,126 @@ function drawMagnifyIcon(ctx: CanvasRenderingContext2D, x: number, y: number, si
   ctx.restore();
 }
 
-function mirrorTerminalVisualLine(spans: AnsiSpan[], plain: string, sourceIndex: number): TerminalVisualLine {
+function mirrorTerminalVisualLine(
+  spans: AnsiSpan[],
+  plain: string,
+  sourceIndex: number
+): TerminalVisualLine {
   return {
     sourceIndex,
     startColumn: 0,
     endColumn: plain.length,
     plain,
-    spans
+    spans,
   };
 }
 
-function findTerminalCursorVisualLine(lines: TerminalVisualLine[], sourceIndex: number, cursorColumn: number) {
+function findTerminalCursorVisualLine(
+  lines: TerminalVisualLine[],
+  sourceIndex: number,
+  cursorColumn: number
+) {
   for (let index = lines.length - 1; index >= 0; index -= 1) {
     const line = lines[index];
     if (!line || line.sourceIndex !== sourceIndex) continue;
-    if (cursorColumn >= line.startColumn && cursorColumn <= line.endColumn) return index;
+    if (cursorColumn >= line.startColumn && cursorColumn <= line.endColumn) {
+      return index;
+    }
   }
   return -1;
 }
 
 function emptyTerminalVisualLine(sourceIndex: number): TerminalVisualLine {
-  return { sourceIndex, startColumn: 0, endColumn: 0, plain: "", spans: [{ text: "" }] };
+  return {
+    sourceIndex,
+    startColumn: 0,
+    endColumn: 0,
+    plain: '',
+    spans: [{text: ''}],
+  };
 }
 
-function truncateToWidth(ctx: CanvasRenderingContext2D, text: string, maxWidth: number) {
+function truncateToWidth(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  maxWidth: number
+) {
   if (ctx.measureText(text).width <= maxWidth) return text;
-  const ellipsis = "…";
+  const ellipsis = '…';
   let trimmed = text;
-  while (trimmed.length > 0 && ctx.measureText(`${trimmed}${ellipsis}`).width > maxWidth) {
+  while (
+    trimmed.length > 0 &&
+    ctx.measureText(`${trimmed}${ellipsis}`).width > maxWidth
+  ) {
     trimmed = trimmed.slice(0, -1);
   }
   return trimmed ? `${trimmed}${ellipsis}` : ellipsis;
 }
 
-function centeredText(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, width: number, height: number) {
+function centeredText(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  x: number,
+  y: number,
+  width: number,
+  height: number
+) {
   const metrics = ctx.measureText(text);
   ctx.fillText(text, x + (width - metrics.width) / 2, y + height / 2 + 10);
 }
 
 function formatTime(ms: number) {
   const total = Math.floor(ms / 1000);
-  const minutes = Math.floor(total / 60).toString().padStart(2, "0");
-  const seconds = (total % 60).toString().padStart(2, "0");
+  const minutes = Math.floor(total / 60)
+    .toString()
+    .padStart(2, '0');
+  const seconds = (total % 60).toString().padStart(2, '0');
   return `${minutes}:${seconds}`;
 }
 
 function formatNarrativeClock(narrativeHour: number) {
   const totalMinutes = Math.floor(narrativeHour * 60);
-  const hours = Math.floor(totalMinutes / 60).toString().padStart(2, "0");
-  const minutes = (totalMinutes % 60).toString().padStart(2, "0");
+  const hours = Math.floor(totalMinutes / 60)
+    .toString()
+    .padStart(2, '0');
+  const minutes = (totalMinutes % 60).toString().padStart(2, '0');
   return `深夜 ${hours}:${minutes}`;
 }
 
-function formatRecordingStatus(status: GameRenderState["recording"]["status"], saveEnabled: boolean) {
-  if (!saveEnabled) return "LOG ONLY";
+function formatRecordingStatus(
+  status: GameRenderState['recording']['status'],
+  saveEnabled: boolean
+) {
+  if (!saveEnabled) return 'LOG ONLY';
   switch (status) {
-    case "recording":
-      return "REC";
-    case "initializing":
-      return "STARTING";
-    case "stopping":
-    case "finalizing":
-      return "SAVING";
-    case "ready":
-      return "SAVED";
-    case "recording_error":
-    case "unsupported_browser":
-    case "finalization_failed":
-      return "REC ERROR";
-    case "upload_degraded":
-      return "UPLOAD LAG";
-    case "consent_required":
-      return "CONSENT";
-    case "idle":
-      return "IDLE";
+    case 'recording':
+      return 'REC';
+    case 'initializing':
+      return 'STARTING';
+    case 'stopping':
+    case 'finalizing':
+      return 'SAVING';
+    case 'ready':
+      return 'SAVED';
+    case 'recording_error':
+    case 'unsupported_browser':
+    case 'finalization_failed':
+      return 'REC ERROR';
+    case 'upload_degraded':
+      return 'UPLOAD LAG';
+    case 'consent_required':
+      return 'CONSENT';
+    case 'idle':
+      return 'IDLE';
   }
 }
 
-function formatDifficulty(difficulty: GameRenderState["session"]["difficulty"]) {
-  if (difficulty === "beginner") return "初級";
-  if (difficulty === "intermediate") return "中級";
-  return "上級";
+function formatDifficulty(
+  difficulty: GameRenderState['session']['difficulty']
+) {
+  if (difficulty === 'beginner') return '初級';
+  if (difficulty === 'intermediate') return '中級';
+  return '上級';
 }
 
 function formatTerminalInputText(command: string, maxChars = 96) {
@@ -1771,76 +2334,90 @@ function formatTerminalInputText(command: string, maxChars = 96) {
 }
 
 function extractTypedCommand(command: string, maxChars = 96) {
-  const promptEnd = command.lastIndexOf("# ");
+  const promptEnd = command.lastIndexOf('# ');
   const typed = promptEnd >= 0 ? command.slice(promptEnd + 2) : command;
   return formatTerminalInputText(typed, maxChars);
 }
 
-function inputCaretX(ctx: CanvasRenderingContext2D, text: string, startX: number) {
-  const trailingWhitespace = text.match(/[ \t]+$/u)?.[0] ?? "";
-  const visibleText = trailingWhitespace ? text.slice(0, -trailingWhitespace.length) : text;
+function inputCaretX(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  startX: number
+) {
+  const trailingWhitespace = text.match(/[ \t]+$/u)?.[0] ?? '';
+  const visibleText = trailingWhitespace
+    ? text.slice(0, -trailingWhitespace.length)
+    : text;
   const metrics = visibleText ? ctx.measureText(visibleText) : undefined;
   const visibleRight = metrics
-    ? typeof metrics.actualBoundingBoxRight === "number"
+    ? typeof metrics.actualBoundingBoxRight === 'number'
       ? metrics.actualBoundingBoxRight
       : metrics.width
     : 0;
-  const whitespaceWidth = trailingWhitespace ? ctx.measureText(trailingWhitespace).width : 0;
+  const whitespaceWidth = trailingWhitespace
+    ? ctx.measureText(trailingWhitespace).width
+    : 0;
   return startX + visibleRight + whitespaceWidth + 2;
 }
 
-type MetricsHealthSummary = {
+interface MetricsHealthSummary {
   label: string;
   detail: string;
   color: string;
   level: MetricTone;
-};
-
-function metricTone(value: number, warnAt: number, criticalAt: number): MetricTone {
-  if (value >= criticalAt) return "critical";
-  if (value >= warnAt) return "warn";
-  return "healthy";
 }
 
-function summarizeMetricsHealth(metrics: MetricsSnapshot): MetricsHealthSummary {
+function metricTone(
+  value: number,
+  warnAt: number,
+  criticalAt: number
+): MetricTone {
+  if (value >= criticalAt) return 'critical';
+  if (value >= warnAt) return 'warn';
+  return 'healthy';
+}
+
+function summarizeMetricsHealth(
+  metrics: MetricsSnapshot
+): MetricsHealthSummary {
   const issues: string[] = [];
-  let level: MetricTone = "healthy";
+  let level: 'warn' | 'critical' | undefined;
 
   const raise = (tone: MetricTone, message: string) => {
     issues.push(message);
-    if (tone === "critical") level = "critical";
-    else if (tone === "warn" && level !== "critical") level = "warn";
+    if (tone === 'critical') level = 'critical';
+    else if (tone === 'warn' && level !== 'critical') level = 'warn';
   };
 
-  raise(metricTone(metrics.cpu, 70, 85), "CPU elevated");
-  raise(metricTone(metrics.memory, 75, 90), "Memory pressure");
-  raise(metricTone(metrics.disk, 80, 92), "Disk pressure");
-  if (metrics.http5xxRate > 0) raise("critical", "HTTP 5xx detected");
-  raise(metricTone(metrics.latencyP95Ms, 800, 1500), "Latency spike");
-  raise(metricTone(metrics.queueDepth, 12, 24), "Queue backlog");
+  raise(metricTone(metrics.cpu, 70, 85), 'CPU elevated');
+  raise(metricTone(metrics.memory, 75, 90), 'Memory pressure');
+  raise(metricTone(metrics.disk, 80, 92), 'Disk pressure');
+  if (metrics.http5xxRate > 0) raise('critical', 'HTTP 5xx detected');
+  raise(metricTone(metrics.latencyP95Ms, 800, 1500), 'Latency spike');
+  raise(metricTone(metrics.queueDepth, 12, 24), 'Queue backlog');
 
-  if (level === "healthy") {
+  if (issues.length === 0) {
     return {
-      level,
-      label: "HEALTHY",
-      detail: "All monitored signals within SLO",
-      color: toneColor("healthy")
+      level: 'healthy',
+      label: 'HEALTHY',
+      detail: 'All monitored signals within SLO',
+      color: toneColor('healthy'),
     };
   }
 
-  if (level === "warn") {
+  if (level === 'critical') {
     return {
-      level,
-      label: "DEGRADED",
-      detail: issues.slice(0, 2).join(" · "),
-      color: toneColor("warn")
+      level: 'critical',
+      label: 'CRITICAL',
+      detail: issues.slice(0, 2).join(' · '),
+      color: toneColor('critical'),
     };
   }
 
   return {
-    level,
-    label: "CRITICAL",
-    detail: issues.slice(0, 2).join(" · "),
-    color: toneColor("critical")
+    level: 'warn',
+    label: 'DEGRADED',
+    detail: issues.slice(0, 2).join(' · '),
+    color: toneColor('warn'),
   };
 }

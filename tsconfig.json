@@ -12,23 +12,11 @@
     "resolveJsonModule": true,
     "skipLibCheck": true,
     "ignoreDeprecations": "6.0",
-    "types": [
-      "@cloudflare/workers-types",
-      "node"
-    ],
-    "baseUrl": ".",
+    "types": ["@cloudflare/workers-types", "node"],
     "paths": {
-      "@incident/shared": [
-        "packages/shared/src/index.ts"
-      ],
-      "@incident/scenarios": [
-        "packages/scenarios/src/index.ts"
-      ]
+      "@incident/shared": ["./packages/shared/src/index.ts"],
+      "@incident/scenarios": ["./packages/scenarios/src/index.ts"]
     }
   },
-  "include": [
-    "apps/**/*.ts",
-    "apps/**/*.tsx",
-    "packages/**/*.ts"
-  ]
+  "include": ["apps/**/*.ts", "apps/**/*.tsx", "packages/**/*.ts"]
 }

@@ -9,6 +9,6 @@
     "build": "tsx ../../scripts/build-scenarios.mjs"
   },
   "dependencies": {
-    "@incident/shared": "0.1.0"
+    "@incident/shared": "workspace:*"
   }
 }

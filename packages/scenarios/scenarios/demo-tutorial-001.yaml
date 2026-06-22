@@ -1,6 +1,6 @@
 id: demo-tutorial-001
 version: 1
-title: "デモ: 1分復旧ドリル"
+title: 'デモ: 1分復旧ドリル'
 difficulty: beginner
 timeLimitMinutes: 1
 service:

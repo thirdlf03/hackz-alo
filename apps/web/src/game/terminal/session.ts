@@ -1,15 +1,22 @@
-import { SandboxAddon } from "@cloudflare/sandbox/xterm";
-import { Terminal } from "@xterm/xterm";
-import type { TerminalMirrorState } from "@incident/shared";
-import { gamePalette } from "../render/gamePalette.js";
-import { tabCompletionCursorColumn } from "./cursorRepair.js";
-import { installTerminalWebSocketDebug, terminalDebug } from "./debug.js";
-import { defaultTerminalDimensions, measureTerminalCellWidth, terminalLineHeight } from "./layout.js";
-import { terminalToMirrorState } from "./mirror.js";
+import {SandboxAddon} from '@cloudflare/sandbox/xterm';
+import {Terminal} from '@xterm/xterm';
+import type {TerminalMirrorState} from '@incident/shared';
+import {gamePalette} from '../render/gamePalette.js';
+import {tabCompletionCursorColumn} from './cursorRepair.js';
+import {installTerminalWebSocketDebug, terminalDebug} from './debug.js';
+import {
+  defaultTerminalDimensions,
+  measureTerminalCellWidth,
+  terminalLineHeight,
+} from './layout.js';
+import {terminalToMirrorState} from './mirror.js';
 
-export type TerminalConnectionState = "disconnected" | "connecting" | "connected";
+export type TerminalConnectionState =
+  | 'disconnected'
+  | 'connecting'
+  | 'connected';
 
-export type TerminalSessionOptions = {
+export interface TerminalSessionOptions {
   sessionId: string;
   cols?: number;
   rows?: number;
@@ -18,20 +25,20 @@ export type TerminalSessionOptions = {
   onOutput?: (summary: string) => void;
   onConnectionChange?: (state: TerminalConnectionState, error?: Error) => void;
   onResize?: (cols: number, rows: number) => void;
-};
+}
 
 export class TerminalSession {
   private readonly terminal: Terminal;
   private readonly addon: SandboxAddon;
   private readonly container: HTMLDivElement;
-  private readonly disposables: Array<{ dispose: () => void }> = [];
-  private readonly commandHistory: TerminalMirrorState["commandHistory"] = [];
+  private readonly disposables: Array<{dispose: () => void}> = [];
+  private readonly commandHistory: TerminalMirrorState['commandHistory'] = [];
   private readonly cellWidth: number;
   private readonly cellHeight: number;
-  private inputBuffer = "";
-  private connectionState: TerminalConnectionState = "disconnected";
+  private inputBuffer = '';
+  private connectionState: TerminalConnectionState = 'disconnected';
   private snapshotFrame = 0;
-  private lastOutputLine = "";
+  private lastOutputLine = '';
   private tabCompletionExpiresAt = 0;
   private suppressLocalWrite = false;
   private readonly ptyResizeTimers: number[] = [];
@@ -44,10 +51,9 @@ export class TerminalSession {
     this.cellWidth = measureTerminalCellWidth();
     this.cellHeight = terminalLineHeight;
 
-    this.container = document.createElement("div");
-    this.container.setAttribute("aria-hidden", "true");
-    this.container.style.cssText =
-      `position:fixed;left:-10000px;top:0;width:${cols * this.cellWidth}px;height:${rows * this.cellHeight}px;overflow:hidden;opacity:0;visibility:hidden;pointer-events:none;`;
+    this.container = document.createElement('div');
+    this.container.setAttribute('aria-hidden', 'true');
+    this.container.style.cssText = `position:fixed;left:-10000px;top:0;width:${String(cols * this.cellWidth)}px;height:${String(rows * this.cellHeight)}px;overflow:hidden;opacity:0;visibility:hidden;pointer-events:none;`;
     document.body.appendChild(this.container);
 
     this.terminal = new Terminal({
@@ -62,27 +68,27 @@ export class TerminalSession {
       theme: {
         background: gamePalette.bgTerminal,
         foreground: gamePalette.textTerminal,
-        cursor: gamePalette.textTerminal
-      }
+        cursor: gamePalette.textTerminal,
+      },
     });
 
     this.addon = new SandboxAddon({
       reconnect: true,
-      getWebSocketUrl: ({ origin }) =>
+      getWebSocketUrl: ({origin}) =>
         `${origin}/api/sessions/${encodeURIComponent(options.sessionId)}/ws/terminal`,
       onStateChange: (state, error) => {
         this.connectionState = state;
-        terminalDebug("connection", {
+        terminalDebug('connection', {
           state,
-          error: error?.message
+          error: error?.message,
         });
         options.onConnectionChange?.(state, error);
-        if (state === "connected") {
+        if (state === 'connected') {
           this.schedulePtyResizeSync();
           options.onResize?.(this.terminal.cols, this.terminal.rows);
           this.publishSnapshot();
         }
-      }
+      },
     });
 
     this.terminal.loadAddon(this.addon);
@@ -90,16 +96,22 @@ export class TerminalSession {
     this.publishSnapshot();
 
     this.disposables.push(
-      this.terminal.onWriteParsed(() => this.handleWriteParsed()),
-      this.terminal.onLineFeed(() => this.publishSnapshot()),
-      this.terminal.onData((data) => this.handleTerminalData(data))
+      this.terminal.onWriteParsed(() => {
+        this.handleWriteParsed();
+      }),
+      this.terminal.onLineFeed(() => {
+        this.publishSnapshot();
+      }),
+      this.terminal.onData((data) => {
+        this.handleTerminalData(data);
+      })
     );
   }
 
   connect() {
     this.addon.connect({
       sandboxId: `session-${this.options.sessionId}`,
-      sessionId: this.options.sessionId
+      sessionId: this.options.sessionId,
     });
   }
 
@@ -108,14 +120,14 @@ export class TerminalSession {
   }
 
   input(data: string) {
-    if (this.connectionState !== "connected") return;
-    if (data.includes("\t")) {
+    if (this.connectionState !== 'connected') return;
+    if (data.includes('\t')) {
       this.tabCompletionExpiresAt = Date.now() + 500;
     }
-    terminalDebug("session.input", {
-      bytes: [...data].map((char) => char.charCodeAt(0)),
+    terminalDebug('session.input', {
+      bytes: Array.from(data, (char) => char.charCodeAt(0)),
       connection: this.connectionState,
-      sigint: data.includes("\u0003")
+      sigint: data.includes('\u0003'),
     });
     this.terminal.input(data);
   }
@@ -124,8 +136,8 @@ export class TerminalSession {
     if (cols < 12 || rows < 10) return;
     if (this.terminal.cols === cols && this.terminal.rows === rows) return;
     this.terminal.resize(cols, rows);
-    this.container.style.width = `${cols * this.cellWidth}px`;
-    this.container.style.height = `${rows * this.cellHeight}px`;
+    this.container.style.width = `${String(cols * this.cellWidth)}px`;
+    this.container.style.height = `${String(rows * this.cellHeight)}px`;
     this.options.onResize?.(cols, rows);
     this.publishSnapshot();
   }
@@ -152,27 +164,27 @@ export class TerminalSession {
   }
 
   private handleTerminalData(data: string) {
-    if (data.includes("\u0003")) {
-      terminalDebug("xterm.onData", {
-        bytes: [...data].map((char) => char.charCodeAt(0)),
-        connection: this.connectionState
+    if (data.includes('\u0003')) {
+      terminalDebug('xterm.onData', {
+        bytes: Array.from(data, (char) => char.charCodeAt(0)),
+        connection: this.connectionState,
       });
     }
     for (const char of data) {
-      if (char === "\r" || char === "\n") {
+      if (char === '\r' || char === '\n') {
         const command = this.inputBuffer.trim();
-        this.inputBuffer = "";
+        this.inputBuffer = '';
         if (command) {
-          this.commandHistory.push({ at: Date.now(), command });
+          this.commandHistory.push({at: Date.now(), command});
           this.options.onCommand?.(command);
         }
         continue;
       }
-      if (char === "\u007f") {
+      if (char === '\u007f') {
         this.inputBuffer = this.inputBuffer.slice(0, -1);
         continue;
       }
-      if (char >= " " || char === "\t") {
+      if (char >= ' ' || char === '\t') {
         this.inputBuffer += char;
       }
     }
@@ -196,12 +208,15 @@ export class TerminalSession {
     const line = buffer.getLine(buffer.viewportY + buffer.cursorY);
     if (!line) return;
 
-    const targetX = tabCompletionCursorColumn(buffer.cursorX, line.translateToString(true));
+    const targetX = tabCompletionCursorColumn(
+      buffer.cursorX,
+      line.translateToString(true)
+    );
     if (targetX === null) return;
 
-    terminalDebug("cursor.repair.tab", { from: buffer.cursorX, to: targetX });
+    terminalDebug('cursor.repair.tab', {from: buffer.cursorX, to: targetX});
     this.suppressLocalWrite = true;
-    this.terminal.write(`\x1b[${targetX + 1}G`);
+    this.terminal.write(`\x1b[${String(targetX + 1)}G`);
   }
 
   private schedulePtyResizeSync() {
@@ -209,7 +224,7 @@ export class TerminalSession {
     for (const delay of [100, 300]) {
       this.ptyResizeTimers.push(
         window.setTimeout(() => {
-          if (this.connectionState === "connected") this.flushPtyResize();
+          if (this.connectionState === 'connected') this.flushPtyResize();
         }, delay)
       );
     }
@@ -228,7 +243,7 @@ export class TerminalSession {
     this.snapshotFrame = requestAnimationFrame(() => {
       this.snapshotFrame = 0;
       const snapshot = this.snapshot();
-      const lastLine = snapshot.lines.at(-1) ?? "";
+      const lastLine = snapshot.lines.at(-1) ?? '';
       if (lastLine && lastLine !== this.lastOutputLine) {
         this.lastOutputLine = lastLine;
         this.options.onOutput?.(lastLine.slice(0, 120));

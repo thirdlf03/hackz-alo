@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Verifies every scenario can reach a resolved state when runbook-style fixes are applied.
- * Requires: npm run dev (worker on :8787, Docker for sandbox)
+ * Requires: pnpm run dev (worker on :8787, Docker for sandbox)
  */
 import { readFile } from "node:fs/promises";
 import path from "node:path";

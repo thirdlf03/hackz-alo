@@ -11,6 +11,10 @@ export function computeGameTimeMs(
   return Math.max(0, Math.round(gameTimeMs + wallDelta * gameSpeed));
 }
 
-export function wallDelayForGameMs(currentGameMs: number, targetGameMs: number, gameSpeed: number) {
+export function wallDelayForGameMs(
+  currentGameMs: number,
+  targetGameMs: number,
+  gameSpeed: number
+) {
   return Math.max(0, (targetGameMs - currentGameMs) / Math.max(gameSpeed, 0.1));
 }

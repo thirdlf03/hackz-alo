@@ -3,9 +3,12 @@
  * even though the prompt line text is correct. Repair only when the cursor is
  * still inside the prompt prefix and typed input exists after "# ".
  */
-export function tabCompletionCursorColumn(cursorX: number, lineText: string): number | null {
+export function tabCompletionCursorColumn(
+  cursorX: number,
+  lineText: string
+): number | null {
   const trimmed = lineText.trimEnd();
-  const promptEnd = trimmed.lastIndexOf("# ");
+  const promptEnd = trimmed.lastIndexOf('# ');
   if (promptEnd < 0) return null;
 
   const targetX = trimmed.length;

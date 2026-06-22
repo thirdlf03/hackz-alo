@@ -16,15 +16,18 @@ MVP implementation for the incident-response training game described in
 ## Local Checks
 
 ```sh
-npm test
+pnpm test
+pnpm run fmt:check
+pnpm run lint
+pnpm run typecheck
 ```
 
 Install workspace dependencies before running the Vite/Worker dev servers:
 
 ```sh
-npm install
-npm run dev:web
-npm run dev:worker
+pnpm install
+pnpm run dev:web
+pnpm run dev:worker
 ```
 
 ## Deploy (Worker + static frontend)
@@ -36,15 +39,15 @@ One-time Cloudflare setup:
 
 ```sh
 wrangler login
-npm run setup:cloudflare
-npm run db:migrate:remote
+pnpm run setup:cloudflare
+pnpm run db:migrate:remote
 ```
 
 Deploy:
 
 ```sh
-npm run deploy
+pnpm run deploy
 ```
 
-`npm run deploy` builds scenarios, builds `apps/web/dist`, then runs `wrangler deploy`.
+`pnpm run deploy` builds scenarios, builds `apps/web/dist`, then runs `wrangler deploy`.
 R2 bucket creation and container image upload are handled by Wrangler during deploy.

@@ -1,8 +1,8 @@
 const replayIdPattern = /^[a-zA-Z0-9_-]{6,80}$/;
 
 export function assertReplayId(replayId: string): string {
-  if (typeof replayId !== "string" || !replayIdPattern.test(replayId)) {
-    throw new Error("invalid replayId");
+  if (typeof replayId !== 'string' || !replayIdPattern.test(replayId)) {
+    throw new Error('invalid replayId');
   }
   return replayId;
 }
@@ -29,7 +29,7 @@ export function replayThumbnailKey(replayId: string): string {
 
 function assertSeq(seq: number): string {
   if (!Number.isInteger(seq) || seq < 0 || seq > 999999) {
-    throw new Error("invalid sequence number");
+    throw new Error('invalid sequence number');
   }
-  return String(seq).padStart(6, "0");
+  return String(seq).padStart(6, '0');
 }

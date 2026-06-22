@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "preact/hooks";
-import { ApiClient } from "../api/client.js";
+import {useEffect, useMemo, useRef, useState} from 'preact/hooks';
+import {ApiClient} from '../api/client.js';
 import {
   buildTimelineFromEvents,
   formatDuration,
@@ -9,81 +9,106 @@ import {
   parseRecordingStartedAtGameMs,
   timelineDisplaySeconds,
   type IndexedReplayEvent,
-  type TimelineEntry
-} from "../replay/replayMediaUtils.js";
+  type TimelineEntry,
+} from '../replay/replayMediaUtils.js';
 
-type Props = {
+interface Props {
   replayId: string;
   timeline: TimelineEntry[];
-};
+}
 
-type ReplayMeta = {
+interface ReplayMeta {
   scenario_id: string;
   difficulty: string;
   result: string | null;
   duration_ms: number | null;
   video_duration_ms?: number | null;
   browser_info_json?: string | null;
-};
+}
 
-type VideoLoadState = "loading" | "ready" | "unavailable";
+type VideoLoadState = 'loading' | 'ready' | 'unavailable';
 
 const api = new ApiClient();
 const timelineSeekPrerollSeconds = 1;
 
-export function ReplayPage({ replayId, timeline }: Props) {
+export function ReplayPage({replayId, timeline}: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const seekRequestRef = useRef(0);
   const [meta, setMeta] = useState<ReplayMeta>();
   const [events, setEvents] = useState<IndexedReplayEvent[]>([]);
-  const [comments, setComments] = useState<Array<{ id: string; at_ms: number; body: string }>>([]);
-  const [tab, setTab] = useState<"timeline" | "commands" | "alerts" | "runbooks" | "comments">("timeline");
+  const [comments, setComments] = useState<
+    Array<{id: string; at_ms: number; body: string}>
+  >([]);
+  const [tab, setTab] = useState<
+    'timeline' | 'commands' | 'alerts' | 'runbooks' | 'comments'
+  >('timeline');
   const [currentTime, setCurrentTime] = useState(0);
   const [activeTimelineId, setActiveTimelineId] = useState<string>();
   const [loadError, setLoadError] = useState<string>();
   const [videoSrc, setVideoSrc] = useState<string>();
-  const [videoLoadState, setVideoLoadState] = useState<VideoLoadState>("loading");
+  const [videoLoadState, setVideoLoadState] =
+    useState<VideoLoadState>('loading');
   const [videoDuration, setVideoDuration] = useState(0);
-  const [commentDraft, setCommentDraft] = useState("");
+  const [commentDraft, setCommentDraft] = useState('');
   const [shareWarning, setShareWarning] = useState(false);
 
-  const browserInfo = useMemo(() => parseBrowserInfo(meta?.browser_info_json), [meta?.browser_info_json]);
+  const browserInfo = useMemo(
+    () => parseBrowserInfo(meta?.browser_info_json),
+    [meta?.browser_info_json]
+  );
   const persistedVideoDuration = (meta?.video_duration_ms ?? 0) / 1000;
-  const effectiveVideoDuration = videoDuration > 0 ? videoDuration : persistedVideoDuration;
+  const effectiveVideoDuration =
+    videoDuration > 0 ? videoDuration : persistedVideoDuration;
   const recordingStartMs = useMemo(
-    () => parseRecordingStartedAtGameMs(browserInfo, meta?.duration_ms ?? 0, effectiveVideoDuration),
+    () =>
+      parseRecordingStartedAtGameMs(
+        browserInfo,
+        meta?.duration_ms ?? 0,
+        effectiveVideoDuration
+      ),
     [browserInfo, meta?.duration_ms, effectiveVideoDuration]
   );
-  const recordingClockSegments = useMemo(() => parseRecordingClockSegments(browserInfo), [browserInfo]);
+  const recordingClockSegments = useMemo(
+    () => parseRecordingClockSegments(browserInfo),
+    [browserInfo]
+  );
 
   useEffect(() => {
     let partialUrl: string | undefined;
     setVideoSrc(undefined);
-    setVideoLoadState("loading");
+    setVideoLoadState('loading');
     setVideoDuration(0);
     setCurrentTime(0);
-    Promise.all([api.getReplay(replayId), api.getReplayEvents(replayId), api.getReplayComments(replayId)])
+    Promise.all([
+      api.getReplay(replayId),
+      api.getReplayEvents(replayId),
+      api.getReplayComments(replayId),
+    ])
       .then(([replay, indexed, loadedComments]) => {
         setMeta(replay as ReplayMeta);
         setEvents(indexed);
         setComments(loadedComments);
       })
-      .catch((error) => setLoadError(error instanceof Error ? error.message : "failed to load"));
+      .catch((error: unknown) => {
+        setLoadError(error instanceof Error ? error.message : 'failed to load');
+      });
 
-    fetch(`/api/replays/${encodeURIComponent(replayId)}/video`, { method: "HEAD" })
+    fetch(`/api/replays/${encodeURIComponent(replayId)}/video`, {
+      method: 'HEAD',
+    })
       .then(async (response) => {
         if (response.ok) {
           setVideoSrc(`/api/replays/${encodeURIComponent(replayId)}/video`);
-          setVideoLoadState("ready");
+          setVideoLoadState('ready');
           return;
         }
         partialUrl = await api.assemblePartialReplayVideo(replayId);
         setVideoSrc(partialUrl);
-        setVideoLoadState("ready");
+        setVideoLoadState('ready');
       })
       .catch(() => {
         setVideoSrc(undefined);
-        setVideoLoadState("unavailable");
+        setVideoLoadState('unavailable');
       });
 
     return () => {
@@ -91,18 +116,24 @@ export function ReplayPage({ replayId, timeline }: Props) {
     };
   }, [replayId]);
 
-  const visibleTimeline = useMemo(() => buildTimelineFromEvents(events, timeline), [events, timeline]);
-  const commands = events.filter((event) => event.type === "command_detected");
-  const alerts = events.filter((event) => event.type === "alert");
-  const runbooks = events.filter((event) => event.type === "runbook_open");
-  const hasReplayVideo = videoLoadState === "ready" && Boolean(videoSrc);
-  const isVideoTimingReady = videoLoadState === "unavailable" || effectiveVideoDuration > 0;
-  const displayDurationMs = effectiveVideoDuration > 0
-    ? Math.round(effectiveVideoDuration * 1000)
-    : meta?.duration_ms ?? 0;
-  const durationLabel = (videoLoadState === "loading" || hasReplayVideo) && !isVideoTimingReady
-    ? "計算中…"
-    : formatDuration(displayDurationMs);
+  const visibleTimeline = useMemo(
+    () => buildTimelineFromEvents(events, timeline),
+    [events, timeline]
+  );
+  const commands = events.filter((event) => event.type === 'command_detected');
+  const alerts = events.filter((event) => event.type === 'alert');
+  const runbooks = events.filter((event) => event.type === 'runbook_open');
+  const hasReplayVideo = videoLoadState === 'ready' && Boolean(videoSrc);
+  const isVideoTimingReady =
+    videoLoadState === 'unavailable' || effectiveVideoDuration > 0;
+  const displayDurationMs =
+    effectiveVideoDuration > 0
+      ? Math.round(effectiveVideoDuration * 1000)
+      : (meta?.duration_ms ?? 0);
+  const durationLabel =
+    (videoLoadState === 'loading' || hasReplayVideo) && !isVideoTimingReady
+      ? '計算中…'
+      : formatDuration(displayDurationMs);
 
   function timelineVideoSeconds(gameSeconds: number) {
     return timelineDisplaySeconds(
@@ -133,15 +164,21 @@ export function ReplayPage({ replayId, timeline }: Props) {
   function rememberVideoDuration(video: HTMLVideoElement) {
     const duration = video.duration;
     if (!Number.isFinite(duration) || duration <= 0) return;
-    setVideoDuration((current) => Math.abs(current - duration) < 0.001 ? current : duration);
+    setVideoDuration((current) =>
+      Math.abs(current - duration) < 0.001 ? current : duration
+    );
   }
 
   async function submitComment() {
     const body = commentDraft.trim();
     if (!body) return;
-    const created = await api.addReplayComment(replayId, Math.round(currentTime * 1000), body);
+    const created = await api.addReplayComment(
+      replayId,
+      Math.round(currentTime * 1000),
+      body
+    );
     setComments((items) => [...items, created]);
-    setCommentDraft("");
+    setCommentDraft('');
   }
 
   function copyShareLink() {
@@ -154,162 +191,225 @@ export function ReplayPage({ replayId, timeline }: Props) {
   }
 
   const tabIds = {
-    timeline: "replay-tab-timeline",
-    commands: "replay-tab-commands",
-    alerts: "replay-tab-alerts",
-    runbooks: "replay-tab-runbooks",
-    comments: "replay-tab-comments"
+    timeline: 'replay-tab-timeline',
+    commands: 'replay-tab-commands',
+    alerts: 'replay-tab-alerts',
+    runbooks: 'replay-tab-runbooks',
+    comments: 'replay-tab-comments',
   } as const;
   const panelIds = {
-    timeline: "replay-panel-timeline",
-    commands: "replay-panel-commands",
-    alerts: "replay-panel-alerts",
-    runbooks: "replay-panel-runbooks",
-    comments: "replay-panel-comments"
+    timeline: 'replay-panel-timeline',
+    commands: 'replay-panel-commands',
+    alerts: 'replay-panel-alerts',
+    runbooks: 'replay-panel-runbooks',
+    comments: 'replay-panel-comments',
   } as const;
 
   return (
-    <section class="replay-layout expanded" aria-label="リプレイ詳細">
-      <div class="replay-main">
+    <section class='replay-layout expanded' aria-label='リプレイ詳細'>
+      <div class='replay-main'>
         {videoSrc ? (
           <video
             ref={videoRef}
             controls
-            preload="metadata"
+            preload='metadata'
             src={videoSrc}
             onLoadedMetadata={(event: Event) => {
               const video = event.currentTarget as HTMLVideoElement;
               rememberVideoDuration(video);
             }}
-            onDurationChange={(event: Event) => rememberVideoDuration(event.currentTarget as HTMLVideoElement)}
+            onDurationChange={(event: Event) => {
+              rememberVideoDuration(event.currentTarget as HTMLVideoElement);
+            }}
             onTimeUpdate={(event: Event) => {
               const video = event.currentTarget as HTMLVideoElement;
               rememberVideoDuration(video);
               setCurrentTime(video.currentTime);
             }}
           />
-        ) : videoLoadState === "loading" ? (
-          <p class="result-replay-note">動画の時間を計算中です…</p>
+        ) : videoLoadState === 'loading' ? (
+          <p class='result-replay-note'>動画の時間を計算中です…</p>
         ) : (
-          <p class="result-replay-note">保存された録画はありません。タイムラインのみ表示しています。</p>
+          <p class='result-replay-note'>
+            保存された録画はありません。タイムラインのみ表示しています。
+          </p>
         )}
-        <div class="replay-meta">
-          <span>結果: {meta?.result ?? "-"}</span>
-          <span>難易度: {meta?.difficulty ?? "-"}</span>
+        <div class='replay-meta'>
+          <span>結果: {meta?.result ?? '-'}</span>
+          <span>難易度: {meta?.difficulty ?? '-'}</span>
           <span>対応時間: {durationLabel}</span>
         </div>
-        <button type="button" aria-label="共有リンクをコピー" onClick={copyShareLink}>共有リンクをコピー</button>
+        <button
+          type='button'
+          aria-label='共有リンクをコピー'
+          onClick={copyShareLink}
+        >
+          共有リンクをコピー
+        </button>
         {shareWarning && (
-          <p class="visibility-warning" role="alert">
-            ターミナル入力や Slack の内容が含まれる可能性があります。共有前に内容を確認してください。
+          <p class='visibility-warning' role='alert'>
+            ターミナル入力や Slack
+            の内容が含まれる可能性があります。共有前に内容を確認してください。
           </p>
         )}
       </div>
-      <aside class="replay-side">
-        <div class="replay-tabs" role="tablist" aria-label="リプレイ情報">
-          {(["timeline", "commands", "alerts", "runbooks", "comments"] as const).map((item) => (
+      <aside class='replay-side'>
+        <div class='replay-tabs' role='tablist' aria-label='リプレイ情報'>
+          {(
+            ['timeline', 'commands', 'alerts', 'runbooks', 'comments'] as const
+          ).map((item) => (
             <button
               key={item}
               id={tabIds[item]}
-              type="button"
-              role="tab"
-              class={tab === item ? "active" : ""}
+              type='button'
+              role='tab'
+              class={tab === item ? 'active' : ''}
               aria-selected={tab === item}
               aria-controls={panelIds[item]}
-              onClick={() => setTab(item)}
+              onClick={() => {
+                setTab(item);
+              }}
             >
               {tabLabel(item)}
             </button>
           ))}
         </div>
-        <div class="replay-panel-scroll" tabIndex={0}>
-        {tab === "timeline" && (
-          isVideoTimingReady ? (
-            <ol
-              id={panelIds.timeline}
-              class="timeline"
-              role="tabpanel"
-              aria-labelledby={tabIds.timeline}
+        <div class='replay-panel-scroll' tabIndex={0}>
+          {tab === 'timeline' &&
+            (isVideoTimingReady ? (
+              <ol
+                id={panelIds.timeline}
+                class='timeline'
+                role='tabpanel'
+                aria-labelledby={tabIds.timeline}
+              >
+                {visibleTimeline.map((event) => {
+                  const videoSeconds = timelineVideoSeconds(event.at);
+                  const seekSeconds = videoSeconds - timelineSeekPrerollSeconds;
+                  return (
+                    <li key={event.id}>
+                      {videoSrc ? (
+                        <button
+                          type='button'
+                          aria-current={
+                            activeTimelineId === event.id ? 'time' : undefined
+                          }
+                          onMouseDown={() => {
+                            seekVideoSeconds(seekSeconds, event.id);
+                          }}
+                          onClick={() => {
+                            seekVideoSeconds(seekSeconds, event.id);
+                          }}
+                        >
+                          {formatSeconds(videoSeconds)} {event.label}
+                        </button>
+                      ) : (
+                        <span>
+                          {formatSeconds(videoSeconds)} {event.label}
+                        </span>
+                      )}
+                    </li>
+                  );
+                })}
+              </ol>
+            ) : (
+              <p
+                class='result-replay-note'
+                id={panelIds.timeline}
+                role='tabpanel'
+                aria-labelledby={tabIds.timeline}
+              >
+                タイムラインの時間を計算中です…
+              </p>
+            ))}
+          {tab === 'commands' && (
+            <ul
+              id={panelIds.commands}
+              class='replay-list'
+              role='tabpanel'
+              aria-labelledby={tabIds.commands}
             >
-              {visibleTimeline.map((event) => {
-                const videoSeconds = timelineVideoSeconds(event.at);
-                const seekSeconds = videoSeconds - timelineSeekPrerollSeconds;
-                return (
-                  <li key={event.id}>
-                    {videoSrc ? (
-                      <button
-                        type="button"
-                        aria-current={activeTimelineId === event.id ? "time" : undefined}
-                        onMouseDown={() => seekVideoSeconds(seekSeconds, event.id)}
-                        onClick={() => seekVideoSeconds(seekSeconds, event.id)}
-                      >
-                        {formatSeconds(videoSeconds)} {event.label}
-                      </button>
-                    ) : (
-                      <span>{formatSeconds(videoSeconds)} {event.label}</span>
-                    )}
-                  </li>
-                );
-              })}
-            </ol>
-          ) : (
-            <p class="result-replay-note" id={panelIds.timeline} role="tabpanel" aria-labelledby={tabIds.timeline}>
-              タイムラインの時間を計算中です…
-            </p>
-          )
-        )}
-        {tab === "commands" && (
-          <ul id={panelIds.commands} class="replay-list" role="tabpanel" aria-labelledby={tabIds.commands}>
-            {commands.map((event) => <li key={event.event_id}>{event.summary}</li>)}
-          </ul>
-        )}
-        {tab === "alerts" && (
-          <ul id={panelIds.alerts} class="replay-list" role="tabpanel" aria-labelledby={tabIds.alerts}>
-            {alerts.map((event) => <li key={event.event_id}>{event.summary}</li>)}
-          </ul>
-        )}
-        {tab === "runbooks" && (
-          <ul id={panelIds.runbooks} class="replay-list" role="tabpanel" aria-labelledby={tabIds.runbooks}>
-            {runbooks.map((event) => <li key={event.event_id}>{event.summary}</li>)}
-          </ul>
-        )}
-        {tab === "comments" && (
-          <section
-            id={panelIds.comments}
-            class="replay-comments"
-            role="tabpanel"
-            aria-labelledby={tabIds.comments}
-          >
-            <ul class="replay-list">
-              {comments.map((comment) => (
-                <li key={comment.id}>
-                  {videoSrc ? (
-                    <button type="button" onClick={() => seekVideoSeconds(comment.at_ms / 1000)}>
-                      {formatSeconds(comment.at_ms / 1000)} {comment.body}
-                    </button>
-                  ) : (
-                    <span>{formatSeconds(comment.at_ms / 1000)} {comment.body}</span>
-                  )}
-                </li>
+              {commands.map((event) => (
+                <li key={event.event_id}>{event.summary}</li>
               ))}
             </ul>
-          </section>
-        )}
+          )}
+          {tab === 'alerts' && (
+            <ul
+              id={panelIds.alerts}
+              class='replay-list'
+              role='tabpanel'
+              aria-labelledby={tabIds.alerts}
+            >
+              {alerts.map((event) => (
+                <li key={event.event_id}>{event.summary}</li>
+              ))}
+            </ul>
+          )}
+          {tab === 'runbooks' && (
+            <ul
+              id={panelIds.runbooks}
+              class='replay-list'
+              role='tabpanel'
+              aria-labelledby={tabIds.runbooks}
+            >
+              {runbooks.map((event) => (
+                <li key={event.event_id}>{event.summary}</li>
+              ))}
+            </ul>
+          )}
+          {tab === 'comments' && (
+            <section
+              id={panelIds.comments}
+              class='replay-comments'
+              role='tabpanel'
+              aria-labelledby={tabIds.comments}
+            >
+              <ul class='replay-list'>
+                {comments.map((comment) => (
+                  <li key={comment.id}>
+                    {videoSrc ? (
+                      <button
+                        type='button'
+                        onClick={() => {
+                          seekVideoSeconds(comment.at_ms / 1000);
+                        }}
+                      >
+                        {formatSeconds(comment.at_ms / 1000)} {comment.body}
+                      </button>
+                    ) : (
+                      <span>
+                        {formatSeconds(comment.at_ms / 1000)} {comment.body}
+                      </span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
         </div>
-        {tab === "comments" && (
-          <section class="replay-comments" aria-label="コメント入力">
-            <label for="replay-comment-draft">この時刻へのコメント</label>
+        {tab === 'comments' && (
+          <section class='replay-comments' aria-label='コメント入力'>
+            <label for='replay-comment-draft'>この時刻へのコメント</label>
             <textarea
-              id="replay-comment-draft"
+              id='replay-comment-draft'
               value={commentDraft}
-              onInput={(event) => setCommentDraft((event.currentTarget as HTMLTextAreaElement).value)}
+              onInput={(event) => {
+                setCommentDraft(event.currentTarget.value);
+              }}
               rows={3}
-              placeholder="この時刻へのコメント…"
+              placeholder='この時刻へのコメント…'
             />
-            <button type="button" onClick={() => void submitComment()}>コメント追加</button>
+            <button type='button' onClick={() => void submitComment()}>
+              コメント追加
+            </button>
           </section>
         )}
-        {loadError && <p class="app-error" role="alert">{loadError}</p>}
+        {loadError && (
+          <p class='app-error' role='alert'>
+            {loadError}
+          </p>
+        )}
       </aside>
     </section>
   );
@@ -322,15 +422,19 @@ function clampSeekTime(video: HTMLVideoElement, seconds: number) {
     : lower;
 }
 
-function seekMediaElement(video: HTMLVideoElement, target: number, onReady: () => void) {
+function seekMediaElement(
+  video: HTMLVideoElement,
+  target: number,
+  onReady: () => void
+) {
   let timeout = 0;
   const done = () => {
     window.clearTimeout(timeout);
-    video.removeEventListener("seeked", done);
+    video.removeEventListener('seeked', done);
     onReady();
   };
 
-  video.addEventListener("seeked", done, { once: true });
+  video.addEventListener('seeked', done, {once: true});
   video.currentTime = target;
 
   if (!video.seeking && Math.abs(video.currentTime - target) < 0.1) {
@@ -340,10 +444,12 @@ function seekMediaElement(video: HTMLVideoElement, target: number, onReady: () =
   timeout = window.setTimeout(done, 800);
 }
 
-function tabLabel(tab: "timeline" | "commands" | "alerts" | "runbooks" | "comments") {
-  if (tab === "timeline") return "タイムライン";
-  if (tab === "commands") return "コマンド";
-  if (tab === "alerts") return "アラート";
-  if (tab === "comments") return "コメント";
-  return "Runbook";
+function tabLabel(
+  tab: 'timeline' | 'commands' | 'alerts' | 'runbooks' | 'comments'
+) {
+  if (tab === 'timeline') return 'タイムライン';
+  if (tab === 'commands') return 'コマンド';
+  if (tab === 'alerts') return 'アラート';
+  if (tab === 'comments') return 'コメント';
+  return 'Runbook';
 }

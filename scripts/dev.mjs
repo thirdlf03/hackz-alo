@@ -12,13 +12,13 @@ const env = {
 const processes = [
   {
     name: "worker",
-    command: "npm",
-    args: ["--workspace", "apps/worker", "run", "dev"]
+    command: "pnpm",
+    args: ["--filter", "@incident/worker", "run", "dev"]
   },
   {
     name: "web",
-    command: "npm",
-    args: ["--workspace", "apps/web", "run", "dev"]
+    command: "pnpm",
+    args: ["--filter", "@incident/web", "run", "dev"]
   }
 ];
 

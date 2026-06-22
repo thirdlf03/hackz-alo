@@ -1,48 +1,49 @@
 #!/usr/bin/env node
-import { spawn } from "node:child_process";
-import { access, appendFile, mkdir, open, rm, writeFile } from "node:fs/promises";
-import net from "node:net";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { getHealth } from "../services/unyoh-api/server.mjs";
+import {spawn} from 'node:child_process';
+import {access, appendFile, mkdir, open, rm, writeFile} from 'node:fs/promises';
+import net from 'node:net';
+import path from 'node:path';
+import {fileURLToPath} from 'node:url';
+import {getHealth} from '../services/unyoh-api/server.mjs';
 
-const DEFAULT_WORKSPACE = process.env.WORKSPACE_DIR ?? "/workspace";
-const SANDBOX_CONTROL_URL = process.env.SANDBOX_CONTROL_URL ?? "http://127.0.0.1:3000";
-const API_PROCESS_ID = "api";
+const DEFAULT_WORKSPACE = process.env.WORKSPACE_DIR ?? '/workspace';
+const SANDBOX_CONTROL_URL =
+  process.env.SANDBOX_CONTROL_URL ?? 'http://127.0.0.1:3000';
+const API_PROCESS_ID = 'api';
 const API_PORT = 8080;
 const API_START_COMMAND = `PORT=${API_PORT} node /workspace/services/unyoh-api/server.mjs`;
 const PORT_WAIT_MS = 30_000;
-const USAGE = "usage: unctl <status|restart|stop> api";
+const USAGE = 'usage: unctl <status|restart|stop> api';
 
 export async function runUnctl(command, service, options = {}) {
   const workspace = options.workspace ?? DEFAULT_WORKSPACE;
-  if (!["status", "restart", "stop"].includes(command) || service !== "api") {
+  if (!['status', 'restart', 'stop'].includes(command) || service !== 'api') {
     throw usageError();
   }
 
-  const runDir = path.join(workspace, "run");
-  const downMarker = path.join(runDir, "api.down");
-  await mkdir(runDir, { recursive: true });
+  const runDir = path.join(workspace, 'run');
+  const downMarker = path.join(runDir, 'api.down');
+  await mkdir(runDir, {recursive: true});
 
-  if (command === "status") {
-    if (await exists(downMarker)) return "api stopped";
+  if (command === 'status') {
+    if (await exists(downMarker)) return 'api stopped';
     const health = await getHealth(workspace);
     if (!health.ok) return `api degraded (${health.reason})`;
-    return "api running";
+    return 'api running';
   }
 
-  if (command === "restart") {
-    await rm(downMarker, { force: true });
-    await appendAppLog(workspace, "api restarted by unctl\n");
+  if (command === 'restart') {
+    await rm(downMarker, {force: true});
+    await appendAppLog(workspace, 'api restarted by unctl\n');
     if (options.ensureProcess) {
       await ensureApiProcess(workspace);
     }
-    return "api restarted";
+    return 'api restarted';
   }
 
   await writeFile(downMarker, new Date().toISOString());
-  await appendAppLog(workspace, "api stopped by unctl\n");
-  return "api stopped";
+  await appendAppLog(workspace, 'api stopped by unctl\n');
+  return 'api stopped';
 }
 
 async function exists(file) {
@@ -56,19 +57,20 @@ async function exists(file) {
 
 function usageError() {
   const error = new Error(USAGE);
-  error.code = "USAGE";
+  error.code = 'USAGE';
   return error;
 }
 
 async function appendAppLog(workspace, line) {
-  await mkdir(path.join(workspace, "logs"), { recursive: true });
-  await appendFile(path.join(workspace, "logs", "app.log"), line);
+  await mkdir(path.join(workspace, 'logs'), {recursive: true});
+  await appendFile(path.join(workspace, 'logs', 'app.log'), line);
 }
 
 async function ensureApiProcess(workspace) {
   if (await canConnect(API_PORT)) return;
 
-  const restartedViaControlPlane = await restartViaSandboxControlPlane(workspace);
+  const restartedViaControlPlane =
+    await restartViaSandboxControlPlane(workspace);
   if (!restartedViaControlPlane) {
     await restartViaDetachedSpawn(workspace);
   }
@@ -79,17 +81,17 @@ async function ensureApiProcess(workspace) {
 }
 
 async function restartViaSandboxControlPlane(workspace) {
-  const baseUrl = SANDBOX_CONTROL_URL.replace(/\/$/, "");
+  const baseUrl = SANDBOX_CONTROL_URL.replace(/\/$/, '');
   try {
-    await fetch(`${baseUrl}/api/process/${API_PROCESS_ID}`, { method: "DELETE" });
+    await fetch(`${baseUrl}/api/process/${API_PROCESS_ID}`, {method: 'DELETE'});
   } catch {
     return false;
   }
 
   try {
     const response = await fetch(`${baseUrl}/api/process/start`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
+      method: 'POST',
+      headers: {'content-type': 'application/json'},
       body: JSON.stringify({
         command: API_START_COMMAND,
         processId: API_PROCESS_ID,
@@ -97,9 +99,9 @@ async function restartViaSandboxControlPlane(workspace) {
         autoCleanup: false,
         env: {
           PORT: String(API_PORT),
-          WORKSPACE_DIR: workspace
-        }
-      })
+          WORKSPACE_DIR: workspace,
+        },
+      }),
     });
     if (!response.ok) return false;
     const payload = await response.json();
@@ -110,15 +112,25 @@ async function restartViaSandboxControlPlane(workspace) {
 }
 
 async function restartViaDetachedSpawn(workspace) {
-  await mkdir(path.join(workspace, "logs"), { recursive: true });
-  const stdout = await open(path.join(workspace, "logs", "unyoh-api.out.log"), "a");
-  const stderr = await open(path.join(workspace, "logs", "unyoh-api.err.log"), "a");
-  const child = spawn("node", [path.join(workspace, "services", "unyoh-api", "server.mjs")], {
-    cwd: workspace,
-    detached: true,
-    env: { ...process.env, PORT: String(API_PORT), WORKSPACE_DIR: workspace },
-    stdio: ["ignore", stdout.fd, stderr.fd]
-  });
+  await mkdir(path.join(workspace, 'logs'), {recursive: true});
+  const stdout = await open(
+    path.join(workspace, 'logs', 'unyoh-api.out.log'),
+    'a'
+  );
+  const stderr = await open(
+    path.join(workspace, 'logs', 'unyoh-api.err.log'),
+    'a'
+  );
+  const child = spawn(
+    'node',
+    [path.join(workspace, 'services', 'unyoh-api', 'server.mjs')],
+    {
+      cwd: workspace,
+      detached: true,
+      env: {...process.env, PORT: String(API_PORT), WORKSPACE_DIR: workspace},
+      stdio: ['ignore', stdout.fd, stderr.fd],
+    }
+  );
   child.unref();
   stdout.close().catch(() => {});
   stderr.close().catch(() => {});
@@ -126,16 +138,16 @@ async function restartViaDetachedSpawn(workspace) {
 
 function canConnect(port) {
   return new Promise((resolve) => {
-    const socket = net.createConnection({ host: "127.0.0.1", port });
+    const socket = net.createConnection({host: '127.0.0.1', port});
     const done = (ok) => {
       socket.removeAllListeners();
       socket.destroy();
       resolve(ok);
     };
     socket.setTimeout(300);
-    socket.once("connect", () => done(true));
-    socket.once("timeout", () => done(false));
-    socket.once("error", () => done(false));
+    socket.once('connect', () => done(true));
+    socket.once('timeout', () => done(false));
+    socket.once('error', () => done(false));
   });
 }
 
@@ -148,12 +160,17 @@ async function waitForPort(port, timeoutMs) {
   return false;
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
+if (
+  process.argv[1] &&
+  fileURLToPath(import.meta.url) === path.resolve(process.argv[1])
+) {
   const [command, service] = process.argv.slice(2);
   try {
-    process.stdout.write(`${await runUnctl(command, service, { ensureProcess: true })}\n`);
+    process.stdout.write(
+      `${await runUnctl(command, service, {ensureProcess: true})}\n`
+    );
   } catch (error) {
-    console.error(error.code === "USAGE" ? USAGE : error.message);
+    console.error(error.code === 'USAGE' ? USAGE : error.message);
     process.exit(1);
   }
 }

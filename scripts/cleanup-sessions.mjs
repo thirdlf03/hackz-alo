@@ -13,7 +13,7 @@ const STALE_CREATED_MAX_MINUTES = 20;
 const LOCAL_WORKER_URL = "http://127.0.0.1:8787";
 
 function usage() {
-  console.log(`Usage: npm run cleanup:sessions -- [options]
+  console.log(`Usage: pnpm run cleanup:sessions -- [options]
 
 放置された play session / Sandbox コンテナを掃除します。
 各セッションに timeout API を送り、Sandbox を destroy します。
@@ -31,10 +31,10 @@ Options:
   INCIDENT_WORKER_URL   --url の代わりに Worker URL を指定
 
 Examples:
-  npm run cleanup:sessions -- --all
-  npm run cleanup:sessions -- --all --url https://incident-training-worker.naokimiura15.workers.dev
-  INCIDENT_WORKER_URL=https://... npm run cleanup:sessions -- --stale
-  npm run cleanup:sessions -- --local --all
+  pnpm run cleanup:sessions -- --all
+  pnpm run cleanup:sessions -- --all --url https://incident-training-worker.naokimiura15.workers.dev
+  INCIDENT_WORKER_URL=https://... pnpm run cleanup:sessions -- --stale
+  pnpm run cleanup:sessions -- --local --all
 `);
 }
 
@@ -100,7 +100,7 @@ function readWorkerName() {
 }
 
 function runWrangler(args) {
-  const result = spawnSync("npx", ["wrangler", ...args], {
+  const result = spawnSync("pnpm", ["exec", "wrangler", ...args], {
     cwd: workerDir,
     encoding: "utf8",
     stdio: ["inherit", "pipe", "pipe"]
@@ -119,8 +119,8 @@ function resolveWorkerUrl(options) {
 
   const dryRunDir = path.join(workerDir, ".wrangler", "cleanup-dry-run");
   const result = spawnSync(
-    "npx",
-    ["wrangler", "deploy", "--dry-run", "--outdir", dryRunDir],
+    "pnpm",
+    ["exec", "wrangler", "deploy", "--dry-run", "--outdir", dryRunDir],
     { cwd: workerDir, encoding: "utf8", stdio: ["inherit", "pipe", "pipe"] }
   );
   const output = `${result.stdout}\n${result.stderr}`;

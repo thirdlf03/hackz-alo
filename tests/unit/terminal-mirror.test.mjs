@@ -1,8 +1,11 @@
-import test from "node:test";
-import assert from "node:assert/strict";
-import { createEmptyTerminalMirror, terminalToMirrorState } from "../../apps/web/src/game/terminal/mirror.ts";
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {
+  createEmptyTerminalMirror,
+  terminalToMirrorState,
+} from '../../apps/web/src/game/terminal/mirror.ts';
 
-test("createEmptyTerminalMirror provides a connecting placeholder", () => {
+test('createEmptyTerminalMirror provides a connecting placeholder', () => {
   const mirror = createEmptyTerminalMirror(80, 24);
   assert.equal(mirror.cols, 80);
   assert.equal(mirror.rows, 24);
@@ -10,7 +13,7 @@ test("createEmptyTerminalMirror provides a connecting placeholder", () => {
   assert.equal(mirror.commandHistory.length, 0);
 });
 
-test("terminalToMirrorState reads only the visible xterm viewport", () => {
+test('terminalToMirrorState reads only the visible xterm viewport', () => {
   const requested = [];
   const terminal = {
     cols: 80,
@@ -24,22 +27,25 @@ test("terminalToMirrorState reads only the visible xterm viewport", () => {
         getLine(index) {
           requested.push(index);
           return {
-            translateToString: (trimRight = false) => (index === 101 && trimRight === false ? "line-101 " : `line-${index}`)
+            translateToString: (trimRight = false) =>
+              index === 101 && trimRight === false
+                ? 'line-101 '
+                : `line-${index}`,
           };
-        }
-      }
-    }
+        },
+      },
+    },
   };
 
   const mirror = terminalToMirrorState(terminal);
 
   assert.deepEqual([...new Set(requested)], [100, 101, 102]);
-  assert.deepEqual(mirror.lines, ["line-100", "line-101", "line-102"]);
-  assert.deepEqual(mirror.cursor, { x: 4, y: 1, visible: true });
-  assert.equal(mirror.commandDraft, "line-101");
+  assert.deepEqual(mirror.lines, ['line-100', 'line-101', 'line-102']);
+  assert.deepEqual(mirror.cursor, {x: 4, y: 1, visible: true});
+  assert.equal(mirror.commandDraft, 'line-101');
 });
 
-test("terminalToMirrorState keeps typed trailing spaces without xterm row padding", () => {
+test('terminalToMirrorState keeps typed trailing spaces without xterm row padding', () => {
   const terminal = {
     cols: 20,
     rows: 1,
@@ -52,20 +58,21 @@ test("terminalToMirrorState keeps typed trailing spaces without xterm row paddin
         length: 1,
         getLine() {
           return {
-            translateToString: (trimRight = false) => trimRight ? "root# echo" : "root# echo".padEnd(20, " ")
+            translateToString: (trimRight = false) =>
+              trimRight ? 'root# echo' : 'root# echo'.padEnd(20, ' '),
           };
-        }
-      }
-    }
+        },
+      },
+    },
   };
 
   const mirror = terminalToMirrorState(terminal);
 
-  assert.deepEqual(mirror.lines, ["root# echo"]);
-  assert.equal(mirror.commandDraft, "root# echo");
+  assert.deepEqual(mirror.lines, ['root# echo']);
+  assert.equal(mirror.commandDraft, 'root# echo');
 });
 
-test("terminalToMirrorState preserves current-line spaces up to the cursor", () => {
+test('terminalToMirrorState preserves current-line spaces up to the cursor', () => {
   const terminal = {
     cols: 20,
     rows: 1,
@@ -78,20 +85,21 @@ test("terminalToMirrorState preserves current-line spaces up to the cursor", () 
         length: 1,
         getLine() {
           return {
-            translateToString: (trimRight = false) => trimRight ? "root# echo" : "root# echo".padEnd(20, " ")
+            translateToString: (trimRight = false) =>
+              trimRight ? 'root# echo' : 'root# echo'.padEnd(20, ' '),
           };
-        }
-      }
-    }
+        },
+      },
+    },
   };
 
   const mirror = terminalToMirrorState(terminal);
 
-  assert.deepEqual(mirror.lines, ["root# echo  "]);
-  assert.equal(mirror.commandDraft, "root# echo  ");
+  assert.deepEqual(mirror.lines, ['root# echo  ']);
+  assert.equal(mirror.commandDraft, 'root# echo  ');
 });
 
-test("terminalToMirrorState keeps command draft across wrapped cursor line", () => {
+test('terminalToMirrorState keeps command draft across wrapped cursor line', () => {
   const terminal = {
     cols: 20,
     rows: 2,
@@ -106,17 +114,17 @@ test("terminalToMirrorState keeps command draft across wrapped cursor line", () 
           return {
             isWrapped: index === 1,
             translateToString: (trimRight = false) => {
-              if (index === 0) return "root# curl localhost:";
-              return trimRight ? "" : "".padEnd(20, " ");
-            }
+              if (index === 0) return 'root# curl localhost:';
+              return trimRight ? '' : ''.padEnd(20, ' ');
+            },
           };
-        }
-      }
-    }
+        },
+      },
+    },
   };
 
   const mirror = terminalToMirrorState(terminal);
 
-  assert.deepEqual(mirror.lines, ["root# curl localhost:", ""]);
-  assert.equal(mirror.commandDraft, "root# curl localhost:");
+  assert.deepEqual(mirror.lines, ['root# curl localhost:', '']);
+  assert.equal(mirror.commandDraft, 'root# curl localhost:');
 });

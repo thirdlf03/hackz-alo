@@ -1,20 +1,23 @@
-import type { Terminal } from "@xterm/xterm";
-import type { TerminalMirrorState } from "@incident/shared";
+import type {Terminal} from '@xterm/xterm';
+import type {TerminalMirrorState} from '@incident/shared';
 
-export function createEmptyTerminalMirror(cols = 80, rows = 24): TerminalMirrorState {
+export function createEmptyTerminalMirror(
+  cols = 80,
+  rows = 24
+): TerminalMirrorState {
   return {
     cols,
     rows,
-    lines: ["sandbox に接続しています..."],
-    cursor: { x: 0, y: 0, visible: true },
-    commandDraft: "",
-    commandHistory: []
+    lines: ['sandbox に接続しています...'],
+    cursor: {x: 0, y: 0, visible: true},
+    commandDraft: '',
+    commandHistory: [],
   };
 }
 
 export function terminalToMirrorState(
   terminal: Terminal,
-  commandHistory: TerminalMirrorState["commandHistory"] = []
+  commandHistory: TerminalMirrorState['commandHistory'] = []
 ): TerminalMirrorState {
   const buffer = terminal.buffer.active;
   const viewportY = buffer.viewportY;
@@ -26,44 +29,52 @@ export function terminalToMirrorState(
     const line = buffer.getLine(index);
     const isCursorLine = index === cursorLineIndex;
     const preserveUntilColumn =
-      line && isCursorLine && !shouldIgnoreWrappedBlankCursorPadding(line, isCursorLine)
+      line &&
+      isCursorLine &&
+      !shouldIgnoreWrappedBlankCursorPadding(line, isCursorLine)
         ? buffer.cursorX
         : undefined;
-    const text = line
-      ? mirrorLineText(line, preserveUntilColumn)
-      : "";
+    const text = line ? mirrorLineText(line, preserveUntilColumn) : '';
     lines.push(text);
   }
 
   return {
     cols: terminal.cols,
     rows: terminal.rows,
-    lines: lines.length > 0 ? lines : [""],
+    lines: lines.length > 0 ? lines : [''],
     cursor: {
       x: buffer.cursorX,
       y: buffer.cursorY,
-      visible: true
+      visible: true,
     },
     commandDraft: commandDraftAtCursor(buffer, cursorLineIndex, buffer.cursorX),
-    commandHistory: commandHistory.map((item) => ({ ...item }))
+    commandHistory: commandHistory.map((item) => ({...item})),
   };
 }
 
-function mirrorLineText(line: NonNullable<ReturnType<Terminal["buffer"]["active"]["getLine"]>>, preserveUntilColumn?: number) {
+function mirrorLineText(
+  line: NonNullable<ReturnType<Terminal['buffer']['active']['getLine']>>,
+  preserveUntilColumn?: number
+) {
   const trimmed = line.translateToString(true);
-  if (preserveUntilColumn === undefined || trimmed.length >= preserveUntilColumn) return trimmed;
+  if (
+    preserveUntilColumn === undefined ||
+    trimmed.length >= preserveUntilColumn
+  ) {
+    return trimmed;
+  }
   return line.translateToString(false).slice(0, preserveUntilColumn);
 }
 
 function shouldIgnoreWrappedBlankCursorPadding(
-  line: NonNullable<ReturnType<Terminal["buffer"]["active"]["getLine"]>>,
+  line: NonNullable<ReturnType<Terminal['buffer']['active']['getLine']>>,
   isCursorLine: boolean
 ) {
-  return isCursorLine && line.isWrapped && line.translateToString(true) === "";
+  return isCursorLine && line.isWrapped && line.translateToString(true) === '';
 }
 
 function commandDraftAtCursor(
-  buffer: Terminal["buffer"]["active"],
+  buffer: Terminal['buffer']['active'],
   cursorLineIndex: number,
   cursorColumn: number
 ) {
@@ -76,8 +87,14 @@ function commandDraftAtCursor(
   for (let index = startLineIndex; index <= cursorLineIndex; index += 1) {
     const line = buffer.getLine(index);
     if (!line) continue;
-    if (shouldIgnoreWrappedBlankCursorPadding(line, index === cursorLineIndex)) continue;
-    parts.push(mirrorLineText(line, index === cursorLineIndex ? cursorColumn : undefined));
+    if (
+      shouldIgnoreWrappedBlankCursorPadding(line, index === cursorLineIndex)
+    ) {
+      continue;
+    }
+    parts.push(
+      mirrorLineText(line, index === cursorLineIndex ? cursorColumn : undefined)
+    );
   }
-  return parts.join("");
+  return parts.join('');
 }

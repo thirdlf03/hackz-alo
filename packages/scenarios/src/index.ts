@@ -1,21 +1,21 @@
-import type { Difficulty, ScenarioDefinition } from "@incident/shared";
-import { validateScenarioDefinition } from "@incident/shared";
-import demoTutorial from "../data/demo-tutorial-001.json" with { type: "json" };
-import processStop from "../data/process-stop-001.json" with { type: "json" };
-import diskFull from "../data/disk-full-001.json" with { type: "json" };
-import unlangBatch from "../data/unlang-batch-001.json" with { type: "json" };
-import dbPool from "../data/db-pool-001.json" with { type: "json" };
-import badDeploy from "../data/bad-deploy-001.json" with { type: "json" };
-import logBloat from "../data/log-bloat-001.json" with { type: "json" };
-import diskRestartLoop from "../data/disk-restart-loop-001.json" with { type: "json" };
-import monitorBlind from "../data/monitor-blind-001.json" with { type: "json" };
-import unlangMystery from "../data/unlang-mystery-001.json" with { type: "json" };
-import janitorPower from "../data/janitor-power-001.json" with { type: "json" };
-import cableJumprope from "../data/cable-jumprope-001.json" with { type: "json" };
-import keyboardSpill from "../data/keyboard-spill-001.json" with { type: "json" };
-import alertSpam from "../data/alert-spam-001.json" with { type: "json" };
-import runbookGaslight from "../data/runbook-gaslight-001.json" with { type: "json" };
-import chaoticNight from "../data/chaotic-night-001.json" with { type: "json" };
+import type {Difficulty, ScenarioDefinition} from '@incident/shared';
+import {validateScenarioDefinition} from '@incident/shared';
+import demoTutorial from '../data/demo-tutorial-001.json' with {type: 'json'};
+import processStop from '../data/process-stop-001.json' with {type: 'json'};
+import diskFull from '../data/disk-full-001.json' with {type: 'json'};
+import unlangBatch from '../data/unlang-batch-001.json' with {type: 'json'};
+import dbPool from '../data/db-pool-001.json' with {type: 'json'};
+import badDeploy from '../data/bad-deploy-001.json' with {type: 'json'};
+import logBloat from '../data/log-bloat-001.json' with {type: 'json'};
+import diskRestartLoop from '../data/disk-restart-loop-001.json' with {type: 'json'};
+import monitorBlind from '../data/monitor-blind-001.json' with {type: 'json'};
+import unlangMystery from '../data/unlang-mystery-001.json' with {type: 'json'};
+import janitorPower from '../data/janitor-power-001.json' with {type: 'json'};
+import cableJumprope from '../data/cable-jumprope-001.json' with {type: 'json'};
+import keyboardSpill from '../data/keyboard-spill-001.json' with {type: 'json'};
+import alertSpam from '../data/alert-spam-001.json' with {type: 'json'};
+import runbookGaslight from '../data/runbook-gaslight-001.json' with {type: 'json'};
+import chaoticNight from '../data/chaotic-night-001.json' with {type: 'json'};
 
 export const scenarios = [
   demoTutorial,
@@ -33,7 +33,7 @@ export const scenarios = [
   keyboardSpill,
   alertSpam,
   runbookGaslight,
-  chaoticNight
+  chaoticNight,
 ] as ScenarioDefinition[];
 
 export function listScenarios() {
@@ -42,7 +42,7 @@ export function listScenarios() {
     version: scenario.version,
     title: scenario.title,
     difficulty: scenario.difficulty,
-    timeLimitMinutes: scenario.timeLimitMinutes
+    timeLimitMinutes: scenario.timeLimitMinutes,
   }));
 }
 
@@ -54,7 +54,9 @@ export function getRandomScenarioByDifficulty(
   difficulty: Difficulty,
   random: () => number = Math.random
 ): ScenarioDefinition | undefined {
-  const matching = scenarios.filter((scenario) => scenario.difficulty === difficulty);
+  const matching = scenarios.filter(
+    (scenario) => scenario.difficulty === difficulty
+  );
   if (matching.length === 0) return undefined;
   return matching[Math.floor(random() * matching.length) % matching.length];
 }
@@ -62,6 +64,8 @@ export function getRandomScenarioByDifficulty(
 export function validateAllScenarios(): string[] {
   return scenarios.flatMap((scenario) => {
     const result = validateScenarioDefinition(scenario);
-    return result.ok ? [] : result.errors.map((error) => `${scenario.id}: ${error}`);
+    return result.ok
+      ? []
+      : result.errors.map((error) => `${scenario.id}: ${error}`);
   });
 }

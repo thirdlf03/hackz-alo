@@ -1,36 +1,48 @@
-import type { AlertDefinition, EditorPanelState, GameRenderState, MetricsSnapshot, RunbookDefinition, ScenarioDefinition, TerminalMirrorState } from "@incident/shared";
+import type {
+  EditorPanelState,
+  GameRenderState,
+  MetricsSnapshot,
+  RunbookDefinition,
+  ScenarioDefinition,
+  TerminalMirrorState,
+} from '@incident/shared';
 
 const METRICS_HISTORY_LIMIT = 30;
 
-type InitialGameStateOptions = {
-  sessionStatus?: GameRenderState["session"]["status"];
-  recordingStatus?: GameRenderState["recording"]["status"];
+interface InitialGameStateOptions {
+  sessionStatus?: GameRenderState['session']['status'];
+  recordingStatus?: GameRenderState['recording']['status'];
   recordingSaveEnabled?: boolean;
   speed?: number;
-};
+}
 
-const DEFAULT_EDITOR_FILES: EditorPanelState["files"] = [
-  { path: "/workspace/services/batch/sales.un" },
-  { path: "/workspace/run/deploy.json" },
-  { path: "/workspace/run/hosts.override" },
-  { path: "/workspace/run/job-queue.jsonl" }
+const DEFAULT_EDITOR_FILES: EditorPanelState['files'] = [
+  {path: '/workspace/services/batch/sales.un'},
+  {path: '/workspace/run/deploy.json'},
+  {path: '/workspace/run/hosts.override'},
+  {path: '/workspace/run/job-queue.jsonl'},
 ];
 
 function defaultEditor(): EditorPanelState {
   return {
     files: DEFAULT_EDITOR_FILES,
     currentPath: DEFAULT_EDITOR_FILES[0]?.path,
-    content: "",
-    savedContent: "",
+    content: '',
+    savedContent: '',
     dirty: false,
-    status: "idle",
+    status: 'idle',
     error: undefined,
-    cursor: { line: 1, column: 1 }
+    cursor: {line: 1, column: 1},
   };
 }
 
-export function visibleRunbooks(scenario: ScenarioDefinition, elapsedMs: number): RunbookDefinition[] {
-  return scenario.runbooks.filter((runbook) => (runbook.availableAtMs ?? 0) <= elapsedMs);
+export function visibleRunbooks(
+  scenario: ScenarioDefinition,
+  elapsedMs: number
+): RunbookDefinition[] {
+  return scenario.runbooks.filter(
+    (runbook) => (runbook.availableAtMs ?? 0) <= elapsedMs
+  );
 }
 
 export function createInitialGameState(
@@ -50,47 +62,49 @@ export function createInitialGameState(
       scenarioId: scenario.id,
       scenarioTitle: scenario.title,
       difficulty: scenario.difficulty,
-      status: options.sessionStatus ?? "briefing"
+      status: options.sessionStatus ?? 'briefing',
     },
     clock: {
       elapsedMs: 0,
       timeLimitMs: scenario.timeLimitMinutes * 60 * 1000,
-      speed: options.speed ?? 1
+      speed: options.speed ?? 1,
     },
     monitors: {
       left: {
         metrics: emptyMetrics(),
         metricsHistory: [],
-        metricsSource: "loading",
-        alerts: []
+        metricsSource: 'loading',
+        alerts: [],
       },
       center: {
-        activeTool: "terminal",
+        activeTool: 'terminal',
         terminal,
-        editor: defaultEditor()
+        editor: defaultEditor(),
       },
       right: {
-        activePanelTab: "runbook",
-        ...(activeRunbook ? { activeRunbook, activeRunbookIndex: 0 } : { activeRunbookIndex: 0 }),
-        slackMessages: []
-      }
+        activePanelTab: 'runbook',
+        ...(activeRunbook
+          ? {activeRunbook, activeRunbookIndex: 0}
+          : {activeRunbookIndex: 0}),
+        slackMessages: [],
+      },
     },
-    navigation: { dismissedStepIds: [] },
-    notifications: { panelOpen: false, readAlertIds: [], pulseMs: 0 },
+    navigation: {dismissedStepIds: []},
+    notifications: {panelOpen: false, readAlertIds: [], pulseMs: 0},
     seenSlackIds: [],
     playerSlackMessages: [],
-    slackCompose: { active: false, draft: "" },
+    slackCompose: {active: false, draft: ''},
     openedRunbookIds: activeRunbook ? [activeRunbook.id] : [],
     alertFlashMs: 0,
-    world: { narrativeHour: 0, expandedMonitor: null },
+    world: {narrativeHour: 0, expandedMonitor: null},
     commandInputFocused: false,
-    cursor: { x: 960, y: 540, visible: true },
+    cursor: {x: 960, y: 540, visible: true},
     clickEffects: [],
     recording: {
-      status: options.recordingStatus ?? "idle",
+      status: options.recordingStatus ?? 'idle',
       chunkCount: 0,
-      saveEnabled: options.recordingSaveEnabled ?? true
-    }
+      saveEnabled: options.recordingSaveEnabled ?? true,
+    },
   };
 }
 
@@ -100,98 +114,131 @@ export function advanceGameState(
   scenario?: ScenarioDefinition,
   speed = state.clock.speed,
   deltaMs = 0,
-  serverAlerts?: GameRenderState["monitors"]["left"]["alerts"],
-  serverSlack?: GameRenderState["monitors"]["right"]["slackMessages"]
+  serverAlerts?: GameRenderState['monitors']['left']['alerts'],
+  serverSlack?: GameRenderState['monitors']['right']['slackMessages']
 ): GameRenderState {
-  const alerts = serverAlerts ?? (scenario
-    ? scenario.alerts.filter((alert) => alert.atMs <= elapsedMs)
-    : state.monitors.left.alerts);
-  const slackMessages = serverSlack ?? (scenario
-    ? scenario.slackMessages.filter((message) => message.atMs <= elapsedMs)
-    : state.monitors.right.slackMessages);
+  const alerts =
+    serverAlerts ??
+    (scenario
+      ? scenario.alerts.filter((alert) => alert.atMs <= elapsedMs)
+      : state.monitors.left.alerts);
+  const slackMessages =
+    serverSlack ??
+    (scenario
+      ? scenario.slackMessages.filter((message) => message.atMs <= elapsedMs)
+      : state.monitors.right.slackMessages);
 
-  const prevVisibleRunbooks = scenario ? visibleRunbooks(scenario, state.clock.elapsedMs) : [];
-  const nextVisibleRunbooks = scenario ? visibleRunbooks(scenario, elapsedMs) : [];
-  const newRunbookArrived = nextVisibleRunbooks.length > prevVisibleRunbooks.length;
+  const prevVisibleRunbooks = scenario
+    ? visibleRunbooks(scenario, state.clock.elapsedMs)
+    : [];
+  const nextVisibleRunbooks = scenario
+    ? visibleRunbooks(scenario, elapsedMs)
+    : [];
+  const newRunbookArrived =
+    nextVisibleRunbooks.length > prevVisibleRunbooks.length;
 
-  const activeStep = resolveNavigationStep(scenario, elapsedMs, state.navigation.dismissedStepIds);
+  const activeStep = resolveNavigationStep(
+    scenario,
+    elapsedMs,
+    state.navigation.dismissedStepIds
+  );
   const newAlertArrived = alerts.length > state.monitors.left.alerts.length;
   const previousSlackIds = new Set([
     ...state.monitors.right.slackMessages.map((message) => message.id),
-    ...state.playerSlackMessages.map((message) => message.id)
+    ...state.playerSlackMessages.map((message) => message.id),
   ]);
-  const newSlackArrived = slackMessages.some((message) => !previousSlackIds.has(message.id));
+  const newSlackArrived = slackMessages.some(
+    (message) => !previousSlackIds.has(message.id)
+  );
   const notificationPulseMs =
     newAlertArrived || newSlackArrived || newRunbookArrived
       ? 2400
       : Math.max(0, state.notifications.pulseMs - deltaMs);
 
   const activeRunbookStillVisible = state.monitors.right.activeRunbook
-    ? nextVisibleRunbooks.some((runbook) => runbook.id === state.monitors.right.activeRunbook?.id)
+    ? nextVisibleRunbooks.some(
+        (runbook) => runbook.id === state.monitors.right.activeRunbook?.id
+      )
     : false;
   const nextActiveRunbook = activeRunbookStillVisible
     ? state.monitors.right.activeRunbook
     : nextVisibleRunbooks[0];
   const nextActiveRunbookIndex = nextActiveRunbook
-    ? Math.max(0, nextVisibleRunbooks.findIndex((runbook) => runbook.id === nextActiveRunbook.id))
+    ? Math.max(
+        0,
+        nextVisibleRunbooks.findIndex(
+          (runbook) => runbook.id === nextActiveRunbook.id
+        )
+      )
     : 0;
 
   const nextStatus =
-    state.session.status === "resolved" ||
-    state.session.status === "failed" ||
-    state.session.status === "retired"
+    state.session.status === 'resolved' ||
+    state.session.status === 'failed' ||
+    state.session.status === 'retired'
       ? state.session.status
-      : "running";
+      : 'running';
 
   return {
     ...state,
-    session: { ...state.session, status: nextStatus },
-    clock: { ...state.clock, elapsedMs, speed },
+    session: {...state.session, status: nextStatus},
+    clock: {...state.clock, elapsedMs, speed},
     monitors: {
       ...state.monitors,
       left: {
         ...state.monitors.left,
-        alerts
+        alerts,
       },
       right: {
         activePanelTab: state.monitors.right.activePanelTab,
         slackMessages,
         activeRunbookIndex: nextActiveRunbook ? nextActiveRunbookIndex : 0,
-        ...(nextActiveRunbook ? { activeRunbook: nextActiveRunbook } : {})
-      }
+        ...(nextActiveRunbook ? {activeRunbook: nextActiveRunbook} : {}),
+      },
     },
     navigation: {
       dismissedStepIds: state.navigation.dismissedStepIds,
-      ...(activeStep ? { activeStepId: activeStep.id } : {})
+      ...(activeStep ? {activeStepId: activeStep.id} : {}),
     },
     notifications: {
       ...state.notifications,
-      pulseMs: notificationPulseMs
+      pulseMs: notificationPulseMs,
     },
     alertFlashMs: 0,
     world: {
       narrativeHour: computeNarrativeHour(elapsedMs, state.clock.timeLimitMs),
-      expandedMonitor: state.world.expandedMonitor
-    }
+      expandedMonitor: state.world.expandedMonitor,
+    },
   };
 }
 
-export function decayWorldOverlays(state: GameRenderState, deltaMs: number): GameRenderState {
-  const warningFlashMs = state.warning ? Math.max(0, state.warning.flashMs - deltaMs) : 0;
+export function decayWorldOverlays(
+  state: GameRenderState,
+  deltaMs: number
+): GameRenderState {
+  const warningFlashMs = state.warning
+    ? Math.max(0, state.warning.flashMs - deltaMs)
+    : 0;
   const warningUnchanged =
-    warningFlashMs === (state.warning?.flashMs ?? 0) && (warningFlashMs > 0 || !state.warning);
+    warningFlashMs === (state.warning?.flashMs ?? 0) &&
+    (warningFlashMs > 0 || !state.warning);
   if (warningUnchanged) return state;
-  const next: GameRenderState = { ...state };
+  const next: GameRenderState = {...state};
   if (warningFlashMs > 0 && state.warning) {
-    next.warning = { ...state.warning, flashMs: warningFlashMs };
+    next.warning = {...state.warning, flashMs: warningFlashMs};
   } else {
     delete next.warning;
   }
   return next;
 }
 
-export function applyLiveMetrics(state: GameRenderState, metrics: MetricsSnapshot): GameRenderState {
-  const history = [...state.monitors.left.metricsHistory, metrics].slice(-METRICS_HISTORY_LIMIT);
+export function applyLiveMetrics(
+  state: GameRenderState,
+  metrics: MetricsSnapshot
+): GameRenderState {
+  const history = [...state.monitors.left.metricsHistory, metrics].slice(
+    -METRICS_HISTORY_LIMIT
+  );
   return {
     ...state,
     monitors: {
@@ -200,27 +247,38 @@ export function applyLiveMetrics(state: GameRenderState, metrics: MetricsSnapsho
         ...state.monitors.left,
         metrics,
         metricsHistory: history,
-        metricsSource: "live"
-      }
-    }
+        metricsSource: 'live',
+      },
+    },
   };
 }
 
-export function dismissNavigationStep(state: GameRenderState, stepId: string): GameRenderState {
+export function dismissNavigationStep(
+  state: GameRenderState,
+  stepId: string
+): GameRenderState {
   if (state.navigation.dismissedStepIds.includes(stepId)) return state;
   return {
     ...state,
     navigation: {
-      dismissedStepIds: [...state.navigation.dismissedStepIds, stepId]
-    }
+      dismissedStepIds: [...state.navigation.dismissedStepIds, stepId],
+    },
   };
 }
 
-export function setRightPanelTab(state: GameRenderState, tab: "runbook" | "slack"): GameRenderState {
+export function setRightPanelTab(
+  state: GameRenderState,
+  tab: 'runbook' | 'slack'
+): GameRenderState {
   if (state.monitors.right.activePanelTab === tab) return state;
   const seenSlackIds =
-    tab === "slack"
-      ? [...new Set([...state.seenSlackIds, ...mergedSlackMessages(state).map((message) => message.id)])]
+    tab === 'slack'
+      ? [
+          ...new Set([
+            ...state.seenSlackIds,
+            ...mergedSlackMessages(state).map((message) => message.id),
+          ]),
+        ]
       : state.seenSlackIds;
   return {
     ...state,
@@ -228,15 +286,22 @@ export function setRightPanelTab(state: GameRenderState, tab: "runbook" | "slack
       ...state.monitors,
       right: {
         ...state.monitors.right,
-        activePanelTab: tab
-      }
+        activePanelTab: tab,
+      },
     },
     seenSlackIds,
-    slackCompose: tab === "slack" ? state.slackCompose : { ...state.slackCompose, active: false }
+    slackCompose:
+      tab === 'slack'
+        ? state.slackCompose
+        : {...state.slackCompose, active: false},
   };
 }
 
-export function setActiveRunbook(state: GameRenderState, scenario: ScenarioDefinition, index: number): GameRenderState {
+export function setActiveRunbook(
+  state: GameRenderState,
+  scenario: ScenarioDefinition,
+  index: number
+): GameRenderState {
   const runbook = visibleRunbooks(scenario, state.clock.elapsedMs)[index];
   if (!runbook) return state;
   const openedRunbookIds = state.openedRunbookIds.includes(runbook.id)
@@ -248,27 +313,31 @@ export function setActiveRunbook(state: GameRenderState, scenario: ScenarioDefin
       ...state.monitors,
       right: {
         ...state.monitors.right,
-        activePanelTab: "runbook",
+        activePanelTab: 'runbook',
         activeRunbook: runbook,
-        activeRunbookIndex: index
-      }
+        activeRunbookIndex: index,
+      },
     },
-    openedRunbookIds
+    openedRunbookIds,
   };
 }
 
-export function setCenterTool(state: GameRenderState, activeTool: GameRenderState["monitors"]["center"]["activeTool"]): GameRenderState {
+export function setCenterTool(
+  state: GameRenderState,
+  activeTool: GameRenderState['monitors']['center']['activeTool']
+): GameRenderState {
   if (state.monitors.center.activeTool === activeTool) return state;
   return {
     ...state,
-    commandInputFocused: activeTool === "terminal" ? state.commandInputFocused : false,
+    commandInputFocused:
+      activeTool === 'terminal' ? state.commandInputFocused : false,
     monitors: {
       ...state.monitors,
       center: {
         ...state.monitors.center,
-        activeTool
-      }
-    }
+        activeTool,
+      },
+    },
   };
 }
 
@@ -283,25 +352,44 @@ export function updateEditorPanel(
       ...state.monitors,
       center: {
         ...state.monitors.center,
-        editor
-      }
-    }
+        editor,
+      },
+    },
   };
 }
 
-export function toggleNotificationPanel(state: GameRenderState): GameRenderState {
+export function toggleNotificationPanel(
+  state: GameRenderState
+): GameRenderState {
   const panelOpen = !state.notifications.panelOpen;
   const readAlertIds = panelOpen
-    ? [...new Set([...state.notifications.readAlertIds, ...state.monitors.left.alerts.map((alert) => alert.id)])]
+    ? [
+        ...new Set([
+          ...state.notifications.readAlertIds,
+          ...state.monitors.left.alerts.map((alert) => alert.id),
+        ]),
+      ]
     : state.notifications.readAlertIds;
   const seenSlackIds = panelOpen
-    ? [...new Set([...state.seenSlackIds, ...mergedSlackMessages(state).map((message) => message.id)])]
+    ? [
+        ...new Set([
+          ...state.seenSlackIds,
+          ...mergedSlackMessages(state).map((message) => message.id),
+        ]),
+      ]
     : state.seenSlackIds;
   return {
     ...state,
-    notifications: { ...state.notifications, panelOpen, readAlertIds, pulseMs: panelOpen ? 0 : state.notifications.pulseMs },
+    notifications: {
+      ...state.notifications,
+      panelOpen,
+      readAlertIds,
+      pulseMs: panelOpen ? 0 : state.notifications.pulseMs,
+    },
     seenSlackIds,
-    slackCompose: panelOpen ? state.slackCompose : { ...state.slackCompose, active: false }
+    slackCompose: panelOpen
+      ? state.slackCompose
+      : {...state.slackCompose, active: false},
   };
 }
 
@@ -309,53 +397,67 @@ export function activateSlackCompose(state: GameRenderState): GameRenderState {
   return {
     ...state,
     commandInputFocused: false,
-    slackCompose: { ...state.slackCompose, active: true }
+    slackCompose: {...state.slackCompose, active: true},
   };
 }
 
 export function focusCommandInput(state: GameRenderState): GameRenderState {
   if (state.commandInputFocused) return state;
-  return { ...state, commandInputFocused: true };
+  return {...state, commandInputFocused: true};
 }
 
 export function blurCommandInput(state: GameRenderState): GameRenderState {
   if (!state.commandInputFocused) return state;
-  return { ...state, commandInputFocused: false };
+  return {...state, commandInputFocused: false};
 }
 
-export function deactivateSlackCompose(state: GameRenderState): GameRenderState {
-  if (!state.slackCompose.active && state.slackCompose.draft === "") return state;
+export function deactivateSlackCompose(
+  state: GameRenderState
+): GameRenderState {
+  if (!state.slackCompose.active && state.slackCompose.draft === '') {
+    return state;
+  }
   return {
     ...state,
-    slackCompose: { active: false, draft: "" }
+    slackCompose: {active: false, draft: ''},
   };
 }
 
-export function setSlackDraft(state: GameRenderState, draft: string): GameRenderState {
+export function setSlackDraft(
+  state: GameRenderState,
+  draft: string
+): GameRenderState {
   return {
     ...state,
-    slackCompose: { ...state.slackCompose, draft }
+    slackCompose: {...state.slackCompose, draft},
   };
 }
 
-export function submitPlayerSlackMessage(state: GameRenderState, body: string, atMs: number): GameRenderState {
+export function submitPlayerSlackMessage(
+  state: GameRenderState,
+  body: string,
+  atMs: number
+): GameRenderState {
   const trimmed = body.trim();
   if (!trimmed) return state;
   const message = {
     id: `player-${crypto.randomUUID()}`,
     atMs,
-    from: "あなた",
-    body: trimmed
+    from: 'あなた',
+    body: trimmed,
   };
   return {
     ...state,
     playerSlackMessages: [...state.playerSlackMessages, message],
-    slackCompose: { active: false, draft: "" }
+    slackCompose: {active: false, draft: ''},
   };
 }
 
 export function mergedSlackMessages(state: GameRenderState) {
-  return [...state.monitors.right.slackMessages, ...state.playerSlackMessages].sort((a, b) => a.atMs - b.atMs);
+  return [
+    ...state.monitors.right.slackMessages,
+    ...state.playerSlackMessages,
+  ].sort((a, b) => a.atMs - b.atMs);
 }
 
 export function unreadNotificationCount(state: GameRenderState) {
@@ -369,7 +471,9 @@ export function unreadNotificationCount(state: GameRenderState) {
 }
 
 export function unreadAlertCount(state: GameRenderState) {
-  return state.monitors.left.alerts.filter((alert) => !state.notifications.readAlertIds.includes(alert.id)).length;
+  return state.monitors.left.alerts.filter(
+    (alert) => !state.notifications.readAlertIds.includes(alert.id)
+  ).length;
 }
 
 function resolveNavigationStep(
@@ -379,19 +483,22 @@ function resolveNavigationStep(
 ) {
   if (!scenario?.navigationSteps?.length) return undefined;
   const eligible = scenario.navigationSteps
-    .filter((step) => step.atMs <= elapsedMs && !dismissedStepIds.includes(step.id))
+    .filter(
+      (step) => step.atMs <= elapsedMs && !dismissedStepIds.includes(step.id)
+    )
     .sort((a, b) => b.atMs - a.atMs);
   return eligible[0];
 }
 
 export function toggleExpandedMonitor(
   state: GameRenderState,
-  monitor: "metrics" | "terminal" | "runbook"
+  monitor: 'metrics' | 'terminal' | 'runbook'
 ): GameRenderState {
-  const expandedMonitor = state.world.expandedMonitor === monitor ? null : monitor;
+  const expandedMonitor =
+    state.world.expandedMonitor === monitor ? null : monitor;
   return {
     ...state,
-    world: { ...state.world, expandedMonitor }
+    world: {...state.world, expandedMonitor},
   };
 }
 
@@ -410,6 +517,6 @@ function emptyMetrics(): MetricsSnapshot {
     latencyP95Ms: 0,
     rps: 0,
     dbConnections: 0,
-    queueDepth: 0
+    queueDepth: 0,
   };
 }

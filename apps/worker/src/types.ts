@@ -1,6 +1,6 @@
-import type { Sandbox } from "@cloudflare/sandbox";
+import type {Sandbox} from '@cloudflare/sandbox';
 
-export type Bindings = {
+export interface Bindings {
   ASSETS: Fetcher;
   DB: D1Database;
   REPLAY_BUCKET: R2Bucket;
@@ -8,4 +8,4 @@ export type Bindings = {
   SESSION_DO: DurableObjectNamespace;
   Sandbox: DurableObjectNamespace<Sandbox>;
   AI?: Ai;
-};
+}

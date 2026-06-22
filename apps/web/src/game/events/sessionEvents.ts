@@ -1,5 +1,10 @@
-import type { AlertDefinition, GameRenderState, ScenarioDefinition, SlackMessageDefinition } from "@incident/shared";
-import type { ReplayEventEmitter } from "./emitReplayEvent.js";
+import type {
+  AlertDefinition,
+  GameRenderState,
+  ScenarioDefinition,
+  SlackMessageDefinition,
+} from '@incident/shared';
+import type {ReplayEventEmitter} from './emitReplayEvent.js';
 
 export async function emitNewAlerts(
   emitter: ReplayEventEmitter,
@@ -13,10 +18,14 @@ export async function emitNewAlerts(
     if (previousIds.has(alert.id)) continue;
     await emitter.emitOnce(`alert:${alert.id}`, {
       replayId,
-      type: "alert",
+      type: 'alert',
       at: elapsedMs,
-      actor: "scenario",
-      payload: { alertId: alert.id, message: alert.message, severity: alert.severity }
+      actor: 'scenario',
+      payload: {
+        alertId: alert.id,
+        message: alert.message,
+        severity: alert.severity,
+      },
     });
   }
 }
@@ -33,10 +42,10 @@ export async function emitNewSlackMessages(
     if (previousIds.has(message.id)) continue;
     await emitter.emitOnce(`slack:${message.id}`, {
       replayId,
-      type: "slack_message_read",
+      type: 'slack_message_read',
       at: elapsedMs,
-      actor: "system",
-      payload: { messageId: message.id, from: message.from }
+      actor: 'system',
+      payload: {messageId: message.id, from: message.from},
     });
   }
 }

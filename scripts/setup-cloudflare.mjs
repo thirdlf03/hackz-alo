@@ -8,7 +8,7 @@ const workerDir = path.join(root, "apps/worker");
 const wranglerToml = path.join(workerDir, "wrangler.toml");
 
 function runWrangler(args) {
-  const result = spawnSync("npx", ["wrangler", ...args], {
+  const result = spawnSync("pnpm", ["exec", "wrangler", ...args], {
     cwd: workerDir,
     encoding: "utf8",
     stdio: ["inherit", "pipe", "inherit"]
@@ -64,5 +64,5 @@ console.log("");
 console.log("Cloudflare resource IDs are configured in apps/worker/wrangler.toml.");
 console.log("Next steps:");
 console.log("  1. wrangler login   (or set CLOUDFLARE_API_TOKEN)");
-console.log("  2. npm run db:migrate:remote");
-console.log("  3. npm run deploy");
+console.log("  2. pnpm run db:migrate:remote");
+console.log("  3. pnpm run deploy");

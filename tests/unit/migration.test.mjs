@@ -1,21 +1,25 @@
-import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
-import path from "node:path";
-import { spawnSync } from "node:child_process";
-import { test } from "node:test";
-import { fileURLToPath } from "node:url";
+import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
+import path from 'node:path';
+import {spawnSync} from 'node:child_process';
+import {test} from 'node:test';
+import {fileURLToPath} from 'node:url';
 
-const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+const rootDir = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '../..'
+);
 const migrationPaths = [
-  path.join(rootDir, "migrations/0001_initial.sql"),
-  path.join(rootDir, "migrations/0002_remove_auth.sql"),
-  path.join(rootDir, "migrations/0003_replay_video_duration.sql")
+  path.join(rootDir, 'migrations/0001_initial.sql'),
+  path.join(rootDir, 'migrations/0002_remove_auth.sql'),
+  path.join(rootDir, 'migrations/0003_replay_video_duration.sql'),
 ];
-const sqliteAvailable = !spawnSync("sqlite3", ["-version"], { encoding: "utf8" }).error;
+const sqliteAvailable = !spawnSync('sqlite3', ['-version'], {encoding: 'utf8'})
+  .error;
 
 test(
-  "D1 migrations create tables and accept valid replay metadata",
-  { skip: sqliteAvailable ? false : "sqlite3 is not available" },
+  'D1 migrations create tables and accept valid replay metadata',
+  {skip: sqliteAvailable ? false : 'sqlite3 is not available'},
   async () => {
     const result = runSql(`${await migrationSql()}
 insert into scenarios (id, version, title, difficulty, manifest_object_key, created_at)
@@ -51,13 +55,13 @@ select
 `);
 
     assert.equal(result.status, 0, result.stderr);
-    assert.equal(result.stdout.trim(), "1|1|1|1|1|1|clear-shift|5000");
+    assert.equal(result.stdout.trim(), '1|1|1|1|1|1|clear-shift|5000');
   }
 );
 
 test(
-  "D1 migrations reject invalid enum values",
-  { skip: sqliteAvailable ? false : "sqlite3 is not available" },
+  'D1 migrations reject invalid enum values',
+  {skip: sqliteAvailable ? false : 'sqlite3 is not available'},
   async () => {
     const result = runSql(`${await migrationSql()}
 insert into scenarios (id, version, title, difficulty, manifest_object_key, created_at)
@@ -76,10 +80,12 @@ insert into replays
 );
 
 async function migrationSql() {
-  const parts = await Promise.all(migrationPaths.map((file) => readFile(file, "utf8")));
-  return parts.join("\n");
+  const parts = await Promise.all(
+    migrationPaths.map((file) => readFile(file, 'utf8'))
+  );
+  return parts.join('\n');
 }
 
 function runSql(sql) {
-  return spawnSync("sqlite3", [":memory:"], { input: sql, encoding: "utf8" });
+  return spawnSync('sqlite3', [':memory:'], {input: sql, encoding: 'utf8'});
 }

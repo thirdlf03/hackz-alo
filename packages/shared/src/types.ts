@@ -1,47 +1,47 @@
-export type Difficulty = "beginner" | "intermediate" | "advanced";
+export type Difficulty = 'beginner' | 'intermediate' | 'advanced';
 
 export type SessionStatus =
-  | "created"
-  | "briefing"
-  | "running"
-  | "resolved"
-  | "failed"
-  | "retired"
-  | "aborted";
+  | 'created'
+  | 'briefing'
+  | 'running'
+  | 'resolved'
+  | 'failed'
+  | 'retired'
+  | 'aborted';
 
 export type ReplayVisibility =
-  | "private"
-  | "self"
-  | "unlisted"
-  | "team"
-  | "public";
+  | 'private'
+  | 'self'
+  | 'unlisted'
+  | 'team'
+  | 'public';
 
-export type Actor = "player" | "system" | "scenario" | "sandbox";
+export type Actor = 'player' | 'system' | 'scenario' | 'sandbox';
 
 export type ReplayEventType =
-  | "session_start"
-  | "session_end"
-  | "scenario_event"
-  | "alert"
-  | "monitor_update"
-  | "terminal_input"
-  | "terminal_output"
-  | "command_detected"
-  | "ui_click"
-  | "ui_panel_open"
-  | "runbook_open"
-  | "slack_message_read"
-  | "file_opened"
-  | "file_saved"
-  | "service_restart"
-  | "recovery_check"
-  | "incident_resolved"
-  | "player_note"
-  | "recording_chunk_created"
-  | "recording_error"
-  | "sandbox_error";
+  | 'session_start'
+  | 'session_end'
+  | 'scenario_event'
+  | 'alert'
+  | 'monitor_update'
+  | 'terminal_input'
+  | 'terminal_output'
+  | 'command_detected'
+  | 'ui_click'
+  | 'ui_panel_open'
+  | 'runbook_open'
+  | 'slack_message_read'
+  | 'file_opened'
+  | 'file_saved'
+  | 'service_restart'
+  | 'recovery_check'
+  | 'incident_resolved'
+  | 'player_note'
+  | 'recording_chunk_created'
+  | 'recording_error'
+  | 'sandbox_error';
 
-export type ReplayEvent = {
+export interface ReplayEvent {
   id: string;
   replayId: string;
   type: ReplayEventType;
@@ -49,121 +49,121 @@ export type ReplayEvent = {
   wallTime?: string;
   actor: Actor;
   payload: Record<string, unknown>;
-  visibility: "public_safe" | "private" | "sensitive";
-};
+  visibility: 'public_safe' | 'private' | 'sensitive';
+}
 
-export type AlertDefinition = {
+export interface AlertDefinition {
   id: string;
   atMs: number;
-  severity: "info" | "warning" | "critical";
+  severity: 'info' | 'warning' | 'critical';
   message: string;
-  source: "scenario" | "monitor";
-};
+  source: 'scenario' | 'monitor';
+}
 
-export type ProcessStopTrigger = {
+export interface ProcessStopTrigger {
   id: string;
   atMs: number;
-  type: "process_stop";
-  params: { processId: string };
-};
+  type: 'process_stop';
+  params: {processId: string};
+}
 
-export type DiskFullTrigger = {
+export interface DiskFullTrigger {
   id: string;
   atMs: number;
-  type: "disk_full";
-  params: { path: string; bytes: number };
-};
+  type: 'disk_full';
+  params: {path: string; bytes: number};
+}
 
-export type UnlangBatchFailureTrigger = {
+export interface UnlangBatchFailureTrigger {
   id: string;
   atMs: number;
-  type: "unlang_batch_failure";
-  params: { jobId: string; path: string; specInComments?: boolean };
-};
+  type: 'unlang_batch_failure';
+  params: {jobId: string; path: string; specInComments?: boolean};
+}
 
-export type QueueBacklogTrigger = {
+export interface QueueBacklogTrigger {
   id: string;
   atMs: number;
-  type: "queue_backlog";
-  params: { count: number };
-};
+  type: 'queue_backlog';
+  params: {count: number};
+}
 
-export type BadDeployTrigger = {
+export interface BadDeployTrigger {
   id: string;
   atMs: number;
-  type: "bad_deploy";
-  params: { configPath: string };
-};
+  type: 'bad_deploy';
+  params: {configPath: string};
+}
 
-export type DbPoolExhaustTrigger = {
+export interface DbPoolExhaustTrigger {
   id: string;
   atMs: number;
-  type: "db_pool_exhaust";
-  params: { maxConnections: number };
-};
+  type: 'db_pool_exhaust';
+  params: {maxConnections: number};
+}
 
-export type MemoryLeakTrigger = {
+export interface MemoryLeakTrigger {
   id: string;
   atMs: number;
-  type: "memory_leak";
-  params: { targetPercent: number };
-};
+  type: 'memory_leak';
+  params: {targetPercent: number};
+}
 
-export type DnsMisconfigTrigger = {
+export interface DnsMisconfigTrigger {
   id: string;
   atMs: number;
-  type: "dns_misconfig";
-  params: { hostsPath: string };
-};
+  type: 'dns_misconfig';
+  params: {hostsPath: string};
+}
 
-export type MonitorBlindTrigger = {
+export interface MonitorBlindTrigger {
   id: string;
   atMs: number;
-  type: "monitor_blind";
-  params: { blindMetrics: string[] };
-};
+  type: 'monitor_blind';
+  params: {blindMetrics: string[]};
+}
 
-export type CompositeRestartLoopTrigger = {
+export interface CompositeRestartLoopTrigger {
   id: string;
   atMs: number;
-  type: "composite_restart_loop";
-  params: { diskPath: string; bytes: number; processId: string };
-};
+  type: 'composite_restart_loop';
+  params: {diskPath: string; bytes: number; processId: string};
+}
 
-export type JanitorPowerPullTrigger = {
+export interface JanitorPowerPullTrigger {
   id: string;
   atMs: number;
-  type: "janitor_power_pull";
-  params: { processId?: string };
-};
+  type: 'janitor_power_pull';
+  params: {processId?: string};
+}
 
-export type CableJumpropeTrigger = {
+export interface CableJumpropeTrigger {
   id: string;
   atMs: number;
-  type: "cable_jumprope";
-  params: { hostsPath?: string };
-};
+  type: 'cable_jumprope';
+  params: {hostsPath?: string};
+}
 
-export type KeyboardSpillTrigger = {
+export interface KeyboardSpillTrigger {
   id: string;
   atMs: number;
-  type: "keyboard_spill";
-  params: { noise?: string };
-};
+  type: 'keyboard_spill';
+  params: {noise?: string};
+}
 
-export type AlertSpamTrigger = {
+export interface AlertSpamTrigger {
   id: string;
   atMs: number;
-  type: "alert_spam";
-  params: { count?: number };
-};
+  type: 'alert_spam';
+  params: {count?: number};
+}
 
-export type RunbookGaslightTrigger = {
+export interface RunbookGaslightTrigger {
   id: string;
   atMs: number;
-  type: "runbook_gaslight";
-  params: { replacement?: string };
-};
+  type: 'runbook_gaslight';
+  params: {replacement?: string};
+}
 
 export type ScenarioTrigger =
   | ProcessStopTrigger
@@ -182,61 +182,66 @@ export type ScenarioTrigger =
   | AlertSpamTrigger
   | RunbookGaslightTrigger;
 
-export type NavigationPanel = "metrics" | "terminal" | "editor" | "runbook" | "slack";
+export type NavigationPanel =
+  | 'metrics'
+  | 'terminal'
+  | 'editor'
+  | 'runbook'
+  | 'slack';
 
-export type NavigationStep = {
+export interface NavigationStep {
   id: string;
   atMs: number;
   hint: string;
   panel?: NavigationPanel;
   suggestedCommand?: string;
-};
+}
 
-export type EditorPanelState = {
-  files: Array<{ path: string; size?: number }>;
+export interface EditorPanelState {
+  files: Array<{path: string; size?: number}>;
   currentPath: string | undefined;
   content: string;
   savedContent: string;
   dirty: boolean;
-  status: "idle" | "loading" | "ready" | "saving" | "error";
+  status: 'idle' | 'loading' | 'ready' | 'saving' | 'error';
   error: string | undefined;
-  cursor: { line: number; column: number };
-};
+  cursor: {line: number; column: number};
+}
 
-export type GameNavigationState = {
+export interface GameNavigationState {
   dismissedStepIds: string[];
   activeStepId?: string;
-};
+}
 
-export type NotificationState = {
+export interface NotificationState {
   panelOpen: boolean;
   readAlertIds: string[];
   pulseMs: number;
-};
+}
 
 export type SuccessCondition =
-  | { type: "http_status"; url: string; status: number }
-  | { type: "disk_usage_below"; path: string; valuePercent: number }
-  | { type: "process_running"; processId: string }
-  | { type: "marker_absent"; path: string }
-  | { type: "log_absent"; path: string; pattern: string }
-  | { type: "unlang_batch_ok"; jobId: string };
+  | {type: 'http_status'; url: string; status: number}
+  | {type: 'disk_usage_below'; path: string; valuePercent: number}
+  | {type: 'process_running'; processId: string}
+  | {type: 'marker_absent'; path: string}
+  | {type: 'log_absent'; path: string; pattern: string}
+  | {type: 'unlang_batch_ok'; jobId: string};
 
-export type RunbookDefinition = {
+export interface RunbookDefinition {
   id: string;
   title: string;
   body: string;
   availableAtMs?: number;
-};
+}
 
-export type SlackMessageDefinition = {
+export interface SlackMessageDefinition {
   id: string;
   atMs: number;
   from: string;
   body: string;
-};
+}
 
-export type ScenarioDefinition = {
+export interface ScenarioDefinition {
   id: string;
   version: number;
   title: string;
@@ -258,9 +263,9 @@ export type ScenarioDefinition = {
   runbooks: RunbookDefinition[];
   slackMessages: SlackMessageDefinition[];
   navigationSteps?: NavigationStep[];
-};
+}
 
-export type MetricsSnapshot = {
+export interface MetricsSnapshot {
   at: number;
   cpu: number;
   memory: number;
@@ -270,21 +275,21 @@ export type MetricsSnapshot = {
   rps: number;
   dbConnections: number;
   queueDepth: number;
-};
+}
 
-export type MetricsSource = "loading" | "live" | "offline";
+export type MetricsSource = 'loading' | 'live' | 'offline';
 
-export type TerminalMirrorState = {
+export interface TerminalMirrorState {
   cols: number;
   rows: number;
   lines: string[];
-  cursor: { x: number; y: number; visible: boolean };
+  cursor: {x: number; y: number; visible: boolean};
   title?: string;
   commandDraft: string;
-  commandHistory: Array<{ at: number; command: string }>;
-};
+  commandHistory: Array<{at: number; command: string}>;
+}
 
-export type GameRenderState = {
+export interface GameRenderState {
   session: {
     sessionId: string;
     replayId: string;
@@ -306,12 +311,12 @@ export type GameRenderState = {
       alerts: AlertDefinition[];
     };
     center: {
-      activeTool: "terminal" | "editor";
+      activeTool: 'terminal' | 'editor';
       terminal: TerminalMirrorState;
       editor: EditorPanelState;
     };
     right: {
-      activePanelTab: "runbook" | "slack";
+      activePanelTab: 'runbook' | 'slack';
       activeRunbook?: RunbookDefinition | undefined;
       activeRunbookIndex: number;
       slackMessages: SlackMessageDefinition[];
@@ -327,34 +332,34 @@ export type GameRenderState = {
   };
   openedRunbookIds: string[];
   alertFlashMs: number;
-  warning?: { message: string; flashMs: number };
+  warning?: {message: string; flashMs: number};
   world: {
     /** Narrative hour from midnight (0–6) mapped across the session time limit. */
     narrativeHour: number;
-    expandedMonitor: "metrics" | "terminal" | "runbook" | null;
+    expandedMonitor: 'metrics' | 'terminal' | 'runbook' | null;
   };
   commandInputFocused: boolean;
-  cursor: { x: number; y: number; visible: boolean };
-  clickEffects: Array<{ id: string; x: number; y: number; ageMs: number }>;
+  cursor: {x: number; y: number; visible: boolean};
+  clickEffects: Array<{id: string; x: number; y: number; ageMs: number}>;
   recording: {
     status:
-      | "idle"
-      | "consent_required"
-      | "initializing"
-      | "recording"
-      | "stopping"
-      | "finalizing"
-      | "ready"
-      | "recording_error"
-      | "upload_degraded"
-      | "finalization_failed"
-      | "unsupported_browser";
+      | 'idle'
+      | 'consent_required'
+      | 'initializing'
+      | 'recording'
+      | 'stopping'
+      | 'finalizing'
+      | 'ready'
+      | 'recording_error'
+      | 'upload_degraded'
+      | 'finalization_failed'
+      | 'unsupported_browser';
     mimeType?: string;
     chunkCount: number;
     saveEnabled: boolean;
   };
-};
+}
 
 export type ApiResult<T> =
-  | { ok: true; data: T }
-  | { ok: false; error: { code: string; message: string } };
+  | {ok: true; data: T}
+  | {ok: false; error: {code: string; message: string}};
