@@ -35,6 +35,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm run build:scenarios
+      - run: pnpm run build
       - run: pnpm run db:migrate:local
       - run: docker info
       - run: pnpm exec playwright install --with-deps chromium

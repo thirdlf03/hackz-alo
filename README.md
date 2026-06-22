@@ -63,10 +63,10 @@ CI deploy uses `.github/workflows/deploy.yml` (tag `v*` or workflow_dispatch).
 
 ### GitHub Actions secrets (deploy workflow)
 
-| Secret | Purpose |
-| --- | --- |
+| Secret                 | Purpose                                |
+| ---------------------- | -------------------------------------- |
 | `CLOUDFLARE_API_TOKEN` | Wrangler deploy + D1 remote migrations |
-| `INCIDENT_WORKER_URL` | Post-deploy `GET /api/ready` smoke |
+| `INCIDENT_WORKER_URL`  | Post-deploy `GET /api/ready` smoke     |
 
 Create a Cloudflare API token with **Workers Scripts Edit**, **D1 Edit**, and **Account** read, then:
 
