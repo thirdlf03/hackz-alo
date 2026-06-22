@@ -154,3 +154,13 @@ curl -s -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
 | cold `sandbox.prepare` p95              | &lt; 2500ms or 30%+ better than before |
 | `sandbox.start` p95                     | &lt; 2500ms                            |
 | warm `sandbox.prepare` (`cached: true`) | &lt; 200ms                             |
+
+### Post-deploy snapshot (2026-06-22)
+
+After APAC constraints + `apac-ne` deploy (`654f56ff`):
+
+- `wrangler containers info`: `constraints.regions = ["APAC"]`
+- `wrangler d1 info`: `running_in_region = APAC`
+- Local perf journey (`pnpm run perf:placement:verify`): no span p95
+  regressions vs `placement-before.json`; `sandbox.start` p95 ~1989ms;
+  worker HTTP spans report `incident.cf.colo = KIX` during local dev.
