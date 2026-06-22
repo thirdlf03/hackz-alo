@@ -1,18 +1,40 @@
 import {
   createReplayEvent,
-  replayEventSummary,
   canDeclareRecovery,
-  normalizeReplayResult,
-  resolveEndingId,
-  type AlertDefinition,
-  type ApiResult,
   type ReplayEvent,
   type ScenarioDefinition,
   type SessionStatus,
   type MetricsSnapshot,
 } from '@incident/shared';
 import {getScenario} from '@incident/scenarios';
+import {
+  errorResponse,
+  HttpError,
+  jsonErr,
+  jsonOk,
+  messageFrom,
+} from '../http/response.js';
 import type {Bindings} from '../types.js';
+import {lifecycleAlarmDeadline} from './sessionClock.js';
+import {
+  persistReplayEvent,
+  persistReplayResult,
+  persistReplayStart,
+  persistSession,
+} from './sessionPersistence.js';
+import {
+  buildClockPayload,
+  buildSessionSnapshot,
+  createBriefingSession,
+  finishStoredSession,
+  getGameTimeMs,
+  isTerminalStatus,
+  startStoredSession,
+  type SessionBootstrap,
+  type StoredSession,
+  type SuccessCheck,
+} from './sessionState.js';
+import {SessionTimeline} from './sessionTimeline.js';
 import {
   destroySessionSandbox,
   evaluateSuccessCondition,
@@ -28,39 +50,6 @@ import {
   startScenarioSandbox,
 } from '../sandbox/runtime.js';
 
-interface StoredSession {
-  sessionId: string;
-  replayId: string;
-  scenarioId: string;
-  status: SessionStatus;
-  startedAt?: string;
-  finishedAt?: string;
-  gameTimeMs: number;
-  gameSpeed: number;
-  gameClockWallMs?: number;
-  triggeredIds: string[];
-  firedAlertIds: string[];
-  firedSlackIds: string[];
-  eventSeq: number;
-  bufferedEvents: ReplayEvent[];
-}
-
-type SessionBootstrap = Pick<
-  StoredSession,
-  'sessionId' | 'replayId' | 'scenarioId'
->;
-
-interface SuccessCheck {
-  condition: ScenarioDefinition['successConditions'][number];
-  ok: boolean;
-}
-
-interface PendingTimer {
-  kind: 'trigger' | 'alert' | 'slack';
-  id: string;
-  handle: ReturnType<typeof setTimeout>;
-}
-
 const SESSION_IDLE_TIMEOUT_MS = 3 * 60 * 1000;
 const BRIEFING_TIMEOUT_MS = 15 * 60 * 1000;
 const GAME_END_BUFFER_MS = 60 * 1000;
@@ -68,7 +57,7 @@ const GAME_END_BUFFER_MS = 60 * 1000;
 export class SessionDurableObject implements DurableObject {
   private metricsCache?: MetricsSnapshot;
   private metricsCachedAt = 0;
-  private pendingTimers: PendingTimer[] = [];
+  private timeline: SessionTimeline;
   private sseClients: Set<ReadableStreamDefaultController<Uint8Array>> =
     new Set();
   private static readonly METRICS_TTL_MS = 3000;
@@ -76,7 +65,23 @@ export class SessionDurableObject implements DurableObject {
   constructor(
     private state: DurableObjectState,
     private env: Bindings
-  ) {}
+  ) {
+    this.timeline = new SessionTimeline({
+      loadSession: () => this.requireSession(),
+      saveSession: async (session) => {
+        await this.state.storage.put('session', session);
+      },
+      injectFault: async (sessionId, type, params) => {
+        await injectFault(this.env, sessionId, type, params);
+      },
+      emit: (session, type, at, actor, payload) =>
+        this.emit(session, type, at, actor, payload),
+      snapshotFor: (session) => this.snapshotFor(session),
+      broadcastSse: (event, data) => {
+        this.broadcastSse(event, data);
+      },
+    });
+  }
 
   async alarm() {
     try {
@@ -92,7 +97,7 @@ export class SessionDurableObject implements DurableObject {
 
       const scenario = requireScenario(session.scenarioId);
       const timeLimitMs = scenario.timeLimitMinutes * 60 * 1000;
-      if (this.getGameTimeMs(session) >= timeLimitMs) {
+      if (getGameTimeMs(session) >= timeLimitMs) {
         await this.timeout();
         return;
       }
@@ -183,7 +188,7 @@ export class SessionDurableObject implements DurableObject {
 
   private async bootstrap(request: Request) {
     const session = await this.loadOrCreate(await readBootstrap(request));
-    await this.persistSession(session);
+    await persistSession(this.env, session);
     if (session.status === 'briefing') {
       await this.state.storage.setAlarm(Date.now() + BRIEFING_TIMEOUT_MS);
     }
@@ -206,17 +211,10 @@ export class SessionDurableObject implements DurableObject {
 
     const scenario = requireScenario(session.scenarioId);
     const started = new Date().toISOString();
-    let running: StoredSession = {
-      ...session,
-      status: 'running',
-      startedAt: started,
-      gameTimeMs: 0,
-      gameSpeed: session.gameSpeed || 1,
-      gameClockWallMs: Date.now(),
-    };
+    let running = startStoredSession(session, started, Date.now());
     await this.state.storage.put('session', running);
-    await this.persistSession(running);
-    await this.persistReplayStart(running);
+    await persistSession(this.env, running);
+    await persistReplayStart(this.env, running);
 
     let startup: Awaited<ReturnType<typeof startScenarioSandbox>>;
     try {
@@ -230,7 +228,7 @@ export class SessionDurableObject implements DurableObject {
       await this.emit(
         failed,
         'sandbox_error',
-        this.getGameTimeMs(failed),
+        getGameTimeMs(failed),
         'sandbox',
         {
           message: messageFrom(error),
@@ -244,7 +242,7 @@ export class SessionDurableObject implements DurableObject {
       startup,
     });
     await this.touchClientActivity();
-    this.scheduleScenarioTimeline(running, scenario);
+    this.timeline.schedule(running, scenario);
     return jsonOk({session: this.snapshotFor(running), startup});
   }
 
@@ -271,7 +269,7 @@ export class SessionDurableObject implements DurableObject {
     const result = await this.emit(
       finished,
       resolved ? 'incident_resolved' : 'session_end',
-      this.getGameTimeMs(finished),
+      getGameTimeMs(finished),
       resolved ? 'system' : 'player',
       resolved ? {checks} : {result: 'false_resolve', checks}
     );
@@ -288,7 +286,7 @@ export class SessionDurableObject implements DurableObject {
     const result = await this.emit(
       retired,
       'session_end',
-      this.getGameTimeMs(retired),
+      getGameTimeMs(retired),
       'player',
       {result: 'retired'}
     );
@@ -305,7 +303,7 @@ export class SessionDurableObject implements DurableObject {
     const result = await this.emit(
       finished,
       'session_end',
-      this.getGameTimeMs(finished),
+      getGameTimeMs(finished),
       'system',
       {result: 'timeout'}
     );
@@ -334,13 +332,13 @@ export class SessionDurableObject implements DurableObject {
         : session.gameSpeed;
     const synced: StoredSession = {
       ...session,
-      gameTimeMs: this.getGameTimeMs(session),
+      gameTimeMs: getGameTimeMs(session),
       gameSpeed: speed,
       gameClockWallMs: Date.now(),
     };
     await this.state.storage.put('session', synced);
     const scenario = requireScenario(synced.scenarioId);
-    this.rescheduleScenarioTimeline(synced, scenario);
+    this.timeline.reschedule(synced, scenario);
     await this.touchClientActivity();
     return jsonOk(this.clockPayload(synced));
   }
@@ -549,44 +547,11 @@ export class SessionDurableObject implements DurableObject {
   }
 
   private snapshotFor(session: StoredSession) {
-    const scenario = requireScenario(session.scenarioId);
-    return {
-      ...session,
-      gameTimeMs: this.getGameTimeMs(session),
-      elapsedMs: this.getGameTimeMs(session),
-      alerts: this.firedAlerts(scenario, session),
-      slackMessages: this.firedSlackMessages(scenario, session),
-      scenario,
-    };
+    return buildSessionSnapshot(session, requireScenario(session.scenarioId));
   }
 
   private clockPayload(session: StoredSession) {
-    const scenario = requireScenario(session.scenarioId);
-    return {
-      gameTimeMs: this.getGameTimeMs(session),
-      gameSpeed: session.gameSpeed,
-      timeLimitMs: scenario.timeLimitMinutes * 60 * 1000,
-      alerts: this.firedAlerts(scenario, session),
-      slackMessages: this.firedSlackMessages(scenario, session),
-    };
-  }
-
-  private firedAlerts(
-    scenario: ScenarioDefinition,
-    session: StoredSession
-  ): AlertDefinition[] {
-    return scenario.alerts.filter((alert) =>
-      session.firedAlertIds.includes(alert.id)
-    );
-  }
-
-  private firedSlackMessages(
-    scenario: ScenarioDefinition,
-    session: StoredSession
-  ) {
-    return scenario.slackMessages.filter((message) =>
-      session.firedSlackIds.includes(message.id)
-    );
+    return buildClockPayload(session, requireScenario(session.scenarioId));
   }
 
   private async loadOrCreate(
@@ -601,19 +566,11 @@ export class SessionDurableObject implements DurableObject {
         'missing session bootstrap fields'
       );
     }
-    return {
+    return createBriefingSession({
       sessionId: input.sessionId,
       replayId: input.replayId,
       scenarioId: input.scenarioId,
-      status: 'briefing',
-      gameTimeMs: 0,
-      gameSpeed: 1,
-      triggeredIds: [],
-      firedAlertIds: [],
-      firedSlackIds: [],
-      eventSeq: 0,
-      bufferedEvents: [],
-    };
+    });
   }
 
   private async requireSession() {
@@ -634,22 +591,6 @@ export class SessionDurableObject implements DurableObject {
       throw new HttpError(409, 'invalid_state', message);
     }
     return session;
-  }
-
-  private getGameTimeMs(session: StoredSession) {
-    if (session.status !== 'running' || !session.gameClockWallMs) {
-      return session.gameTimeMs;
-    }
-    const wallDelta = Date.now() - session.gameClockWallMs;
-    return Math.max(
-      0,
-      Math.round(session.gameTimeMs + wallDelta * session.gameSpeed)
-    );
-  }
-
-  private clearPendingTimers() {
-    for (const timer of this.pendingTimers) clearTimeout(timer.handle);
-    this.pendingTimers = [];
   }
 
   private async touchClientActivity() {
@@ -679,172 +620,23 @@ export class SessionDurableObject implements DurableObject {
   ) {
     if (session.status !== 'running') return;
 
-    const timeLimitMs = scenario.timeLimitMinutes * 60 * 1000;
-    const remainingGameMs = Math.max(
-      0,
-      timeLimitMs - this.getGameTimeMs(session)
-    );
-    const wallMsUntilGameEnd =
-      remainingGameMs / Math.max(session.gameSpeed, 0.1) + GAME_END_BUFFER_MS;
-    const gameDeadline = Date.now() + wallMsUntilGameEnd;
-
     const lastActivity =
       (await this.state.storage.get<number>('lastClientActivityAt')) ??
       Date.now();
-    const idleDeadline =
-      this.sseClients.size === 0
-        ? lastActivity + SESSION_IDLE_TIMEOUT_MS
-        : Number.POSITIVE_INFINITY;
-
-    await this.state.storage.setAlarm(
-      Math.ceil(Math.min(idleDeadline, gameDeadline))
-    );
+    const deadline = lifecycleAlarmDeadline({
+      session,
+      timeLimitMs: scenario.timeLimitMinutes * 60 * 1000,
+      idleTimeoutMs: SESSION_IDLE_TIMEOUT_MS,
+      gameEndBufferMs: GAME_END_BUFFER_MS,
+      lastActivityAt: lastActivity,
+      hasSseClients: this.sseClients.size > 0,
+    });
+    if (deadline !== undefined) await this.state.storage.setAlarm(deadline);
   }
 
   private async clearLifecycleAlarms() {
     await this.state.storage.deleteAlarm();
     await this.state.storage.delete('lastClientActivityAt');
-  }
-
-  private rescheduleScenarioTimeline(
-    session: StoredSession,
-    scenario: ScenarioDefinition
-  ) {
-    this.clearPendingTimers();
-    if (session.status !== 'running') return;
-    this.scheduleScenarioTimeline(session, scenario);
-  }
-
-  private scheduleScenarioTimeline(
-    session: StoredSession,
-    scenario: ScenarioDefinition
-  ) {
-    for (const trigger of scenario.triggers) {
-      if (session.triggeredIds.includes(trigger.id)) continue;
-      this.scheduleAtGameTime(
-        session,
-        trigger.atMs,
-        'trigger',
-        trigger.id,
-        async () => {
-          const latest = await this.requireSession();
-          if (
-            latest.status !== 'running' ||
-            latest.triggeredIds.includes(trigger.id)
-          ) {
-            return;
-          }
-          try {
-            await injectFault(
-              this.env,
-              latest.sessionId,
-              trigger.type,
-              trigger.params
-            );
-            let triggered: StoredSession = {
-              ...latest,
-              triggeredIds: [...latest.triggeredIds, trigger.id],
-            };
-            await this.state.storage.put('session', triggered);
-            triggered = await this.emit(
-              triggered,
-              'scenario_event',
-              trigger.atMs,
-              'scenario',
-              {trigger}
-            );
-            this.broadcastSse('snapshot', this.snapshotFor(triggered));
-          } catch (error) {
-            await this.emit(latest, 'sandbox_error', trigger.atMs, 'sandbox', {
-              triggerId: trigger.id,
-              message: messageFrom(error),
-            });
-          }
-        }
-      );
-    }
-
-    for (const alert of scenario.alerts) {
-      if (session.firedAlertIds.includes(alert.id)) continue;
-      this.scheduleAtGameTime(
-        session,
-        alert.atMs,
-        'alert',
-        alert.id,
-        async () => {
-          const latest = await this.requireSession();
-          if (
-            latest.status !== 'running' ||
-            latest.firedAlertIds.includes(alert.id)
-          ) {
-            return;
-          }
-          const next: StoredSession = {
-            ...latest,
-            firedAlertIds: [...latest.firedAlertIds, alert.id],
-          };
-          await this.state.storage.put('session', next);
-          const updated = await this.emit(
-            next,
-            'alert',
-            alert.atMs,
-            'scenario',
-            {
-              alertId: alert.id,
-              message: alert.message,
-              severity: alert.severity,
-            }
-          );
-          this.broadcastSse('replay', updated.bufferedEvents.at(-1));
-          this.broadcastSse('snapshot', this.snapshotFor(updated));
-        }
-      );
-    }
-
-    for (const message of scenario.slackMessages) {
-      if (session.firedSlackIds.includes(message.id)) continue;
-      this.scheduleAtGameTime(
-        session,
-        message.atMs,
-        'slack',
-        message.id,
-        async () => {
-          const latest = await this.requireSession();
-          if (
-            latest.status !== 'running' ||
-            latest.firedSlackIds.includes(message.id)
-          ) {
-            return;
-          }
-          const next: StoredSession = {
-            ...latest,
-            firedSlackIds: [...latest.firedSlackIds, message.id],
-          };
-          await this.state.storage.put('session', next);
-          this.broadcastSse('snapshot', this.snapshotFor(next));
-        }
-      );
-    }
-  }
-
-  private scheduleAtGameTime(
-    session: StoredSession,
-    atMs: number,
-    kind: PendingTimer['kind'],
-    id: string,
-    run: () => Promise<void>
-  ) {
-    const delay = Math.max(
-      0,
-      (atMs - this.getGameTimeMs(session)) / Math.max(session.gameSpeed, 0.1)
-    );
-    const handle = setTimeout(() => {
-      this.pendingTimers = this.pendingTimers.filter(
-        (timer) => timer.handle !== handle
-      );
-      void run();
-    }, delay);
-    this.pendingTimers.push({kind, id, handle});
   }
 
   private broadcastSse(event: string, data: unknown) {
@@ -866,20 +658,19 @@ export class SessionDurableObject implements DurableObject {
     status: SessionStatus,
     result: string
   ) {
-    this.clearPendingTimers();
+    this.timeline.clear();
     this.clearMetricsCache();
     await this.clearLifecycleAlarms();
-    const finished: StoredSession = {
-      ...session,
+    const finished = finishStoredSession(
+      session,
       status,
-      gameTimeMs: this.getGameTimeMs(session),
-      finishedAt: new Date().toISOString(),
-    };
-    delete finished.gameClockWallMs;
+      new Date().toISOString(),
+      Date.now()
+    );
     await this.state.storage.put('session', finished);
     try {
-      await this.persistSession(finished, result);
-      await this.persistReplayResult(finished, result);
+      await persistSession(this.env, finished, result);
+      await persistReplayResult(this.env, finished, result);
     } finally {
       await destroySessionSandbox(this.env, session.sessionId);
     }
@@ -906,71 +697,9 @@ export class SessionDurableObject implements DurableObject {
       bufferedEvents: [...session.bufferedEvents, event].slice(-200),
     };
     await this.state.storage.put('session', next);
-    await this.persistReplayEvent(event);
+    await persistReplayEvent(this.env, event);
     this.broadcastSse('replay', event);
     return next;
-  }
-
-  private async persistSession(session: StoredSession, result?: string) {
-    const dbResult = normalizeReplayResult(result ?? '') || null;
-    await this.env.DB.prepare(
-      `update play_sessions
-       set status = ?, started_at = ?, finished_at = ?, result = ?, duration_ms = ?
-       where id = ?`
-    )
-      .bind(
-        session.status,
-        session.startedAt ?? null,
-        session.finishedAt ?? null,
-        dbResult,
-        session.finishedAt ? this.getGameTimeMs(session) : null,
-        session.sessionId
-      )
-      .run();
-  }
-
-  private async persistReplayStart(session: StoredSession) {
-    const now = new Date().toISOString();
-    await this.env.DB.prepare(
-      `update replays set started_at = ?, recording_status = ?, updated_at = ? where id = ?`
-    )
-      .bind(session.startedAt ?? now, 'recording', now, session.replayId)
-      .run();
-  }
-
-  private async persistReplayResult(session: StoredSession, result: string) {
-    const finishedAt = session.finishedAt ?? new Date().toISOString();
-    await this.env.DB.prepare(
-      `update replays
-       set finished_at = coalesce(finished_at, ?), result = ?, ending_id = ?, duration_ms = ?, updated_at = ?
-       where id = ?`
-    )
-      .bind(
-        finishedAt,
-        normalizeReplayResult(result),
-        resolveEndingId(result),
-        this.getGameTimeMs(session),
-        new Date().toISOString(),
-        session.replayId
-      )
-      .run();
-  }
-
-  private async persistReplayEvent(event: ReplayEvent) {
-    await this.env.DB.prepare(
-      `insert or replace into replay_events_index
-       (replay_id, event_id, type, at_ms, summary, visibility)
-       values (?, ?, ?, ?, ?, ?)`
-    )
-      .bind(
-        event.replayId,
-        event.id,
-        event.type,
-        event.at,
-        replayEventSummary(event),
-        event.visibility
-      )
-      .run();
   }
 }
 
@@ -988,59 +717,4 @@ async function readBootstrap(
   const value = await request.json().catch(() => ({}));
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
   return value as Partial<SessionBootstrap>;
-}
-
-function isTerminalStatus(status: SessionStatus) {
-  return (
-    status === 'resolved' ||
-    status === 'failed' ||
-    status === 'retired' ||
-    status === 'aborted'
-  );
-}
-
-function ok<T>(data: T): ApiResult<T> {
-  return {ok: true, data};
-}
-
-function err(code: string, message: string): ApiResult<never> {
-  return {ok: false, error: {code, message}};
-}
-
-function jsonOk(data: unknown, init?: ResponseInit) {
-  return json(ok(data), init);
-}
-
-function jsonErr(code: string, message: string, status = 500) {
-  return json(err(code, message), {status});
-}
-
-function errorResponse(error: unknown) {
-  if (error instanceof HttpError) {
-    return jsonErr(error.code, error.message, error.status);
-  }
-  return jsonErr('internal_error', messageFrom(error), 500);
-}
-
-function messageFrom(error: unknown) {
-  return error instanceof Error ? error.message : 'session request failed';
-}
-
-class HttpError extends Error {
-  constructor(
-    readonly status: number,
-    readonly code: string,
-    message: string
-  ) {
-    super(message);
-  }
-}
-
-function json<T>(payload: ApiResult<T>, init: ResponseInit = {}) {
-  const headers = new Headers(init.headers);
-  headers.set('content-type', 'application/json');
-  return new Response(JSON.stringify(payload), {
-    ...init,
-    headers,
-  });
 }

@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {tsImport} from 'tsx/esm/api';
-import {
+
+const {
   expandedMonitorLayout,
   inputDockRects,
   measureRunbookTabWidth,
@@ -11,14 +12,17 @@ import {
   runbookTabRegion,
   slackComposeRegion,
   slackSendButtonRegion,
-} from '../../apps/web/src/game/render/canvasLayout.ts';
-import {createInitialGameState} from '../../apps/web/src/game/state/gameState.ts';
-import {createEmptyTerminalMirror} from '../../apps/web/src/game/terminal/mirror.ts';
+} = await tsImport(
+  '../../apps/web/src/game/render/canvasLayout.ts',
+  import.meta.url
+);
 
 const {editorFileAt, resolveCanvasAction} = await tsImport(
   '../../apps/web/src/game/input/canvasActions.ts',
   import.meta.url
 );
+import {createInitialGameState} from '../../apps/web/src/game/state/gameState.ts';
+import {createEmptyTerminalMirror} from '../../apps/web/src/game/terminal/mirror.ts';
 
 test('resolveCanvasAction maps input dock clicks to command actions', () => {
   const state = createState();
@@ -159,6 +163,35 @@ test('resolveCanvasAction maps monitor magnify and slack compose targets', () =>
     resolveCanvasAction(
       pointIn(slackSendButtonRegion()),
       slackState,
+      testScenario()
+    ),
+    {type: 'slack_send'}
+  );
+});
+
+test('resolveCanvasAction keeps slack compose interactive in expanded runbook view', () => {
+  const initial = createState();
+  const state = {
+    ...initial,
+    monitors: {
+      ...initial.monitors,
+      right: {...initial.monitors.right, activePanelTab: 'slack'},
+    },
+    world: {...initial.world, expandedMonitor: 'runbook'},
+  };
+
+  assert.deepEqual(
+    resolveCanvasAction(
+      pointIn(slackComposeRegion('slack', 'runbook')),
+      state,
+      testScenario()
+    ),
+    {type: 'slack_compose'}
+  );
+  assert.deepEqual(
+    resolveCanvasAction(
+      pointIn(slackSendButtonRegion('slack', 'runbook')),
+      state,
       testScenario()
     ),
     {type: 'slack_send'}

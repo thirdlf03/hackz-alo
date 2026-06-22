@@ -19,97 +19,42 @@ import {
   setActiveRunbook,
   setCenterTool,
   setRightPanelTab,
-  setSlackDraft,
   submitPlayerSlackMessage,
   toggleExpandedMonitor,
   toggleNotificationPanel,
-  updateEditorPanel,
 } from '../game/state/gameState.js';
-import {
-  centerEditorOverlayRegion,
-  metricsPanelScrollRegion,
-} from '../game/render/canvasLayout.js';
-import {CanvasRenderer} from '../game/render/canvasRenderer.js';
+import {metricsPanelScrollRegion} from '../game/render/canvasLayout.js';
 import {resolveCanvasAction} from '../game/input/canvasActions.js';
 import {createEmptyTerminalMirror} from '../game/terminal/mirror.js';
-import {
-  defaultTerminalDimensions,
-  expandedTerminalDimensions,
-} from '../game/terminal/layout.js';
-import {TerminalSession} from '../game/terminal/session.js';
-import {terminalDebug} from '../game/terminal/debug.js';
-import {keyboardEventToTerminalInput} from '../game/terminal/input.js';
-import {CanvasRecorder} from '../game/recording/recorder.js';
 import {playAlertBeep} from '../game/recording/audio.js';
-import {RecordingFinalizer} from '../game/recording/finalizer.js';
-import {
-  installOfflineFlush,
-  OfflineUploadQueue,
-} from '../game/recording/offlineQueue.js';
-import {
-  classifyCommandEvent,
-  commandEventPayload,
-  ReplayEventEmitter,
-} from '../game/events/emitReplayEvent.js';
+import {ReplayEventEmitter} from '../game/events/emitReplayEvent.js';
 import {detectMetricThresholdCrossings} from '../game/events/monitorEvents.js';
 import {collectStateTransitions} from '../game/events/sessionEvents.js';
-import {ApiClient, type SessionClockResponse} from '../api/client.js';
+import {isTimelineEventType} from '../replay/replayMediaUtils.js';
 import {
-  isTimelineEventType,
-  type RecordingClockSegment,
-} from '../replay/replayMediaUtils.js';
-import {ReplayPage} from '../pages/ReplayPage.js';
-import {ResultPage} from '../pages/ResultPage.js';
+  BriefingScreen,
+  PlayScreen,
+  ReplayScreen,
+  ResultScreen,
+  ScenarioListScreen,
+  SelectScreen,
+  TopBar,
+  type FinishMode,
+  type ScenarioSummary,
+  type Screen,
+} from './AppScreens.js';
+import {
+  api,
+  type SessionClockResponse,
+  useCanvasRecording,
+  useCanvasRenderer,
+  useSessionEditor,
+  useTerminalBridge,
+} from './appRuntime.js';
 import '@xterm/xterm/css/xterm.css';
-
-type Screen =
-  | 'select'
-  | 'scenario-list'
-  | 'briefing'
-  | 'play'
-  | 'result'
-  | 'replay';
-type ScenarioSummary = Pick<
-  ScenarioDefinition,
-  'id' | 'title' | 'difficulty' | 'timeLimitMinutes'
->;
-type FinishMode = 'resolve' | 'retire' | 'timeout';
 
 const CONSENT_KEY = 'incident-recording-consent';
 const SAVE_RECORDING_KEY = 'incident-recording-save';
-const TUTORIAL_SCENARIO_ID = 'process-stop-001';
-const DANGEROUS_COMMAND = /\brm\s+-rf\b/i;
-const difficultyOptions: Array<{
-  difficulty: Difficulty;
-  label: string;
-  tone: string;
-  summary: string;
-}> = [
-  {
-    difficulty: 'beginner',
-    label: '初級',
-    tone: 'green',
-    summary: '監視とログを順番に追う短い初動訓練',
-  },
-  {
-    difficulty: 'intermediate',
-    label: '中級',
-    tone: 'amber',
-    summary: '原因候補を絞り込みながら復旧まで進める訓練',
-  },
-  {
-    difficulty: 'advanced',
-    label: '上級',
-    tone: 'red',
-    summary: '少ない手掛かりから仮説を立てて完走する訓練',
-  },
-];
-const speedOptions = [0.5, 1, 1.5, 2, 4, 8] as const;
-
-const api = new ApiClient();
-const offlineQueue = new OfflineUploadQueue(api);
-const recordingFlushRef: {stop?: () => void} = {};
-installOfflineFlush(offlineQueue, () => recordingFlushRef.stop?.());
 
 function readReplayIdFromSearch() {
   if (typeof window === 'undefined') return undefined;
@@ -122,16 +67,13 @@ function readReplayIdFromSearch() {
 export function App() {
   const initialReplayId = readReplayIdFromSearch();
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const editorTextareaRef = useRef<HTMLTextAreaElement>(null);
-  const rendererRef = useRef<CanvasRenderer | null>(null);
-  const recorderRef = useRef<CanvasRecorder | null>(null);
-  const finalizerRef = useRef<RecordingFinalizer | null>(null);
-  const saveRecordingRef = useRef(true);
+  const rendererRef = useRef<{scrollMetricsPanel(deltaY: number): void} | null>(
+    null
+  );
   const gameStateRef = useRef<GameRenderState | undefined>(undefined);
   const elapsedMsRef = useRef(0);
   const lastTickAtRef = useRef(0);
   const gameSpeedRef = useRef(1);
-  const terminalRef = useRef<TerminalSession | null>(null);
   const sessionRef = useRef<{sessionId: string; replayId: string} | undefined>(
     undefined
   );
@@ -139,8 +81,6 @@ export function App() {
   const eventEmitterRef = useRef<ReplayEventEmitter | null>(null);
   const finishingRef = useRef(false);
   const tabBeaconSentRef = useRef(false);
-  const recordingStartedAtGameMsRef = useRef(0);
-  const recordingClockSegmentsRef = useRef<RecordingClockSegment[]>([]);
   const liveReplayEventIdsRef = useRef(new Set<string>());
 
   const [screen, setScreen] = useState<Screen>(
@@ -213,25 +153,53 @@ export function App() {
     );
   }
 
-  function appendRecordingClockSegment(segment: RecordingClockSegment) {
-    const previous = recordingClockSegmentsRef.current.at(-1);
-    if (
-      previous &&
-      previous.gameMs === segment.gameMs &&
-      previous.videoMs === segment.videoMs
-    ) {
-      recordingClockSegmentsRef.current = [
-        ...recordingClockSegmentsRef.current.slice(0, -1),
-        segment,
-      ];
-      return;
-    }
-    if (previous && previous.speed === segment.speed) return;
-    recordingClockSegmentsRef.current = [
-      ...recordingClockSegmentsRef.current,
-      segment,
-    ];
-  }
+  const {
+    attachTerminalSession,
+    destroyTerminal,
+    handleCanvasPaste,
+    handleTerminalKey,
+  } = useTerminalBridge({
+    api,
+    screen,
+    gameState,
+    gameStateRef,
+    sessionRef,
+    scenarioRef,
+    eventEmitterRef,
+    patchGameStateRef,
+    currentGameTimeMs,
+    submitSlackMessage,
+  });
+  const recording = useCanvasRecording({
+    api,
+    canvasRef,
+    screen,
+    session,
+    hasRecordingConsent,
+    saveRecording,
+    gameSpeedRef,
+    currentGameTimeMs,
+    setGameState,
+    setAppError,
+  });
+  useCanvasRenderer({
+    screen,
+    canvasRef,
+    rendererRef,
+    gameStateRef,
+    scenarioRef,
+  });
+  const {editorTextareaRef, loadEditorFiles, openEditorFile, saveEditorFile} =
+    useSessionEditor({
+      api,
+      screen,
+      gameState,
+      sessionRef,
+      gameStateRef,
+      eventEmitterRef,
+      patchGameStateRef,
+      currentGameTimeMs,
+    });
 
   const applyClockSnapshot = (clock: SessionClockResponse) => {
     elapsedMsRef.current = clock.gameTimeMs;
@@ -271,9 +239,6 @@ export function App() {
   };
 
   useEffect(() => {
-    recordingFlushRef.stop = () => {
-      void recorderRef.current?.stop().catch(console.error);
-    };
     api
       .listScenarios()
       .then(setScenarios)
@@ -283,9 +248,6 @@ export function App() {
     eventEmitterRef.current = new ReplayEventEmitter(api, (at, label) => {
       setTimeline((items) => [...items, {at, label}]);
     });
-    return () => {
-      delete recordingFlushRef.stop;
-    };
   }, []);
 
   useEffect(() => {
@@ -320,9 +282,6 @@ export function App() {
     gameStateRef.current = gameState;
   }, [gameState]);
   useEffect(() => {
-    saveRecordingRef.current = saveRecording;
-  }, [saveRecording]);
-  useEffect(() => {
     gameSpeedRef.current = gameSpeed;
     const previous = gameStateRef.current;
     if (previous && screen === 'play') {
@@ -337,17 +296,8 @@ export function App() {
       );
       elapsedMsRef.current = snapped;
       lastTickAtRef.current = now;
-      const activeRecorder = recorderRef.current;
-      if (
-        oldSpeed !== gameSpeed &&
-        activeRecorder &&
-        recordingClockSegmentsRef.current.length > 0
-      ) {
-        appendRecordingClockSegment({
-          gameMs: snapped,
-          videoMs: activeRecorder.currentElapsedMs,
-          speed: gameSpeed,
-        });
+      if (oldSpeed !== gameSpeed) {
+        recording.recordSpeedChange(snapped, gameSpeed);
       }
       const next = advanceGameState(
         previous,
@@ -374,13 +324,6 @@ export function App() {
         .catch(console.error);
     }
   }, [gameSpeed, screen]);
-
-  useEffect(
-    () => () => {
-      terminalRef.current?.destroy();
-    },
-    []
-  );
 
   useEffect(() => {
     const onPageHide = () => {
@@ -427,99 +370,6 @@ export function App() {
       window.clearInterval(timer);
     };
   }, [screen]);
-
-  useEffect(() => {
-    if (screen !== 'play' || !canvasRef.current) return;
-    const renderer = new CanvasRenderer(canvasRef.current);
-    rendererRef.current = renderer;
-    let frame = 0;
-    let lastState: GameRenderState | undefined;
-    let lastScenario: ScenarioDefinition | undefined;
-    const draw = () => {
-      const latest = gameStateRef.current;
-      const scenario = scenarioRef.current;
-      const animate = Boolean(latest?.commandInputFocused);
-      if (
-        latest &&
-        (animate || latest !== lastState || scenario !== lastScenario)
-      ) {
-        renderer.draw(latest, scenario);
-        if (!animate) {
-          lastState = latest;
-          lastScenario = scenario;
-        }
-      }
-      frame = requestAnimationFrame(draw);
-    };
-    draw();
-    return () => {
-      cancelAnimationFrame(frame);
-      rendererRef.current = null;
-    };
-  }, [screen]);
-
-  useEffect(() => {
-    if (
-      screen !== 'play' ||
-      !session ||
-      !canvasRef.current ||
-      recorderRef.current ||
-      !hasRecordingConsent ||
-      !saveRecording
-    ) {
-      return;
-    }
-    const finalizer = new RecordingFinalizer();
-    finalizerRef.current = finalizer;
-    const recorder = new CanvasRecorder(canvasRef.current, {
-      replayId: session.replayId,
-      onChunk: async (chunk) => {
-        await finalizer.append(chunk.blob);
-        try {
-          await api.uploadChunk(session.replayId, chunk);
-        } catch {
-          await offlineQueue.enqueueChunk({
-            replayId: session.replayId,
-            ...chunk,
-          });
-        }
-      },
-      onEvent: async (event) => {
-        try {
-          await api.uploadEvents(session.replayId, [event]);
-        } catch {
-          await offlineQueue.enqueueEvents(session.replayId, [event]);
-        }
-      },
-    });
-    recorderRef.current = recorder;
-    setGameState((current) => updateRecordingStatus(current, 'initializing'));
-    try {
-      recorder.start();
-      recordingStartedAtGameMsRef.current = currentGameTimeMs();
-      recordingClockSegmentsRef.current = [
-        {
-          gameMs: recordingStartedAtGameMsRef.current,
-          videoMs: 0,
-          speed: gameSpeedRef.current,
-        },
-      ];
-      setGameState((current) => updateRecordingStatus(current, 'recording'));
-    } catch (error: unknown) {
-      recorderRef.current = null;
-      setAppError(toErrorMessage(error));
-      setGameState((current) =>
-        updateRecordingStatus(current, classifyRecordingError(error))
-      );
-    }
-    return () => {
-      if (recorderRef.current === recorder) {
-        recorderRef.current = null;
-        void recorder.stop().catch(console.error);
-      }
-      if (finalizerRef.current === finalizer) finalizerRef.current = null;
-    };
-  }, [screen, session?.replayId, hasRecordingConsent, saveRecording]);
 
   useEffect(() => {
     if (screen !== 'play' || !session) return;
@@ -679,14 +529,12 @@ export function App() {
     setDeepLinkValidated(true);
     setIsStarting(true);
     try {
-      terminalRef.current?.destroy();
-      terminalRef.current = null;
+      destroyTerminal();
       const created = await api.createSession({scenarioId});
       api.resetEventSequence();
       eventEmitterRef.current?.reset();
       liveReplayEventIdsRef.current.clear();
-      recordingStartedAtGameMsRef.current = 0;
-      recordingClockSegmentsRef.current = [];
+      recording.resetRecordingClock();
       elapsedMsRef.current = 0;
       lastTickAtRef.current = 0;
       finishingRef.current = false;
@@ -711,265 +559,6 @@ export function App() {
     }
   }
 
-  async function attachTerminalSession(activeSession: {
-    sessionId: string;
-    replayId: string;
-  }) {
-    terminalRef.current?.destroy();
-    const {cols, rows} = defaultTerminalDimensions();
-    await api.resizeTerminal(activeSession.sessionId, cols, rows);
-    const terminal = new TerminalSession({
-      sessionId: activeSession.sessionId,
-      cols,
-      rows,
-      onResize: (nextCols, nextRows) => {
-        void api
-          .resizeTerminal(activeSession.sessionId, nextCols, nextRows)
-          .catch(console.error);
-      },
-      onSnapshot: (snapshot) => {
-        patchGameStateRef((current) => ({
-          ...current,
-          monitors: {
-            ...current.monitors,
-            center: {...current.monitors.center, terminal: snapshot},
-          },
-        }));
-      },
-      onOutput: (summary) => {
-        const replayId = sessionRef.current?.replayId;
-        const emitter = eventEmitterRef.current;
-        if (!replayId || !emitter || !summary.trim()) return;
-        void emitter.emit({
-          replayId,
-          type: 'terminal_output',
-          at: currentGameTimeMs(),
-          actor: 'sandbox',
-          payload: {data: summary},
-        });
-      },
-      onCommand: (command) => {
-        const replayId = sessionRef.current?.replayId;
-        const emitter = eventEmitterRef.current;
-        if (!replayId || !emitter) return;
-        const at = currentGameTimeMs();
-        if (
-          DANGEROUS_COMMAND.test(command) &&
-          scenarioRef.current?.difficulty === 'beginner'
-        ) {
-          patchGameStateRef((current) => ({
-            ...current,
-            warning: {
-              message:
-                '危険: rm -rf は本番では慎重に。Runbook を確認してください。',
-              flashMs: 4000,
-            },
-          }));
-        }
-        void emitter.emit({
-          replayId,
-          type: 'terminal_input',
-          at,
-          payload: {data: `${command}\n`},
-          visibility: 'sensitive',
-        });
-        void emitter.emit({
-          replayId,
-          type: 'command_detected',
-          at,
-          payload: {command},
-        });
-        const special = classifyCommandEvent(command);
-        if (special) {
-          void emitter.emit({
-            replayId,
-            type: special,
-            at,
-            payload: commandEventPayload(command, special),
-          });
-        }
-      },
-    });
-    terminalRef.current = terminal;
-    terminal.connect();
-  }
-
-  function syncTerminalViewport() {
-    const terminal = terminalRef.current;
-    if (!terminal || screen !== 'play') return;
-    const expanded = gameStateRef.current?.world.expandedMonitor;
-    const {cols, rows} =
-      expanded === 'terminal'
-        ? expandedTerminalDimensions()
-        : defaultTerminalDimensions();
-    terminal.resize(cols, rows);
-  }
-
-  useEffect(() => {
-    if (screen !== 'play') return;
-    syncTerminalViewport();
-  }, [screen, gameState?.world.expandedMonitor]);
-
-  useEffect(() => {
-    if (
-      screen !== 'play' ||
-      gameState?.monitors.center.activeTool !== 'editor'
-    ) {
-      return;
-    }
-    window.setTimeout(() => editorTextareaRef.current?.focus(), 0);
-  }, [
-    screen,
-    gameState?.monitors.center.activeTool,
-    gameState?.monitors.center.editor.currentPath,
-  ]);
-
-  async function loadEditorFiles(preferredPath?: string) {
-    const activeSession = sessionRef.current;
-    if (!activeSession) return;
-    patchGameStateRef((current) =>
-      updateEditorPanel(current, (editor) => ({
-        ...editor,
-        status: 'loading',
-        error: undefined,
-      }))
-    );
-    try {
-      const response = await api.listSessionFiles(activeSession.sessionId);
-      const files =
-        response.files.length > 0
-          ? response.files
-          : (gameStateRef.current?.monitors.center.editor.files ?? []);
-      const targetPath =
-        preferredPath ??
-        gameStateRef.current?.monitors.center.editor.currentPath ??
-        files[0]?.path;
-      patchGameStateRef((current) =>
-        updateEditorPanel(current, (editor) => ({...editor, files}))
-      );
-      if (targetPath) await openEditorFile(targetPath, {skipListRefresh: true});
-      else {
-        patchGameStateRef((current) =>
-          updateEditorPanel(current, (editor) => ({...editor, status: 'ready'}))
-        );
-      }
-    } catch (error) {
-      patchGameStateRef((current) =>
-        updateEditorPanel(current, (editor) => ({
-          ...editor,
-          status: 'error',
-          error: toErrorMessage(error),
-        }))
-      );
-    }
-  }
-
-  async function openEditorFile(
-    path: string,
-    options: {skipListRefresh?: boolean} = {}
-  ) {
-    const activeSession = sessionRef.current;
-    if (!activeSession) return;
-    if (
-      !options.skipListRefresh &&
-      gameStateRef.current?.monitors.center.editor.files.length === 0
-    ) {
-      await loadEditorFiles(path);
-      return;
-    }
-    patchGameStateRef((current) =>
-      updateEditorPanel(current, (editor) => ({
-        ...editor,
-        currentPath: path,
-        status: 'loading',
-        error: undefined,
-      }))
-    );
-    try {
-      const file = await api.readSessionFile(activeSession.sessionId, path);
-      patchGameStateRef((current) =>
-        updateEditorPanel(current, (editor) => ({
-          ...editor,
-          currentPath: file.path,
-          content: file.content,
-          savedContent: file.content,
-          dirty: false,
-          status: 'ready',
-          error: undefined,
-          cursor: {line: 1, column: 1},
-        }))
-      );
-      const replayId = sessionRef.current?.replayId;
-      const emitter = eventEmitterRef.current;
-      if (replayId && emitter) {
-        void emitter.emit({
-          replayId,
-          type: 'file_opened',
-          at: currentGameTimeMs(),
-          payload: {path: file.path},
-        });
-      }
-    } catch (error) {
-      patchGameStateRef((current) =>
-        updateEditorPanel(current, (editor) => ({
-          ...editor,
-          status: 'error',
-          error: toErrorMessage(error),
-        }))
-      );
-    }
-  }
-
-  async function saveEditorFile() {
-    const activeSession = sessionRef.current;
-    const editor = gameStateRef.current?.monitors.center.editor;
-    if (!activeSession || !editor?.currentPath || editor.status === 'saving') {
-      return;
-    }
-    patchGameStateRef((current) =>
-      updateEditorPanel(current, (value) => ({
-        ...value,
-        status: 'saving',
-        error: undefined,
-      }))
-    );
-    try {
-      const saved = await api.writeSessionFile(
-        activeSession.sessionId,
-        editor.currentPath,
-        editor.content
-      );
-      patchGameStateRef((current) =>
-        updateEditorPanel(current, (value) => ({
-          ...value,
-          currentPath: saved.path,
-          savedContent: value.content,
-          dirty: false,
-          status: 'ready',
-          error: undefined,
-        }))
-      );
-      const replayId = sessionRef.current?.replayId;
-      const emitter = eventEmitterRef.current;
-      if (replayId && emitter) {
-        void emitter.emit({
-          replayId,
-          type: 'file_saved',
-          at: currentGameTimeMs(),
-          payload: {path: saved.path, byteLength: saved.byteLength},
-        });
-      }
-    } catch (error) {
-      patchGameStateRef((current) =>
-        updateEditorPanel(current, (value) => ({
-          ...value,
-          status: 'error',
-          error: toErrorMessage(error),
-        }))
-      );
-    }
-  }
-
   async function startPlay() {
     if (!session || !scenario || isStarting || !recordingConsent) return;
     localStorage.setItem(CONSENT_KEY, '1');
@@ -981,8 +570,7 @@ export function App() {
       await attachTerminalSession(session);
       elapsedMsRef.current = 0;
       lastTickAtRef.current = performance.now();
-      recordingStartedAtGameMsRef.current = 0;
-      recordingClockSegmentsRef.current = [];
+      recording.resetRecordingClock();
       setTimeline([]);
       setGameState(
         createInitialGameState(
@@ -1026,11 +614,17 @@ export function App() {
   async function endSession(mode: FinishMode) {
     if (!session || finishingRef.current) return;
     finishingRef.current = true;
-    const shouldSaveVideo = saveRecordingRef.current && hasRecordingConsent;
-    const activeRecorder = recorderRef.current;
-    const recordingMimeType = activeRecorder?.mimeType;
+    const shouldSaveVideo = recording.shouldSaveVideo();
     setGameState((current) =>
-      updateRecordingStatus(current, shouldSaveVideo ? 'stopping' : 'idle')
+      current
+        ? {
+            ...current,
+            recording: {
+              ...current.recording,
+              status: shouldSaveVideo ? 'stopping' : 'idle',
+            },
+          }
+        : current
     );
 
     let resolved = false;
@@ -1045,73 +639,14 @@ export function App() {
       await api.timeoutSession(session.sessionId).catch(console.error);
     }
 
-    terminalRef.current?.destroy();
-    terminalRef.current = null;
+    destroyTerminal();
 
-    if (shouldSaveVideo) {
-      await activeRecorder?.stop().catch((error: unknown) => {
-        setAppError(toErrorMessage(error));
-      });
-      const videoDurationMs = activeRecorder?.durationMs;
-      recorderRef.current = null;
-      await offlineQueue.flush();
-      setGameState((current) => updateRecordingStatus(current, 'finalizing'));
-      const finalized =
-        (await finalizerRef.current
-          ?.finalize(session.replayId, api)
-          .catch(() => false)) ?? false;
-      finalizerRef.current = null;
-      if (!finalized) {
-        const headOk = await fetch(
-          `/api/replays/${encodeURIComponent(session.replayId)}/video`,
-          {method: 'HEAD'}
-        )
-          .then((response) => response.ok)
-          .catch(() => false);
-        if (!headOk) {
-          await api
-            .assemblePartialReplayVideo(session.replayId)
-            .catch(() => undefined);
-        }
-      }
-      await api
-        .finishReplay(session.replayId, {
-          browserInfo: {
-            userAgent: navigator.userAgent,
-            mimeType: recordingMimeType,
-            recordingStartedAtGameMs: recordingStartedAtGameMsRef.current,
-            recordingClockSegments: recordingClockSegmentsRef.current,
-          },
-          ...(videoDurationMs === undefined ? {} : {videoDurationMs}),
-        })
-        .catch(console.error);
-    } else {
-      recorderRef.current = null;
-      finalizerRef.current = null;
-      await offlineQueue.flush();
-      await api
-        .finishReplay(session.replayId, {
-          browserInfo: {
-            userAgent: navigator.userAgent,
-            mimeType: recordingMimeType,
-            recordingStartedAtGameMs: recordingStartedAtGameMsRef.current,
-            recordingClockSegments: recordingClockSegmentsRef.current,
-          },
-        })
-        .catch(console.error);
-    }
+    const recordingStatus = await recording.finishRecording(
+      session,
+      shouldSaveVideo
+    );
     const status =
       mode === 'retire' ? 'retired' : resolved ? 'resolved' : 'failed';
-    let recordingStatus: GameRenderState['recording']['status'] = 'idle';
-    if (shouldSaveVideo) {
-      const videoOk = await fetch(
-        `/api/replays/${encodeURIComponent(session.replayId)}/video`,
-        {method: 'HEAD'}
-      )
-        .then((response) => response.ok)
-        .catch(() => false);
-      recordingStatus = videoOk ? 'ready' : 'upload_degraded';
-    }
     setGameState((current) =>
       current
         ? {
@@ -1326,59 +861,6 @@ export function App() {
     rendererRef.current?.scrollMetricsPanel(event.deltaY);
   }
 
-  function handleTerminalKey(event: KeyboardEvent) {
-    if (screen !== 'play') return;
-    if (gameStateRef.current?.monitors.center.activeTool === 'editor') return;
-    if (gameStateRef.current?.slackCompose.active) {
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        patchGameStateRef((current) => deactivateSlackCompose(current));
-        return;
-      }
-      if (event.key === 'Enter') {
-        event.preventDefault();
-        submitSlackMessage();
-        return;
-      }
-      if (event.key === 'Backspace') {
-        event.preventDefault();
-        patchGameStateRef((current) =>
-          setSlackDraft(current, current.slackCompose.draft.slice(0, -1))
-        );
-        return;
-      }
-      if (
-        event.key.length === 1 &&
-        !event.ctrlKey &&
-        !event.metaKey &&
-        !event.altKey
-      ) {
-        event.preventDefault();
-        patchGameStateRef((current) =>
-          setSlackDraft(current, `${current.slackCompose.draft}${event.key}`)
-        );
-      }
-      return;
-    }
-    if (!terminalRef.current) return;
-    if (!gameStateRef.current?.commandInputFocused) {
-      patchGameStateRef((current) => focusCommandInput(current));
-    }
-    const input = keyboardEventToTerminalInput(event);
-    if (!input) return;
-    event.preventDefault();
-    if (event.ctrlKey && event.key.toLowerCase() === 'c') {
-      terminalDebug('keydown.ctrl-c', {interruptOnly: true});
-      const activeSession = sessionRef.current;
-      if (activeSession) {
-        void api.interruptTerminal(activeSession.sessionId).catch(() => {});
-      }
-      return;
-    }
-    if (terminalRef.current.getConnectionState() !== 'connected') return;
-    terminalRef.current.input(input);
-  }
-
   function openReplay() {
     if (!canNavigateToReplay) return;
     setScreen('replay');
@@ -1389,64 +871,15 @@ export function App() {
       <a href='#main-content' class='skip-link'>
         メインコンテンツへスキップ
       </a>
-      <header class='topbar'>
-        <strong
-          class='topbar-brand'
-          role='link'
-          tabIndex={screen === 'play' || isStarting ? -1 : 0}
-          aria-label='ホーム（難易度選択）に戻る'
-          aria-disabled={screen === 'play' || isStarting}
-          onClick={() => {
-            if (screen === 'play' || isStarting) return;
-            setScreen('select');
-          }}
-          onKeyDown={(event) => {
-            if (screen === 'play' || isStarting) return;
-            if (event.key === 'Enter' || event.key === ' ') {
-              event.preventDefault();
-              setScreen('select');
-            }
-          }}
-        >
-          障害対応訓練
-        </strong>
-        <div class='speed-control' role='group' aria-label='ゲーム速度'>
-          {speedOptions.map((speed) => (
-            <button
-              key={speed}
-              type='button'
-              class={speed === gameSpeed ? 'active' : ''}
-              aria-pressed={speed === gameSpeed}
-              onClick={() => {
-                setGameSpeed(speed);
-              }}
-            >
-              {speed}x
-            </button>
-          ))}
-        </div>
-        <div class='topbar-actions'>
-          <button
-            type='button'
-            aria-label='シナリオ選択に戻る'
-            onClick={() => {
-              setScreen('select');
-            }}
-            disabled={screen === 'play' || isStarting}
-          >
-            Scenario
-          </button>
-          {canNavigateToReplay && (
-            <button
-              type='button'
-              aria-label='リプレイ詳細を開く'
-              onClick={openReplay}
-            >
-              Replay
-            </button>
-          )}
-        </div>
-      </header>
+      <TopBar
+        screen={screen}
+        isStarting={isStarting}
+        gameSpeed={gameSpeed}
+        canNavigateToReplay={canNavigateToReplay}
+        onSetScreen={setScreen}
+        onSetGameSpeed={setGameSpeed}
+        onOpenReplay={openReplay}
+      />
       {appError && (
         <p class='app-error' role='alert'>
           {appError}
@@ -1454,234 +887,65 @@ export function App() {
       )}
 
       {screen === 'select' && (
-        <section class='select-screen'>
-          <div class='select-header'>
-            <p class='eyebrow'>Incident Drill</p>
-            <h1>難易度を選ぶ</h1>
-            <p>難易度ごとにシナリオを選んで訓練を開始します。</p>
-          </div>
-          <div class='difficulty-grid'>
-            {difficultyOptions.map((option) => {
-              const count = scenarios.filter(
-                (item) => item.difficulty === option.difficulty
-              ).length;
-              const disabled = count === 0 || isStarting;
-              return (
-                <button
-                  key={option.difficulty}
-                  class={`difficulty-card ${option.tone}`}
-                  type='button'
-                  disabled={disabled}
-                  aria-label={`${option.label}、${String(count)} シナリオ。${option.summary}${disabled ? '（シナリオなし）' : ''}`}
-                  title={
-                    disabled ? 'この難易度にはシナリオがありません' : undefined
-                  }
-                  onClick={() => {
-                    setSelectedDifficulty(option.difficulty);
-                    setScreen('scenario-list');
-                  }}
-                >
-                  <span class='difficulty-label'>{option.label}</span>
-                  <strong>{count} シナリオ</strong>
-                  <small>{option.summary}</small>
-                </button>
-              );
-            })}
-          </div>
-        </section>
+        <SelectScreen
+          scenarios={scenarios}
+          isStarting={isStarting}
+          onSelectDifficulty={(difficulty) => {
+            setSelectedDifficulty(difficulty);
+            setScreen('scenario-list');
+          }}
+        />
       )}
 
       {screen === 'scenario-list' && selectedDifficulty && (
-        <section
-          class='panel scenario-list-panel'
-          aria-labelledby='scenario-list-heading'
-        >
-          <button
-            type='button'
-            class='panel-back-button'
-            aria-label='難易度選択に戻る'
-            onClick={() => {
-              setScreen('select');
-            }}
-          >
-            ← 戻る
-          </button>
-          <h1 id='scenario-list-heading'>
-            {formatDifficulty(selectedDifficulty)}シナリオ
-          </h1>
-          <div class='scenario-list'>
-            {filteredScenarios.map((item) => (
-              <button
-                key={item.id}
-                type='button'
-                class='scenario-card'
-                disabled={isStarting}
-                onClick={() => void createSessionForScenario(item.id)}
-              >
-                <span class='scenario-card-main'>
-                  <strong>{item.title}</strong>
-                  {item.id === TUTORIAL_SCENARIO_ID && (
-                    <span class='tutorial-badge'>チュートリアル</span>
-                  )}
-                </span>
-                <span>{item.timeLimitMinutes}分</span>
-              </button>
-            ))}
-          </div>
-        </section>
+        <ScenarioListScreen
+          selectedDifficulty={selectedDifficulty}
+          scenarios={filteredScenarios}
+          isStarting={isStarting}
+          onBack={() => {
+            setScreen('select');
+          }}
+          onStartScenario={(scenarioId) =>
+            void createSessionForScenario(scenarioId)
+          }
+        />
       )}
 
       {screen === 'briefing' && scenario && (
-        <section
-          class='panel briefing-panel'
-          aria-labelledby='briefing-heading'
-        >
-          <button
-            type='button'
-            class='panel-back-button'
-            aria-label='シナリオ選択に戻る'
-            disabled={isStarting}
-            onClick={() => {
-              setScreen('scenario-list');
-            }}
-          >
-            ← 戻る
-          </button>
-          <h1 id='briefing-heading'>{scenario.title}</h1>
-          <ul>
-            {scenario.briefing.map((line) => (
-              <li key={line}>{line}</li>
-            ))}
-          </ul>
-          <fieldset>
-            <legend>録画設定</legend>
-            <label class='consent-row'>
-              <input
-                type='checkbox'
-                checked={recordingConsent}
-                onChange={(event) => {
-                  setRecordingConsent(event.currentTarget.checked);
-                }}
-              />
-              ゲーム画面（canvas 内のみ）を録画し、振り返りに使うことに同意する
-            </label>
-            <label class='consent-row'>
-              <input
-                type='checkbox'
-                checked={saveRecording}
-                disabled={!recordingConsent}
-                onChange={(event) => {
-                  setSaveRecording(event.currentTarget.checked);
-                }}
-              />
-              録画データをサーバーに保存する（オフにするとイベントログのみ残ります）
-            </label>
-          </fieldset>
-          <p id='briefing-consent-note'>
-            ブラウザ全体や別タブは録画されません。公開するかどうかは後から選べます。
-          </p>
-          <button
-            type='button'
-            onClick={() => void startPlay()}
-            disabled={isStarting || !recordingConsent}
-            aria-describedby='briefing-consent-note'
-          >
-            {isStarting ? '開始中…' : '開始'}
-          </button>
-        </section>
+        <BriefingScreen
+          scenario={scenario}
+          isStarting={isStarting}
+          recordingConsent={recordingConsent}
+          saveRecording={saveRecording}
+          onBack={() => {
+            setScreen('scenario-list');
+          }}
+          onSetRecordingConsent={setRecordingConsent}
+          onSetSaveRecording={setSaveRecording}
+          onStartPlay={() => void startPlay()}
+        />
       )}
 
       {screen === 'play' && (
-        <section class='game-layout'>
-          {gameState?.monitors.center.activeTool === 'editor' && (
-            <textarea
-              ref={editorTextareaRef}
-              class='editor-overlay'
-              style={editorOverlayStyle(
-                canvasRef.current,
-                gameState.world.expandedMonitor === 'terminal'
-              )}
-              value={gameState.monitors.center.editor.content}
-              aria-label={`${gameState.monitors.center.editor.currentPath ?? 'ファイル'} を編集`}
-              spellcheck={false}
-              disabled={
-                gameState.monitors.center.editor.status === 'loading' ||
-                gameState.monitors.center.editor.status === 'saving'
-              }
-              onInput={(event) => {
-                const target = event.currentTarget;
-                const cursor = editorCursorFromTextarea(target);
-                patchGameStateRef((current) =>
-                  updateEditorPanel(current, (editor) => ({
-                    ...editor,
-                    content: target.value,
-                    dirty: target.value !== editor.savedContent,
-                    status: editor.status === 'error' ? 'ready' : editor.status,
-                    cursor,
-                  }))
-                );
-              }}
-              onSelect={(event) => {
-                const target = event.currentTarget;
-                const cursor = editorCursorFromTextarea(target);
-                patchGameStateRef(
-                  (current) =>
-                    updateEditorPanel(current, (editor) => ({
-                      ...editor,
-                      cursor,
-                    })),
-                  {collectTransitions: false}
-                );
-              }}
-              onKeyDown={(event) => {
-                if (
-                  (event.metaKey || event.ctrlKey) &&
-                  event.key.toLowerCase() === 's'
-                ) {
-                  event.preventDefault();
-                  void saveEditorFile();
-                }
-                if (event.key === 'Escape') {
-                  event.preventDefault();
-                  patchGameStateRef((current) =>
-                    setCenterTool(current, 'terminal')
-                  );
-                }
-              }}
-            />
-          )}
-          <canvas
-            ref={canvasRef}
-            width='1920'
-            height='1080'
-            aria-label='録画対象のゲーム画面。ターミナル入力はキーボードで操作できます。'
-            aria-describedby='canvas-play-hint'
-            tabIndex={0}
-            onClick={handleCanvasClick}
-            onMouseMove={handleCanvasMove}
-            onWheel={handleCanvasWheel}
-            onKeyDown={handleTerminalKey}
-            onPaste={(event) => {
-              const clipboard = event.clipboardData;
-              if (!clipboard || !terminalRef.current) return;
-              const text = clipboard.getData('text/plain');
-              if (text) {
-                event.preventDefault();
-                terminalRef.current.input(text);
-              }
-            }}
-          />
-          <p id='canvas-play-hint' class='visually-hidden'>
-            ターミナルにフォーカスしてキーボードでコマンドを入力できます。画面上のボタンはマウスで操作します。
-          </p>
-        </section>
+        <PlayScreen
+          gameState={gameState}
+          canvasRef={canvasRef}
+          editorTextareaRef={editorTextareaRef}
+          patchGameStateRef={patchGameStateRef}
+          onSaveEditorFile={() => void saveEditorFile()}
+          onCanvasClick={handleCanvasClick}
+          onCanvasMove={handleCanvasMove}
+          onCanvasWheel={handleCanvasWheel}
+          onTerminalKey={handleTerminalKey}
+          onCanvasPaste={handleCanvasPaste}
+        />
       )}
 
       {screen === 'result' && session && scenario && (
-        <ResultPage
+        <ResultScreen
           replayId={session.replayId}
           sessionId={session.sessionId}
-          scenarioTitle={scenario.title}
+          scenario={scenario}
           canOpenReplay={canNavigateToReplay}
           onGoHome={() => {
             setScreen('select');
@@ -1692,14 +956,10 @@ export function App() {
         />
       )}
 
-      {screen === 'replay' && activeReplayId && !deepLinkValidated && (
-        <section class='panel' aria-busy='true'>
-          <p role='status'>リプレイを読み込み中…</p>
-        </section>
-      )}
-      {screen === 'replay' && activeReplayId && deepLinkValidated && (
-        <ReplayPage
+      {screen === 'replay' && activeReplayId && (
+        <ReplayScreen
           replayId={activeReplayId}
+          deepLinkValidated={deepLinkValidated}
           timeline={session ? timeline : []}
         />
       )}
@@ -1707,20 +967,6 @@ export function App() {
   );
 }
 
-function updateRecordingStatus(
-  state: GameRenderState | undefined,
-  status: GameRenderState['recording']['status']
-) {
-  return state ? {...state, recording: {...state.recording, status}} : state;
-}
-function classifyRecordingError(
-  error: unknown
-): GameRenderState['recording']['status'] {
-  const message = toErrorMessage(error);
-  return message.includes('MediaRecorder') || message.includes('captureStream')
-    ? 'unsupported_browser'
-    : 'recording_error';
-}
 function toErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
@@ -1742,33 +988,4 @@ function containsPoint(
     y >= rect.y &&
     y <= rect.y + rect.height
   );
-}
-function editorOverlayStyle(
-  canvas: HTMLCanvasElement | null,
-  expanded: boolean
-) {
-  if (!canvas) return {display: 'none'};
-  const rect = canvas.getBoundingClientRect();
-  const region = centerEditorOverlayRegion(expanded);
-  const scaleX = rect.width / 1920;
-  const scaleY = rect.height / 1080;
-  return {
-    left: `${String(rect.left + region.x * scaleX)}px`,
-    top: `${String(rect.top + region.y * scaleY)}px`,
-    width: `${String(region.width * scaleX)}px`,
-    height: `${String(region.height * scaleY)}px`,
-  };
-}
-function editorCursorFromTextarea(textarea: HTMLTextAreaElement) {
-  const before = textarea.value.slice(0, textarea.selectionStart);
-  const lines = before.split('\n');
-  return {
-    line: lines.length,
-    column: (lines[lines.length - 1]?.length ?? 0) + 1,
-  };
-}
-function formatDifficulty(difficulty: Difficulty) {
-  if (difficulty === 'beginner') return '初級';
-  if (difficulty === 'intermediate') return '中級';
-  return '上級';
 }

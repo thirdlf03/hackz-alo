@@ -102,6 +102,15 @@ export function resolveCanvasAction(
     return {type: 'dismiss_navigation', stepId: state.navigation.activeStepId};
   }
 
+  const slackTarget = slackComposeAt(
+    point.x,
+    point.y,
+    state.monitors.right.activePanelTab,
+    state.world.expandedMonitor
+  );
+  if (slackTarget === 'send') return {type: 'slack_send'};
+  if (slackTarget === 'compose') return {type: 'slack_compose'};
+
   if (state.world.expandedMonitor) {
     if (!containsCanvasPoint(expandedMonitorLayout, point.x, point.y)) {
       return {type: 'close_expanded_monitor'};
@@ -113,15 +122,6 @@ export function resolveCanvasAction(
   if (monitorMagnify) {
     return {type: 'toggle_expanded_monitor', monitor: monitorMagnify};
   }
-
-  const slackTarget = slackComposeAt(
-    point.x,
-    point.y,
-    state.monitors.right.activePanelTab,
-    state.world.expandedMonitor
-  );
-  if (slackTarget === 'send') return {type: 'slack_send'};
-  if (slackTarget === 'compose') return {type: 'slack_compose'};
 
   if (state.slackCompose.active) return {type: 'deactivate_slack_compose'};
   return {type: 'none'};

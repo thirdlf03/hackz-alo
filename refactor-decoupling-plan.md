@@ -10,15 +10,15 @@
 
 2026-06-22 時点の主な密結合ポイント:
 
-| 対象 | 現状 | 問題 |
-| --- | ---: | --- |
-| `apps/web/src/app/App.tsx` | 約 1,775 行、内部 import 21 | UI component が session lifecycle、terminal、recording、editor、SSE、metrics polling、replay event を直接管理している |
-| `apps/web/src/game/render/canvasRenderer.ts` | 約 2,055 行 | 描画処理が `GameRenderState` / `ScenarioDefinition` の加工も行っている |
-| `apps/worker/src/durable/SessionDurableObject.ts` | 約 1,047 行 | DO が HTTP dispatch、状態機械、timeline scheduler、SSE、DB 永続化、Sandbox 操作を抱えている |
-| `apps/worker/src/index.ts` | 約 568 行 | Hono routing、DB/R2 操作、DO proxy、replay route が同居している |
-| `apps/worker/src/sandbox/runtime.ts` | 約 482 行 | fault / success condition ごとの command builder が if/else chain に密集している |
-| `apps/web/src/api/client.ts` | 約 408 行 | session / replay / recording / SSE API と replay event sequence が単一 client にまとまっている |
-| `apps/worker/src/sandbox/assets.ts` | 巨大な埋め込み文字列 | sandbox 内ファイルと repo 内実ファイルの同期保証が弱い |
+| 対象                                              |                        現状 | 問題                                                                                                                  |
+| ------------------------------------------------- | --------------------------: | --------------------------------------------------------------------------------------------------------------------- |
+| `apps/web/src/app/App.tsx`                        | 約 1,775 行、内部 import 21 | UI component が session lifecycle、terminal、recording、editor、SSE、metrics polling、replay event を直接管理している |
+| `apps/web/src/game/render/canvasRenderer.ts`      |                 約 2,055 行 | 描画処理が `GameRenderState` / `ScenarioDefinition` の加工も行っている                                                |
+| `apps/worker/src/durable/SessionDurableObject.ts` |                 約 1,047 行 | DO が HTTP dispatch、状態機械、timeline scheduler、SSE、DB 永続化、Sandbox 操作を抱えている                           |
+| `apps/worker/src/index.ts`                        |                   約 568 行 | Hono routing、DB/R2 操作、DO proxy、replay route が同居している                                                       |
+| `apps/worker/src/sandbox/runtime.ts`              |                   約 482 行 | fault / success condition ごとの command builder が if/else chain に密集している                                      |
+| `apps/web/src/api/client.ts`                      |                   約 408 行 | session / replay / recording / SSE API と replay event sequence が単一 client にまとまっている                        |
+| `apps/worker/src/sandbox/assets.ts`               |        巨大な埋め込み文字列 | sandbox 内ファイルと repo 内実ファイルの同期保証が弱い                                                                |
 
 直近の検証ベースライン:
 
@@ -41,16 +41,16 @@
 
 完了判定の数値目標:
 
-| 指標 | 現状 | 完了目標 |
-| --- | ---: | ---: |
-| `App.tsx` 行数 | 約 1,775 | 1,100 行以下 |
-| `App.tsx` 内部 import 数 | 21 | 12 以下 |
-| `SessionDurableObject.ts` 行数 | 約 1,047 | 750 行以下 |
-| `apps/worker/src/index.ts` 行数 | 約 568 | 260 行以下 |
-| `sandbox/runtime.ts` の fault if/else chain | あり | registry 化し、分岐の追加は table 追加だけにする |
-| 新規抽出 module の line coverage | なし | 90% 以上 |
-| 全体 line coverage | 77.27% | 77.27% 未満に落とさない |
-| lint warning/error | 0 | 0 |
+| 指標                                        |     現状 |                                         完了目標 |
+| ------------------------------------------- | -------: | -----------------------------------------------: |
+| `App.tsx` 行数                              | 約 1,775 |                                     1,100 行以下 |
+| `App.tsx` 内部 import 数                    |       21 |                                          12 以下 |
+| `SessionDurableObject.ts` 行数              | 約 1,047 |                                       750 行以下 |
+| `apps/worker/src/index.ts` 行数             |   約 568 |                                       260 行以下 |
+| `sandbox/runtime.ts` の fault if/else chain |     あり | registry 化し、分岐の追加は table 追加だけにする |
+| 新規抽出 module の line coverage            |     なし |                                         90% 以上 |
+| 全体 line coverage                          |   77.27% |                          77.27% 未満に落とさない |
+| lint warning/error                          |        0 |                                                0 |
 
 補足: 全体 coverage はファイル分割で揺れるため、最重要指標は「新規抽出 module の直接テスト」とする。全体 coverage は退行検知の下限として使う。
 
@@ -450,13 +450,13 @@ Phase 7 完了条件:
 
 ## リスクと対策
 
-| リスク | 対策 |
-| --- | --- |
-| refactor 中にゲーム進行が壊れる | 各 phase の前に重要境界テストを追加する |
-| ファイル分割で import cycle が発生する | domain helper は UI / adapter を import しないルールにする |
-| coverage が分割で一時的に下がる | 新規 module coverage 90% を必須にし、全体 coverage は 77.27% 未満に落とさない |
-| DO の alarm / setTimeout 挙動が壊れる | timeline helper は純粋計算だけ抽出し、timer 実行は最後に分ける |
-| App hook 分割で stale closure が増える | refs と callbacks を `useSessionRuntime` に集約し、hook API を明示する |
+| リスク                                 | 対策                                                                          |
+| -------------------------------------- | ----------------------------------------------------------------------------- |
+| refactor 中にゲーム進行が壊れる        | 各 phase の前に重要境界テストを追加する                                       |
+| ファイル分割で import cycle が発生する | domain helper は UI / adapter を import しないルールにする                    |
+| coverage が分割で一時的に下がる        | 新規 module coverage 90% を必須にし、全体 coverage は 77.27% 未満に落とさない |
+| DO の alarm / setTimeout 挙動が壊れる  | timeline helper は純粋計算だけ抽出し、timer 実行は最後に分ける                |
+| App hook 分割で stale closure が増える | refs と callbacks を `useSessionRuntime` に集約し、hook API を明示する        |
 
 ## 最終 Done Definition
 

@@ -1,17 +1,36 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {
+import {tsImport} from 'tsx/esm/api';
+
+const {
+  centerEditorOverlayRegion,
   centerToolAt,
   centerToolTabRegions,
+  containsCanvasPoint,
+  inputDockRects,
+  logicalHeight,
+  logicalWidth,
   measureRunbookTabWidth,
+  metricsPanelScrollRegion,
+  monitorContentRegion,
   monitorMagnifyAt,
   monitorMagnifyRegions,
+  monitorLayout,
+  monitorLayouts,
+  navigationOverlayRect,
+  notificationBellRegion,
+  notificationPanelRegion,
+  rightPanelLayout,
   rightPanelPrimaryTabAt,
+  runbookTabRegion,
   runbookTabAt,
   slackComposeAt,
   slackComposeRegion,
   slackSendButtonRegion,
-} from '../../apps/web/src/game/render/canvasLayout.ts';
+} = await tsImport(
+  '../../apps/web/src/game/render/canvasLayout.ts',
+  import.meta.url
+);
 
 test('measureRunbookTabWidth clamps text measurement to stable tab sizes', () => {
   assert.equal(
@@ -26,6 +45,86 @@ test('measureRunbookTabWidth clamps text measurement to stable tab sizes', () =>
     measureRunbookTabWidth('middle', () => 140),
     172
   );
+});
+
+test('rightPanelLayout returns stable vertical regions', () => {
+  assert.deepEqual(rightPanelLayout('runbook', true), {
+    primaryTop: 0,
+    secondaryTop: 48,
+    contentTop: 116,
+    composeTop: 480,
+    slackMessagesTop: 68,
+    slackMessagesBottom: 468,
+  });
+  assert.equal(rightPanelLayout('runbook', false).contentTop, 68);
+  assert.equal(rightPanelLayout('slack', true).contentTop, 68);
+});
+
+test('monitor layout helpers derive content and overlay regions', () => {
+  assert.deepEqual(
+    monitorLayouts.map((monitor) => monitor.id),
+    ['metrics', 'terminal', 'runbook']
+  );
+  assert.equal(monitorLayout('metrics'), monitorLayouts[0]);
+  assert.throws(() => monitorLayout('missing'), /missing monitor layout/);
+
+  const terminalContent = monitorContentRegion(monitorLayout('terminal'));
+  assert.deepEqual(terminalContent, {
+    x: 712,
+    y: 204,
+    width: 496,
+    height: 540,
+  });
+  assert.deepEqual(centerEditorOverlayRegion(), {
+    x: 868,
+    y: 270,
+    width: 340,
+    height: 470,
+  });
+  assert.equal(centerEditorOverlayRegion(true).x, 282 + 156 * (700 / 540));
+  assert.deepEqual(metricsPanelScrollRegion(), {
+    x: 92,
+    y: 260,
+    width: 496,
+    height: 484,
+  });
+});
+
+test('static canvas regions stay bounded and hidden regions stay offscreen', () => {
+  const visibleRegions = [
+    notificationBellRegion,
+    notificationPanelRegion,
+    inputDockRects.input,
+    inputDockRects.retire,
+    inputDockRects.button,
+    navigationOverlayRect,
+    runbookTabRegion(),
+  ];
+
+  for (const region of visibleRegions) {
+    assert.equal(containsCanvasPoint(region, region.x + 1, region.y + 1), true);
+    assert.equal(
+      region.x >= 0 && region.x + region.width <= logicalWidth,
+      true
+    );
+    assert.equal(
+      region.y >= 0 && region.y + region.height <= logicalHeight,
+      true
+    );
+  }
+  assert.equal(containsCanvasPoint(notificationBellRegion, 0, 0), false);
+  assert.deepEqual(slackComposeRegion('runbook'), {
+    x: 0,
+    y: -1000,
+    width: 0,
+    height: 0,
+  });
+  assert.deepEqual(slackSendButtonRegion('runbook'), {
+    x: 0,
+    y: -1000,
+    width: 0,
+    height: 0,
+  });
 });
 
 test('centerToolAt resolves terminal and editor tabs by canvas coordinates', () => {

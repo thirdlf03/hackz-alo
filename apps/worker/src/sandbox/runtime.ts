@@ -4,14 +4,16 @@ import type {
   ScenarioDefinition,
   SuccessCondition,
 } from '@incident/shared';
-import {
-  coerceBoolean,
-  coerceNumber,
-  coerceString,
-  formatUnknown,
-} from '@incident/shared';
+import {formatUnknown} from '@incident/shared';
 import type {Bindings} from '../types.js';
 import {installSandboxAssets} from './assets.js';
+import {buildFaultCommand} from './faultCommands.js';
+import {
+  isWorkspacePath,
+  normalizeEditableWorkspacePath,
+  shellArg,
+} from './pathSafety.js';
+import {buildSuccessCheckCommand} from './successEvaluators.js';
 
 export type SandboxRuntime = Sandbox;
 
@@ -246,77 +248,7 @@ export async function injectFault(
   params: Record<string, unknown>
 ) {
   const sandbox = getSessionSandbox(env, sessionId);
-  if (type === 'process_stop') {
-    await sandbox.exec(
-      `node /workspace/bin/fault-injector.mjs process_stop ${shellArg(coerceString(params.processId, 'api'))}`
-    );
-  } else if (type === 'disk_full') {
-    await sandbox.exec(
-      `node /workspace/bin/fault-injector.mjs disk_full ${shellArg(coerceString(params.path, '/workspace/logs/debug.log'))} ${String(coerceNumber(params.bytes, 67108864))}`
-    );
-  } else if (type === 'unlang_batch_failure') {
-    const batchPath = coerceString(
-      params.path,
-      '/workspace/services/batch/sales.un'
-    );
-    const jobId = coerceString(params.jobId, 'sales-nightly');
-    const specFlag = coerceBoolean(params.specInComments)
-      ? ' spec-in-comments'
-      : '';
-    await sandbox.exec(
-      `node /workspace/bin/fault-injector.mjs unlang_batch_failure ${shellArg(batchPath)} ${shellArg(jobId)}${specFlag}`
-    );
-  } else if (type === 'queue_backlog') {
-    await sandbox.exec(
-      `node /workspace/bin/fault-injector.mjs queue_backlog ${String(coerceNumber(params.count, 32))}`
-    );
-  } else if (type === 'bad_deploy') {
-    await sandbox.exec(
-      `node /workspace/bin/fault-injector.mjs bad_deploy ${shellArg(coerceString(params.configPath, '/workspace/run/deploy.json'))}`
-    );
-  } else if (type === 'db_pool_exhaust') {
-    await sandbox.exec(
-      `node /workspace/bin/fault-injector.mjs db_pool_exhaust ${String(coerceNumber(params.maxConnections, 40))}`
-    );
-  } else if (type === 'memory_leak') {
-    await sandbox.exec(
-      `node /workspace/bin/fault-injector.mjs memory_leak ${String(coerceNumber(params.targetPercent, 92))}`
-    );
-  } else if (type === 'dns_misconfig') {
-    await sandbox.exec(
-      `node /workspace/bin/fault-injector.mjs dns_misconfig ${shellArg(coerceString(params.hostsPath, '/workspace/run/hosts.override'))}`
-    );
-  } else if (type === 'monitor_blind') {
-    await sandbox.exec(
-      `node /workspace/bin/fault-injector.mjs monitor_blind ${shellArg(JSON.stringify(params.blindMetrics ?? ['cpu', 'memory']))}`
-    );
-  } else if (type === 'composite_restart_loop') {
-    await sandbox.exec(
-      `node /workspace/bin/fault-injector.mjs composite_restart_loop ${shellArg(coerceString(params.diskPath, '/workspace/logs/debug.log'))} ${String(coerceNumber(params.bytes, 67108864))} ${shellArg(coerceString(params.processId, 'api'))}`
-    );
-  } else if (type === 'janitor_power_pull') {
-    await sandbox.exec(
-      `node /workspace/bin/fault-injector.mjs janitor_power_pull ${shellArg(coerceString(params.processId, 'api'))}`
-    );
-  } else if (type === 'cable_jumprope') {
-    await sandbox.exec(
-      `node /workspace/bin/fault-injector.mjs cable_jumprope ${shellArg(coerceString(params.hostsPath, '/workspace/run/hosts.override'))}`
-    );
-  } else if (type === 'keyboard_spill') {
-    await sandbox.exec(
-      `node /workspace/bin/fault-injector.mjs keyboard_spill ${shellArg(coerceString(params.noise, 'べちゃっxべちゃっ'))}`
-    );
-  } else if (type === 'alert_spam') {
-    await sandbox.exec(
-      `node /workspace/bin/fault-injector.mjs alert_spam ${String(coerceNumber(params.count, 24))}`
-    );
-  } else if (type === 'runbook_gaslight') {
-    await sandbox.exec(
-      `node /workspace/bin/fault-injector.mjs runbook_gaslight ${shellArg(coerceString(params.replacement, '気合いで直す。根性。深呼吸。'))}`
-    );
-  } else {
-    throw new Error(`unknown fault type: ${type}`);
-  }
+  await sandbox.exec(buildFaultCommand(type, params));
 }
 
 export async function evaluateSuccessCondition(
@@ -325,35 +257,7 @@ export async function evaluateSuccessCondition(
   condition: SuccessCondition
 ) {
   const sandbox = getSessionSandbox(env, sessionId);
-  if (condition.type === 'http_status') {
-    const script = `fetch(${JSON.stringify(condition.url)}).then(r=>process.exit(r.status===${String(condition.status)}?0:1)).catch(()=>process.exit(1))`;
-    const result = await sandbox.exec(`node -e ${shellArg(script)}`);
-    return result.success;
-  }
-  if (condition.type === 'process_running') {
-    const result = await sandbox.exec(
-      `test ! -f /workspace/run/${shellPathSegment(condition.processId)}.down`
-    );
-    return result.success;
-  }
-  if (condition.type === 'marker_absent') {
-    const markerPath = shellArg(normalizeWorkspaceMarkerPath(condition.path));
-    const result = await sandbox.exec(`test ! -e ${markerPath}`);
-    return result.success;
-  }
-  if (condition.type === 'disk_usage_below') {
-    const script = `const {execFileSync}=require("child_process");const target=${JSON.stringify(condition.path)};let used=100;try{const out=execFileSync("df",["-P",target],{encoding:"utf8"});const line=out.trim().split("\\n")[1];used=Number(line.split(/\\s+/)[4].replace("%",""));}catch{}process.exit(used<${String(condition.valuePercent)}?0:1)`;
-    const result = await sandbox.exec(`node -e ${shellArg(script)}`);
-    return result.success;
-  }
-  if (condition.type === 'log_absent') {
-    const script = `const fs=require("fs");const p=${JSON.stringify(condition.path)};const text=fs.existsSync(p)?fs.readFileSync(p,"utf8"):"";process.exit(text.includes(${JSON.stringify(condition.pattern)})?1:0)`;
-    const result = await sandbox.exec(`node -e ${shellArg(script)}`);
-    return result.success;
-  }
-  const result = await sandbox.exec(
-    'node /workspace/bin/unlang.mjs run /workspace/services/batch/sales.un'
-  );
+  const result = await sandbox.exec(buildSuccessCheckCommand(condition));
   return result.success;
 }
 
@@ -430,52 +334,4 @@ export async function destroySessionSandbox(env: Bindings, sessionId: string) {
 
 function sessionSandboxName(sessionId: string) {
   return `session-${sessionId}`;
-}
-
-function shellArg(value: string) {
-  return `'${value.replaceAll("'", "'\"'\"'")}'`;
-}
-
-function shellPathSegment(value: string) {
-  if (!/^[a-zA-Z0-9._-]+$/.test(value)) {
-    throw new Error('invalid process id');
-  }
-  return value;
-}
-
-function normalizeWorkspaceMarkerPath(value: string) {
-  if (
-    !value.startsWith('/workspace/') ||
-    value.includes('\0') ||
-    value.split('/').includes('..')
-  ) {
-    throw new Error('marker path must stay inside /workspace');
-  }
-  return value;
-}
-
-function normalizeEditableWorkspacePath(value: string) {
-  if (!isWorkspacePath(value)) {
-    throw new Error('path must stay inside /workspace');
-  }
-  if (
-    !value.startsWith('/workspace/services/') &&
-    !value.startsWith('/workspace/run/')
-  ) {
-    throw new Error(
-      'editable files must be under /workspace/services or /workspace/run'
-    );
-  }
-  if (value.includes('\0') || value.split('/').includes('..')) {
-    throw new Error('invalid file path');
-  }
-  return value;
-}
-
-function isWorkspacePath(value: string) {
-  return (
-    value.startsWith('/workspace/') &&
-    !value.includes('\0') &&
-    !value.split('/').includes('..')
-  );
 }
