@@ -15,8 +15,8 @@ export default defineConfig({
   },
   webServer: {
     command: 'pnpm run dev',
-    url: 'http://127.0.0.1:5173',
+    url: 'http://127.0.0.1:5173/api/scenarios',
     reuseExistingServer: !process.env.CI,
-    timeout: 180_000,
+    timeout: process.env.CI ? 300_000 : 180_000,
   },
 });

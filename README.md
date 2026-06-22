@@ -59,6 +59,22 @@ production checklist.
 `pnpm run deploy` builds scenarios, builds `apps/web/dist`, then runs `wrangler deploy`.
 R2 bucket creation and container image upload are handled by Wrangler during deploy.
 
+CI deploy uses `.github/workflows/deploy.yml` (tag `v*` or workflow_dispatch).
+
+### GitHub Actions secrets (deploy workflow)
+
+| Secret | Purpose |
+| --- | --- |
+| `CLOUDFLARE_API_TOKEN` | Wrangler deploy + D1 remote migrations |
+| `INCIDENT_WORKER_URL` | Post-deploy `GET /api/ready` smoke |
+
+Create a Cloudflare API token with **Workers Scripts Edit**, **D1 Edit**, and **Account** read, then:
+
+```sh
+gh secret set CLOUDFLARE_API_TOKEN --repo thirdlf03/hackz-alo
+gh secret set INCIDENT_WORKER_URL --body 'https://incident-training-worker.naokimiura15.workers.dev'
+```
+
 ## Environment variables (Worker secrets)
 
 | Name                   | Purpose                                   |
