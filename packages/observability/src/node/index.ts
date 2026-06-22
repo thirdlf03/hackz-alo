@@ -2,6 +2,7 @@ import {mkdir, readFile, writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import {
   percentile,
+  INCIDENT_SPAN_NAMES,
   type PerfFrameSample,
   type PerfMarkRecord,
   type PerfSpanRecord,
@@ -120,10 +121,31 @@ export function comparePerfReports(
       `frame p95 ${current.frames.p95DrawMs.toFixed(1)}ms exceeded baseline ${baseline.frames.p95DrawMs.toFixed(1)}ms`
     );
   }
+  for (const spanName of [
+    INCIDENT_SPAN_NAMES.sandboxPrepare,
+    INCIDENT_SPAN_NAMES.sandboxStart,
+  ]) {
+    const currentP95 = spanP95(current, spanName);
+    const baselineP95 = spanP95(baseline, spanName);
+    if (
+      currentP95 !== undefined &&
+      baselineP95 !== undefined &&
+      baselineP95 > 0 &&
+      currentP95 > baselineP95 * 1.25
+    ) {
+      findings.push(
+        `${spanName} p95 ${currentP95.toFixed(1)}ms exceeded baseline ${baselineP95.toFixed(1)}ms`
+      );
+    }
+  }
   return {
     ok: findings.length === 0 || options.strict !== true,
     findings,
   };
+}
+
+function spanP95(report: PerfReport, name: string) {
+  return report.spans.byName.find((span) => span.name === name)?.p95Ms;
 }
 
 function spanSummaries(spans: PerfSpanRecord[]) {

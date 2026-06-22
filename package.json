@@ -25,6 +25,7 @@
     "perf:e2e": "node scripts/perf-e2e.mjs",
     "perf:report": "node scripts/perf-report.mjs",
     "perf:compare": "node scripts/perf-compare.mjs",
+    "perf:placement:verify": "node scripts/perf-placement-verify.mjs",
     "deploy": "node scripts/deploy.mjs",
     "cleanup:sessions": "node scripts/cleanup-sessions.mjs",
     "db:migrate:remote": "pnpm --filter @incident/worker run db:migrate:remote",

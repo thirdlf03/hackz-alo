@@ -84,6 +84,14 @@ export function perfMiddleware() {
 
     const request = c.req.raw;
     const url = new URL(request.url);
+    const cfColo =
+      'cf' in request &&
+      request.cf &&
+      typeof request.cf === 'object' &&
+      'colo' in request.cf &&
+      typeof request.cf.colo === 'string'
+        ? request.cf.colo
+        : undefined;
     const startedAt = nowMs();
     await perf.withSpan(
       INCIDENT_SPAN_NAMES.httpRequest,
@@ -94,6 +102,7 @@ export function perfMiddleware() {
           [INCIDENT_ATTRS.httpTarget]: url.pathname,
           [INCIDENT_ATTRS.httpRoute]: url.pathname,
           [INCIDENT_ATTRS.requestId]: c.req.header('x-request-id'),
+          ...(cfColo === undefined ? {} : {[INCIDENT_ATTRS.cfColo]: cfColo}),
         },
       },
       async (span) => {

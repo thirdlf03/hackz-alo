@@ -19,6 +19,7 @@ import {
   jsonOk,
   messageFrom,
 } from '../http/response.js';
+import {logStructured} from '../http/requestLog.js';
 import type {Bindings} from '../types.js';
 import {lifecycleAlarmDeadline} from './sessionClock.js';
 import {
@@ -195,7 +196,13 @@ export class SessionDurableObject implements DurableObject {
       return jsonOk({prepared: false, status: session.status});
     }
     const scenario = requireScenario(session.scenarioId);
+    const startedAt = Date.now();
     const result = await this.prepareSandbox(session, scenario);
+    logStructured('session_prepared', {
+      sessionId: session.sessionId,
+      reused: result.reused,
+      durationMs: Date.now() - startedAt,
+    });
     return jsonOk(result);
   }
 

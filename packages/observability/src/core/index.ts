@@ -160,6 +160,7 @@ export const INCIDENT_ATTRS = {
   sessionId: 'incident.session_id',
   replayId: 'incident.replay_id',
   cached: 'incident.cached',
+  cfColo: 'incident.cf.colo',
   drawMs: 'incident.draw_ms',
   tickMs: 'incident.tick_ms',
 } as const;

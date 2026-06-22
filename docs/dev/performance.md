@@ -79,6 +79,9 @@ when testing cost/latency tradeoffs.
   `perf-reports/report.md`
 - `pnpm run perf:compare`: compares the current report to
   `perf-baselines/main.json` when it exists
+- `pnpm run perf:placement:verify`: prints D1/container region settings and
+  compares placement baselines (default:
+  `perf-baselines/placement-before.json` vs `perf-reports/report.json`)
 
 `perf:compare` exits 0 when no baseline is present. Add `-- --strict` when a
 baseline exists and perf regressions should fail the command.
