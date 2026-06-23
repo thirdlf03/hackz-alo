@@ -84,13 +84,13 @@ export function perfMiddleware() {
 
     const request = c.req.raw;
     const url = new URL(request.url);
+    const cf = 'cf' in request ? request.cf : undefined;
     const cfColo =
-      'cf' in request &&
-      request.cf &&
-      typeof request.cf === 'object' &&
-      'colo' in request.cf &&
-      typeof request.cf.colo === 'string'
-        ? request.cf.colo
+      cf &&
+      typeof cf === 'object' &&
+      'colo' in cf &&
+      typeof cf.colo === 'string'
+        ? cf.colo
         : undefined;
     const startedAt = nowMs();
     await perf.withSpan(

@@ -55,7 +55,11 @@ const benchmarks = {
     );
   }),
   buildMetricSections: runBench('buildMetricSections', 5000, () => {
-    buildMetricSections(sampleMetrics);
+    buildMetricSections({
+      metrics: sampleMetrics,
+      edgeRttMs: 48,
+      edgeRttHistory: [40, 48],
+    });
   }),
   buildCanvasViewModel: runBench('buildCanvasViewModel', 5000, () => {
     buildCanvasViewModel(initialState, scenario);
