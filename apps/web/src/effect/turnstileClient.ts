@@ -1,3 +1,8 @@
+import {
+  TURNSTILE_CLIENT_MAX_ATTEMPTS,
+  turnstileClientRetryDelayMs,
+} from '../pure/turnstileRetry.js';
+
 const TURNSTILE_SCRIPT =
   'https://challenges.cloudflare.com/turnstile/v0/api.js';
 
@@ -9,12 +14,14 @@ interface TurnstileApi {
       size?: 'normal' | 'compact' | 'invisible';
       execution?: 'render' | 'execute';
       callback?: (token: string) => void;
-      'error-callback'?: () => void;
+      'error-callback'?: (errorCode?: string) => boolean;
       'expired-callback'?: () => void;
+      'timeout-callback'?: () => void;
     }
   ) => string;
   execute: (widgetId: string) => void;
   remove: (widgetId: string) => void;
+  reset: (widgetId: string) => void;
 }
 
 declare global {
@@ -24,6 +31,12 @@ declare global {
 }
 
 let scriptPromise: Promise<void> | undefined;
+
+function sleep(ms: number) {
+  return new Promise<void>((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
+}
 
 // Module-level so Vite can inline VITE_* at build time (see vite.config / deploy workflow).
 function readBuildTimeSiteKey() {
@@ -46,6 +59,11 @@ export function turnstileRequired() {
   return turnstileSiteKey() !== undefined;
 }
 
+export function preloadTurnstileScript() {
+  if (!turnstileRequired()) return Promise.resolve();
+  return loadTurnstileScript();
+}
+
 function loadTurnstileScript() {
   if (window.turnstile) return Promise.resolve();
   if (scriptPromise) return scriptPromise;
@@ -54,9 +72,14 @@ function loadTurnstileScript() {
       'script[data-turnstile="1"]'
     );
     if (existing) {
+      if (existing.dataset.loaded === '1' || window.turnstile) {
+        resolve();
+        return;
+      }
       existing.addEventListener(
         'load',
         () => {
+          existing.dataset.loaded = '1';
           resolve();
         },
         {once: true}
@@ -76,6 +99,7 @@ function loadTurnstileScript() {
     script.defer = true;
     script.dataset.turnstile = '1';
     script.onload = () => {
+      script.dataset.loaded = '1';
       resolve();
     };
     script.onerror = () => {
@@ -86,8 +110,7 @@ function loadTurnstileScript() {
   return scriptPromise;
 }
 
-export async function requestTurnstileToken(siteKey = turnstileSiteKey()) {
-  if (!siteKey) return undefined;
+async function requestTurnstileTokenOnce(siteKey: string) {
   await loadTurnstileScript();
   const turnstile = window.turnstile;
   if (!turnstile) {
@@ -99,50 +122,83 @@ export async function requestTurnstileToken(siteKey = turnstileSiteKey()) {
     container.hidden = true;
     document.body.appendChild(container);
     let settled = false;
+    let widgetId = '';
 
-    const cleanup = (widgetId: string) => {
-      turnstile.remove(widgetId);
+    const cleanup = () => {
+      if (widgetId) turnstile.remove(widgetId);
       container.remove();
     };
 
-    const fail = (widgetId: string | undefined, message: string) => {
+    const fail = (message: string) => {
       if (settled) return;
       settled = true;
-      if (widgetId) cleanup(widgetId);
-      else container.remove();
+      cleanup();
       reject(new Error(message));
     };
 
-    const succeed = (widgetId: string, token: string) => {
+    const succeed = (token: string) => {
       if (settled) return;
       settled = true;
-      cleanup(widgetId);
+      cleanup();
       resolve(token);
     };
 
-    const widget = {id: ''};
+    const retryExecute = () => {
+      if (settled || !widgetId) return;
+      try {
+        turnstile.reset(widgetId);
+        turnstile.execute(widgetId);
+      } catch (error: unknown) {
+        fail(
+          error instanceof Error ? error.message : 'turnstile execute failed'
+        );
+      }
+    };
+
     try {
-      widget.id = turnstile.render(container, {
+      widgetId = turnstile.render(container, {
         sitekey: siteKey,
         size: 'invisible',
         // Defer challenge until execute(); default "render" would race widgetId assignment.
         execution: 'execute',
         callback: (token) => {
-          succeed(widget.id, token);
+          succeed(token);
         },
         'error-callback': () => {
-          fail(widget.id, 'turnstile challenge failed');
+          fail('turnstile challenge failed');
+          return true;
         },
         'expired-callback': () => {
-          fail(widget.id, 'turnstile token expired');
+          fail('turnstile token expired');
+        },
+        'timeout-callback': () => {
+          retryExecute();
         },
       });
-      turnstile.execute(widget.id);
+      turnstile.execute(widgetId);
     } catch (error: unknown) {
-      fail(
-        widget.id || undefined,
-        error instanceof Error ? error.message : 'turnstile render failed'
-      );
+      fail(error instanceof Error ? error.message : 'turnstile render failed');
     }
   });
+}
+
+export async function requestTurnstileToken(siteKey = turnstileSiteKey()) {
+  if (!siteKey) return undefined;
+
+  let lastError: Error | undefined;
+  for (let attempt = 1; attempt <= TURNSTILE_CLIENT_MAX_ATTEMPTS; attempt++) {
+    try {
+      return await requestTurnstileTokenOnce(siteKey);
+    } catch (error: unknown) {
+      lastError =
+        error instanceof Error
+          ? error
+          : new Error('turnstile challenge failed');
+      if (attempt < TURNSTILE_CLIENT_MAX_ATTEMPTS) {
+        await sleep(turnstileClientRetryDelayMs(attempt));
+      }
+    }
+  }
+
+  throw lastError ?? new Error('turnstile challenge failed');
 }

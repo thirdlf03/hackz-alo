@@ -1,7 +1,15 @@
 import {render} from 'preact';
+import {
+  preloadTurnstileScript,
+  turnstileRequired,
+} from './effect/turnstileClient.js';
 import {App} from './app/App.js';
 import './styles/tokens.css';
 import './styles/app.css';
+
+if (turnstileRequired()) {
+  void preloadTurnstileScript();
+}
 
 const perfEnabled =
   import.meta.env.VITE_INCIDENT_PERF === '1' ||

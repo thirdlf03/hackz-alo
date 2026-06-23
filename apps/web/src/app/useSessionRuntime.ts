@@ -96,6 +96,7 @@ export function useSessionRuntime(options: {
   const tabBeaconSentRef = useRef(false);
   const liveReplayEventIdsRef = useRef(new Set<string>());
   const sandboxPrepareSessionIdRef = useRef<string | undefined>(undefined);
+  const creatingSessionRef = useRef(false);
 
   const {
     api,
@@ -297,6 +298,8 @@ export function useSessionRuntime(options: {
   };
 
   async function createSessionForScenario(scenarioId: string) {
+    if (creatingSessionRef.current) return;
+    creatingSessionRef.current = true;
     setAppError(undefined);
     setDeepLinkReplayId(undefined);
     setDeepLinkValidated(true);
@@ -352,6 +355,7 @@ export function useSessionRuntime(options: {
       sandboxPrepareSessionIdRef.current = undefined;
       setAppError(toErrorMessage(error));
     } finally {
+      creatingSessionRef.current = false;
       setIsStarting(false);
     }
   }

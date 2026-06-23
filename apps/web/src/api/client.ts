@@ -4,7 +4,11 @@ import type {
   ScenarioDefinition,
 } from '@incident/shared';
 import {bindApiMethods} from './bindApiMethods.js';
-import {requestTurnstileToken} from '../effect/turnstileClient.js';
+import {
+  requestTurnstileToken,
+  turnstileSiteKey,
+} from '../effect/turnstileClient.js';
+import {shouldRetryCreateSessionAfterTurnstileFailure} from '../pure/turnstileErrors.js';
 import {HttpClient} from './httpClient.js';
 import {
   RecordingUploadApi,
@@ -153,18 +157,42 @@ export class ApiClient {
   }
 
   async createSession(input: {difficulty?: Difficulty; scenarioId?: string}) {
-    const turnstileToken = await requestTurnstileToken();
-    const data = await this.sessions.createSession({
-      ...input,
-      ...(turnstileToken === undefined ? {} : {turnstileToken}),
-    });
-    this.http.setWriteToken(data.writeToken);
-    return {
-      sessionId: data.sessionId,
-      replayId: data.replayId,
-      writeToken: data.writeToken,
-      scenario: data.scenario,
-    };
+    const postSession = async (turnstileToken?: string) =>
+      this.sessions.createSession({
+        ...input,
+        ...(turnstileToken === undefined ? {} : {turnstileToken}),
+      });
+
+    let turnstileToken = await requestTurnstileToken();
+    try {
+      const data = await postSession(turnstileToken);
+      this.http.setWriteToken(data.writeToken);
+      return {
+        sessionId: data.sessionId,
+        replayId: data.replayId,
+        writeToken: data.writeToken,
+        scenario: data.scenario,
+      };
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : '';
+      if (
+        !shouldRetryCreateSessionAfterTurnstileFailure(
+          Boolean(turnstileSiteKey()),
+          message
+        )
+      ) {
+        throw error;
+      }
+      turnstileToken = await requestTurnstileToken();
+      const data = await postSession(turnstileToken);
+      this.http.setWriteToken(data.writeToken);
+      return {
+        sessionId: data.sessionId,
+        replayId: data.replayId,
+        writeToken: data.writeToken,
+        scenario: data.scenario,
+      };
+    }
   }
 
   subscribeSessionEvents(sessionId: string, handlers: SessionHandlers) {

@@ -21,7 +21,7 @@ test('verifyTurnstileToken rejects missing token when secret is set', async () =
   assert.equal(accepted, false);
 });
 
-test('verifyTurnstileToken omits remoteip when client ip is unknown', async () => {
+test('verifyTurnstileToken omits remoteip from siteverify body', async () => {
   const calls = [];
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (url, init) => {
@@ -32,20 +32,31 @@ test('verifyTurnstileToken omits remoteip when client ip is unknown', async () =
     await verifyTurnstileToken(
       {TURNSTILE_SECRET_KEY: 'secret'},
       'token-123',
-      'unknown'
+      '203.0.113.10'
     );
     const body = new URLSearchParams(calls[0].init.body);
     assert.equal(body.get('remoteip'), null);
+    assert.equal(body.get('response'), 'token-123');
+    assert.match(body.get('idempotency_key') ?? '', /-/);
   } finally {
     globalThis.fetch = originalFetch;
   }
 });
 
-test('verifyTurnstileToken posts token and remoteip to siteverify', async () => {
+test('verifyTurnstileToken retries siteverify on internal-error', async () => {
   const calls = [];
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = async (url, init) => {
-    calls.push({url, init});
+  globalThis.fetch = async () => {
+    calls.push(1);
+    if (calls.length === 1) {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          'error-codes': ['internal-error'],
+        }),
+        {status: 200}
+      );
+    }
     return new Response(JSON.stringify({success: true}), {status: 200});
   };
   try {
@@ -55,15 +66,33 @@ test('verifyTurnstileToken posts token and remoteip to siteverify', async () => 
       '203.0.113.10'
     );
     assert.equal(accepted, true);
-    assert.equal(calls.length, 1);
-    assert.equal(
-      calls[0].url,
-      'https://challenges.cloudflare.com/turnstile/v0/siteverify'
+    assert.equal(calls.length, 2);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('verifyTurnstileToken does not retry timeout-or-duplicate', async () => {
+  const calls = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => {
+    calls.push(1);
+    return new Response(
+      JSON.stringify({
+        success: false,
+        'error-codes': ['timeout-or-duplicate'],
+      }),
+      {status: 200}
     );
-    const body = new URLSearchParams(calls[0].init.body);
-    assert.equal(body.get('secret'), 'secret');
-    assert.equal(body.get('response'), 'token-123');
-    assert.equal(body.get('remoteip'), '203.0.113.10');
+  };
+  try {
+    const accepted = await verifyTurnstileToken(
+      {TURNSTILE_SECRET_KEY: 'secret'},
+      'token-123',
+      '203.0.113.10'
+    );
+    assert.equal(accepted, false);
+    assert.equal(calls.length, 1);
   } finally {
     globalThis.fetch = originalFetch;
   }
