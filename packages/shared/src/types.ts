@@ -290,6 +290,9 @@ export interface GameRenderState {
       metrics: MetricsSnapshot;
       metricsHistory: MetricsSnapshot[];
       metricsSource: MetricsSource;
+      /** Browser round-trip to GET /api/sessions/:id/clock (verification only). */
+      edgeRttMs: number | null;
+      edgeRttHistory: number[];
       alerts: AlertDefinition[];
     };
     center: {

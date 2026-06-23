@@ -8,6 +8,7 @@ import type {
 import type {GameStateAction} from './gameStateActions.js';
 import {computeNarrativeHour, visibleRunbooks} from './gameSelectors.js';
 import {reduceGameState} from './gameStateReduce.js';
+import {appendEdgeRttHistory} from '../../pure/sessionEdgeRtt.js';
 
 export type {GameStateAction};
 export {reduceGameState};
@@ -78,6 +79,8 @@ export function createInitialGameState(
         metrics: emptyMetrics(),
         metricsHistory: [],
         metricsSource: 'loading',
+        edgeRttMs: null,
+        edgeRttHistory: [],
         alerts: [],
       },
       center: {
@@ -252,11 +255,16 @@ export function decayWorldOverlays(
 
 export function applyLiveMetrics(
   state: GameRenderState,
-  metrics: MetricsSnapshot
+  metrics: MetricsSnapshot,
+  edgeRttMs: number | null = null
 ): GameRenderState {
   const history = [...state.monitors.left.metricsHistory, metrics].slice(
     -METRICS_HISTORY_LIMIT
   );
+  const edgeRttHistory =
+    edgeRttMs === null
+      ? state.monitors.left.edgeRttHistory
+      : appendEdgeRttHistory(state.monitors.left.edgeRttHistory, edgeRttMs);
   return {
     ...state,
     monitors: {
@@ -266,6 +274,8 @@ export function applyLiveMetrics(
         metrics,
         metricsHistory: history,
         metricsSource: 'live',
+        edgeRttMs: edgeRttMs ?? state.monitors.left.edgeRttMs,
+        edgeRttHistory,
       },
     },
   };

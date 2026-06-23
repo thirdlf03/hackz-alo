@@ -51,7 +51,9 @@ export function useMetricsPolling(options: {
 
         const metrics = outcome.metrics;
         const previous = gameStateRef.current?.monitors.left.metrics;
-        patchGameStateRef((current) => applyLiveMetrics(current, metrics));
+        patchGameStateRef((current) =>
+          applyLiveMetrics(current, metrics, outcome.edgeRttMs)
+        );
         const replayId = sessionRef.current?.replayId;
         const emitter = eventEmitterRef.current;
         if (replayId && emitter && previous) {

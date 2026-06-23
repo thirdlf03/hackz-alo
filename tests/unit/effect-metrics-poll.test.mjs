@@ -24,12 +24,22 @@ test('pollSessionMetricsOnce maps API success to metrics outcomes', async () => 
     pollSessionMetricsOnce(
       {
         getSessionMetrics: async () => metrics,
+        getSessionClock: async () => ({
+          gameTimeMs: 0,
+          gameSpeed: 1,
+          timeLimitMs: 300_000,
+          alerts: [],
+          slackMessages: [],
+        }),
       },
       'sess_1'
     )
   );
 
-  assert.deepEqual(outcome, {kind: 'metrics', metrics});
+  assert.equal(outcome.kind, 'metrics');
+  assert.deepEqual(outcome.metrics, metrics);
+  assert.equal(typeof outcome.edgeRttMs, 'number');
+  assert.ok(outcome.edgeRttMs >= 0);
 });
 
 test('pollSessionMetricsOnce maps API failures to offline outcomes', async () => {

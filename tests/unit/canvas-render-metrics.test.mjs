@@ -66,7 +66,11 @@ function sampleMetrics(at = 1) {
 }
 
 test('buildMetricSections groups metrics into resource, traffic, and datastore cards', () => {
-  const sections = buildMetricSections(sampleMetrics());
+  const sections = buildMetricSections({
+    metrics: sampleMetrics(),
+    edgeRttMs: null,
+    edgeRttHistory: [],
+  });
 
   assert.deepEqual(
     sections.map((section) => section.title),
@@ -74,7 +78,20 @@ test('buildMetricSections groups metrics into resource, traffic, and datastore c
   );
   assert.equal(sections[0]?.cards[0]?.label, 'CPU');
   assert.equal(sections[1]?.cards[0]?.value, 12);
+  assert.equal(sections[1]?.cards[1]?.label, 'Sim API p95');
   assert.equal(sections[2]?.cards[1]?.label, 'Queue');
+});
+
+test('buildMetricSections adds session RTT when edge latency is available', () => {
+  const sections = buildMetricSections({
+    metrics: sampleMetrics(),
+    edgeRttMs: 48,
+    edgeRttHistory: [40, 48],
+  });
+
+  assert.equal(sections[0]?.title, 'NETWORK');
+  assert.equal(sections[0]?.cards[0]?.label, 'Session RTT');
+  assert.equal(sections[0]?.cards[0]?.value, 48);
 });
 
 test('drawMetricsPanel clamps scroll and labels degraded service health', () => {
@@ -85,6 +102,8 @@ test('drawMetricsPanel clamps scroll and labels degraded service health', () => 
     metrics,
     metricsHistory: [metrics, {...metrics, at: 2, cpu: 95}],
     metricsSource: 'live',
+    edgeRttMs: 52,
+    edgeRttHistory: [44, 52],
   };
 
   drawMetricsPanel(ctx, scroll, left, 180);
@@ -97,6 +116,10 @@ test('drawMetricsPanel clamps scroll and labels degraded service health', () => 
   );
   assert.equal(
     ctx.state.calls.some((call) => call.text === 'RESOURCES'),
+    true
+  );
+  assert.equal(
+    ctx.state.calls.some((call) => call.text === 'Session RTT'),
     true
   );
   assert.equal(
@@ -114,6 +137,8 @@ test('drawMetricsPanel shows offline source label when metrics are stale', () =>
     metrics,
     metricsHistory: [metrics],
     metricsSource: 'offline',
+    edgeRttMs: null,
+    edgeRttHistory: [],
   });
 
   assert.equal(

@@ -65,6 +65,10 @@ briefing. It does not force Cloudflare placement; deployment still needs Worker,
 Durable Object, D1, and container placement to be kept close to the target user
 population.
 
+During play, the metrics panel shows **Session RTT**: browser round-trip time to
+`GET /api/sessions/:id/clock` (edge + Session DO). The **Sim API p95** card is
+still the in-sandbox fictional service latency used by scenarios.
+
 The sandbox `sleepAfter` default is `16m`, matching the 15-minute briefing
 timeout with a small buffer. Override it with `INCIDENT_SANDBOX_SLEEP_AFTER`
 when testing cost/latency tradeoffs.

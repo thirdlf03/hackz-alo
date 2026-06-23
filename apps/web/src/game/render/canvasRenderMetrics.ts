@@ -152,14 +152,19 @@ export function drawMetricsPanel(
   left: GameRenderState['monitors']['left'],
   viewportHeight = monitorContentHeight
 ) {
-  const {metrics, metricsHistory, metricsSource} = left;
+  const {metrics, metricsHistory, metricsSource, edgeRttMs, edgeRttHistory} =
+    left;
   const health = summarizeMetricsHealth(metrics);
   const panelWidth = 496;
   const cardHeight = 88;
   const cardGap = 12;
   const rowStride = cardHeight + cardGap;
   const sectionGap = 16;
-  const sections = buildMetricSections(metrics);
+  const sections = buildMetricSections({
+    metrics,
+    edgeRttMs,
+    edgeRttHistory,
+  });
 
   drawMetricsHealthBanner(ctx, health, metricsSource, panelWidth);
 
@@ -191,7 +196,8 @@ export function drawMetricsPanel(
       const row = Math.floor(index / 2);
       const cardX = column * 252;
       const cardY = y + row * rowStride;
-      const historyValues = metricsHistory.map(card.pickHistory);
+      const historyValues =
+        card.historyValues ?? metricsHistory.map(card.pickHistory);
       drawMetricCard(ctx, cardX, cardY, 236, cardHeight, {
         label: card.label,
         value: card.value,

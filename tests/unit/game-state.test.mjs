@@ -76,6 +76,15 @@ test('applyLiveMetrics stores live metrics and caps history', () => {
   assert.equal(state.monitors.left.metricsHistory.at(-1).at, 34);
 });
 
+test('applyLiveMetrics stores session edge RTT history', () => {
+  let state = createPlayState();
+  state = applyLiveMetrics(state, metricAt(1), 42);
+  state = applyLiveMetrics(state, metricAt(2), 55);
+
+  assert.equal(state.monitors.left.edgeRttMs, 55);
+  assert.deepEqual(state.monitors.left.edgeRttHistory, [42, 55]);
+});
+
 test('right panel tab switches mark slack seen and deactivate compose on runbook', () => {
   const initial = createPlayState();
   const state = {

@@ -9,10 +9,40 @@ interface MetricCardSpec {
   max: number;
   color: string;
   pickHistory: (snapshot: MetricsSnapshot) => number;
+  historyValues?: number[];
 }
 
-export function buildMetricSections(metrics: MetricsSnapshot) {
-  return [
+export interface MetricsPanelInput {
+  metrics: MetricsSnapshot;
+  edgeRttMs: number | null;
+  edgeRttHistory: number[];
+}
+
+export function buildMetricSections({
+  metrics,
+  edgeRttMs,
+  edgeRttHistory,
+}: MetricsPanelInput) {
+  const sections: Array<{title: string; cards: MetricCardSpec[]}> = [];
+
+  if (edgeRttMs !== null) {
+    sections.push({
+      title: 'NETWORK',
+      cards: [
+        {
+          label: 'Session RTT',
+          value: edgeRttMs,
+          suffix: 'ms',
+          max: 2000,
+          color: toneColor(metricTone(edgeRttMs, 120, 300)),
+          pickHistory: () => edgeRttMs,
+          historyValues: edgeRttHistory,
+        },
+      ],
+    });
+  }
+
+  sections.push(
     {
       title: 'RESOURCES',
       cards: [
@@ -55,7 +85,7 @@ export function buildMetricSections(metrics: MetricsSnapshot) {
             Math.round(snapshot.http5xxRate * 100),
         },
         {
-          label: 'Latency p95',
+          label: 'Sim API p95',
           value: metrics.latencyP95Ms,
           suffix: 'ms',
           max: 2000,
@@ -92,6 +122,8 @@ export function buildMetricSections(metrics: MetricsSnapshot) {
           pickHistory: (snapshot: MetricsSnapshot) => snapshot.queueDepth,
         },
       ],
-    },
-  ] satisfies Array<{title: string; cards: MetricCardSpec[]}>;
+    }
+  );
+
+  return sections;
 }
