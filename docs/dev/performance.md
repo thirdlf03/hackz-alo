@@ -91,6 +91,7 @@ baseline exists and perf regressions should fail the command.
 Generated output is intentionally ignored by git:
 
 - `.perf/`
+- `.perf-prod/`
 - `perf-reports/`
 
 `perf-baselines/main.json` can be added later as an optional comparison target.
@@ -105,7 +106,8 @@ Target audience is Japan-only. Placement changes pin Session Durable Objects to
 
 - `perf-baselines/placement-before.json`: local perf journey before APAC
   constraints (captured after sandbox preflight landed).
-- `perf-baselines/placement-after.json`: same journey after APAC deploy.
+- `perf-baselines/placement-after.json`: same local journey after APAC deploy
+  (not a production browser run).
 
 Key spans to compare:
 
@@ -139,15 +141,18 @@ curl -s -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
 # {}
 ```
 
-### After deploy checklist
+### After deploy checklist (local + infra)
+
+All steps below use **local** `perf:e2e` / `perf:report` and `wrangler` CLI
+against the deployed account. There is no automated production browser journey
+(Turnstile blocks headless/CI against the live site).
 
 1. `wrangler containers info` shows `constraints.regions` includes `APAC`.
 2. `wrangler d1 info` still shows `running_in_region: APAC`.
 3. New session only (existing DOs do not relocate).
-4. `pnpm run perf:placement:verify` compares before/after reports.
-5. Production tail: `session_prepared` logs include `reused` and duration.
+4. `pnpm run perf:placement:verify` compares local before/after reports.
 
-### Success criteria
+### Local success criteria (perf:e2e)
 
 | Metric                                  | Target                                 |
 | --------------------------------------- | -------------------------------------- |
@@ -155,12 +160,12 @@ curl -s -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
 | `sandbox.start` p95                     | &lt; 2500ms                            |
 | warm `sandbox.prepare` (`cached: true`) | &lt; 200ms                             |
 
-### Post-deploy snapshot (2026-06-22)
+### Recorded snapshot (2026-06-22, local dev)
 
-After APAC constraints + `apac-ne` deploy (`654f56ff`):
+After APAC constraints + `apac-ne` deploy (`654f56ff`), infra + local journey:
 
 - `wrangler containers info`: `constraints.regions = ["APAC"]`
 - `wrangler d1 info`: `running_in_region = APAC`
-- Local perf journey (`pnpm run perf:placement:verify`): no span p95
-  regressions vs `placement-before.json`; `sandbox.start` p95 ~1989ms;
-  worker HTTP spans report `incident.cf.colo = KIX` during local dev.
+- `pnpm run perf:placement:verify`: no span p95 regressions vs
+  `placement-before.json`; `sandbox.start` p95 ~1989ms; worker HTTP spans
+  report `incident.cf.colo = KIX` during local dev.

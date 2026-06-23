@@ -6,6 +6,9 @@ coverage/
 test-results/
 playwright-report/
 .perf/
+.perf-prod/
 perf-reports/
 *.log
 .DS_Store
+apps/web/.env.local
+apps/worker/.dev.vars
