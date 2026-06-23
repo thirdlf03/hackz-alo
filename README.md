@@ -25,6 +25,11 @@ pnpm run lint
 pnpm run typecheck
 ```
 
+`pnpm install` registers [Lefthook](https://lefthook.dev/) `pre-push` hooks that run
+the same gates as the CI `test` job (`pnpm run ci:test`). Skip once with
+`LEFTHOOK=0 git push`. Perf Playwright (`tests/e2e/perf.spec.ts`) runs only via
+`pnpm run perf:e2e`, not the default `test:e2e` suite.
+
 Install workspace dependencies before running the Vite/Worker dev servers:
 
 ```sh

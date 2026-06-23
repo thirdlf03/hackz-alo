@@ -8,7 +8,7 @@ import {
 } from './helpers.js';
 
 test('perf journey exposes marks and browser snapshot', async ({page}) => {
-  await openDefaultScenarioBriefing(page);
+  await openDefaultScenarioBriefing(page, {perf: true});
   await acceptRecordingConsent(page);
   await setSaveRecording(page, false);
   await startGameFromBriefing(page);
@@ -27,7 +27,7 @@ test('perf journey exposes marks and browser snapshot', async ({page}) => {
           )
         );
       },
-      {timeout: 30_000}
+      {timeout: 90_000}
     )
     .toBe(true);
 

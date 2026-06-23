@@ -1,0 +1,21 @@
+# Local quality gate before push (mirrors .github/workflows/ci.yml test job).
+# Skip hooks: LEFTHOOK=0 git push
+# CI skips hook installation automatically (CI=true during pnpm install).
+
+pre-push:
+  parallel: true
+  commands:
+    fmt:
+      run: pnpm run fmt:check
+    lint:
+      run: pnpm run lint
+    typecheck:
+      run: pnpm run typecheck
+    test:
+      run: pnpm test
+    audit-schema:
+      run: pnpm run audit:schema-sync
+    scenarios:
+      run: pnpm run build:scenarios && pnpm run check:sandbox-assets
+    perf-bench:
+      run: pnpm run perf:bench

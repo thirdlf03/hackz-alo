@@ -9,8 +9,11 @@ const DESIGN_WIDTH = 1920;
 const DESIGN_HEIGHT = 1080;
 const RETIRE_RECT = {x: 1370, y: 878, width: 140, height: 96};
 
-export async function openDefaultScenarioBriefing(page: Page) {
-  await page.goto('/');
+export async function openDefaultScenarioBriefing(
+  page: Page,
+  options: {perf?: boolean} = {}
+) {
+  await page.goto(options.perf ? '/?perf=1' : '/');
   await page.getByRole('button', {name: /初級/}).click();
 
   const scenarioButton = page.getByRole('button', {name: DEFAULT_SCENARIO});

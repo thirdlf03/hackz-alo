@@ -38,7 +38,9 @@
     "fmt:check": "oxfmt --check",
     "lint": "oxlint --type-aware && pnpm run lint:pure",
     "lint:fix": "oxlint --type-aware --fix",
-    "lint:pure": "eslint --max-warnings 0"
+    "lint:pure": "eslint --max-warnings 0",
+    "prepare": "lefthook install",
+    "ci:test": "pnpm run build:scenarios && pnpm run check:sandbox-assets && pnpm run fmt:check && pnpm run lint && pnpm run typecheck && pnpm test && pnpm run audit:schema-sync && pnpm run perf:bench"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "latest",
@@ -49,6 +51,7 @@
     "eslint": "^10.5.0",
     "eslint-plugin-functional": "^10.0.0",
     "globals": "^17.6.0",
+    "lefthook": "^2.1.9",
     "oxfmt": "latest",
     "oxlint": "latest",
     "oxlint-config-presets": "latest",
@@ -60,5 +63,13 @@
     "wrangler": "latest",
     "yaml": "^2.9.0"
   },
-  "packageManager": "pnpm@10.12.1"
+  "packageManager": "pnpm@10.12.1",
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "lefthook",
+      "sharp",
+      "workerd"
+    ]
+  }
 }
