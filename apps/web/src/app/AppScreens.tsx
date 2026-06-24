@@ -52,10 +52,8 @@ const difficultyOptions: Array<{
 export function TopBar(props: {
   screen: Screen;
   isStarting: boolean;
-  gameSpeed: number;
   canNavigateToReplay: boolean;
   onSetScreen: (screen: Screen) => void;
-  onSetGameSpeed: (speed: number) => void;
   onOpenReplay: () => void;
 }) {
   const navigationDisabled = props.screen === 'play' || props.isStarting;
@@ -81,21 +79,6 @@ export function TopBar(props: {
       >
         障害対応訓練
       </strong>
-      <div class='speed-control' role='group' aria-label='ゲーム速度'>
-        {speedOptions.map((speed) => (
-          <button
-            key={speed}
-            type='button'
-            class={speed === props.gameSpeed ? 'active' : ''}
-            aria-pressed={speed === props.gameSpeed}
-            onClick={() => {
-              props.onSetGameSpeed(speed);
-            }}
-          >
-            {speed}x
-          </button>
-        ))}
-      </div>
       <div class='topbar-actions'>
         <button
           type='button'
@@ -285,11 +268,36 @@ export function BriefingScreen(props: {
   );
 }
 
+function GameSpeedControl(props: {
+  gameSpeed: number;
+  onSetGameSpeed: (speed: number) => void;
+}) {
+  return (
+    <div class='speed-control play-speed-control' role='group' aria-label='ゲーム速度'>
+      {speedOptions.map((speed) => (
+        <button
+          key={speed}
+          type='button'
+          class={speed === props.gameSpeed ? 'active' : ''}
+          aria-pressed={speed === props.gameSpeed}
+          onClick={() => {
+            props.onSetGameSpeed(speed);
+          }}
+        >
+          {speed}x
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export function PlayScreen(props: {
   gameState: GameRenderState | undefined;
+  gameSpeed: number;
   canvasRef: {current: HTMLCanvasElement | null};
   editorTextareaRef: {current: HTMLTextAreaElement | null};
   patchGameStateRef: PatchGameState;
+  onSetGameSpeed: (speed: number) => void;
   onSaveEditorFile: () => void;
   onCanvasClick: (event: MouseEvent) => void;
   onCanvasMove: (event: MouseEvent) => void;
@@ -369,6 +377,10 @@ export function PlayScreen(props: {
           onWheel={props.onCanvasWheel}
           onKeyDown={props.onTerminalKey}
           onPaste={props.onCanvasPaste}
+        />
+        <GameSpeedControl
+          gameSpeed={props.gameSpeed}
+          onSetGameSpeed={props.onSetGameSpeed}
         />
         <PerfOverlay />
       </div>

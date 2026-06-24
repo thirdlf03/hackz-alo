@@ -57,6 +57,8 @@
 
   /* Touch targets — WCAG 2.5.5 AAA */
   --touch-min: 44px;
+  --topbar-height: calc(var(--touch-min) + 20px);
+  --play-viewport-height: calc(100dvh - var(--topbar-height));
 
   /* Canvas */
   --canvas-bg: #050609;

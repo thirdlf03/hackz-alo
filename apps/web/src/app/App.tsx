@@ -237,10 +237,8 @@ export function App() {
       <TopBar
         screen={screen}
         isStarting={isStarting}
-        gameSpeed={gameSpeed}
         canNavigateToReplay={canNavigateToReplay}
         onSetScreen={setScreen}
-        onSetGameSpeed={setGameSpeed}
         onOpenReplay={openReplay}
       />
       {appError && (
@@ -293,9 +291,11 @@ export function App() {
       {screen === 'play' && (
         <PlayScreen
           gameState={gameState}
+          gameSpeed={gameSpeed}
           canvasRef={canvasRef}
           editorTextareaRef={editorTextareaRef}
           patchGameStateRef={patchGameStateRef}
+          onSetGameSpeed={setGameSpeed}
           onSaveEditorFile={() => void saveEditorFile()}
           onCanvasClick={handleCanvasClick}
           onCanvasMove={handleCanvasMove}
