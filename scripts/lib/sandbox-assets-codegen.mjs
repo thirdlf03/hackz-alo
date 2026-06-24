@@ -1,4 +1,5 @@
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -104,13 +105,16 @@ export function writeSandboxAssetsTs(root = defaultRoot) {
 }
 
 export function readFormattedSandboxAssetsTs(root = defaultRoot) {
-  const tmpPath = path.join(root, ".tmp-sandbox-assets.ts");
-  writeFileSync(
-    tmpPath,
-    normalizeGeneratedSource(buildSandboxAssetsTs(root))
-  );
-  formatSandboxAssetsFile(tmpPath, root);
-  const formatted = readFileSync(tmpPath, "utf8");
-  spawnSync("rm", ["-f", tmpPath], { cwd: root });
-  return normalizeGeneratedSource(formatted);
+  const tmpDir = mkdtempSync(path.join(tmpdir(), "sandbox-assets-"));
+  const tmpPath = path.join(tmpDir, "assets.ts");
+  try {
+    writeFileSync(
+      tmpPath,
+      normalizeGeneratedSource(buildSandboxAssetsTs(root))
+    );
+    formatSandboxAssetsFile(tmpPath, root);
+    return normalizeGeneratedSource(readFileSync(tmpPath, "utf8"));
+  } finally {
+    rmSync(tmpDir, { recursive: true, force: true });
+  }
 }
