@@ -4,7 +4,10 @@ import path from 'node:path';
 import {spawnSync} from 'node:child_process';
 import {test} from 'node:test';
 import {fileURLToPath} from 'node:url';
-import {REPLAY_EVENT_TYPES} from '../../packages/shared/src/replayEventTypes.ts';
+import {
+  REPLAY_EVENT_TYPES,
+  REPLAY_EVENT_VISIBILITY_VALUES,
+} from '../../packages/shared/src/replayEventTypes.ts';
 
 const rootDir = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -17,6 +20,8 @@ const migrationPaths = [
   path.join(rootDir, 'migrations/0004_replay_event_types.sql'),
   path.join(rootDir, 'migrations/0005_session_write_token.sql'),
   path.join(rootDir, 'migrations/0006_replay_consent.sql'),
+  path.join(rootDir, 'migrations/0007_replay_visibility.sql'),
+  path.join(rootDir, 'migrations/0008_session_read_tokens.sql'),
 ];
 const sqliteAvailable = !spawnSync('sqlite3', ['-version'], {encoding: 'utf8'})
   .error;
@@ -33,6 +38,21 @@ test('REPLAY_EVENT_TYPES matches migration CHECK constraint', async () => {
     [...REPLAY_EVENT_TYPES].toSorted(),
     migrationTypes.toSorted(),
     'REPLAY_EVENT_TYPES must match migrations/0004_replay_event_types.sql'
+  );
+});
+
+test('REPLAY_EVENT_VISIBILITY_VALUES matches migration CHECK constraint', async () => {
+  const migrationSql = await readFile(
+    path.join(rootDir, 'migrations/0004_replay_event_types.sql'),
+    'utf8'
+  );
+  const match = migrationSql.match(/visibility in \(([\s\S]*?)\)/);
+  assert.ok(match, 'migration visibility CHECK list not found');
+  const migrationValues = [...match[1].matchAll(/'([^']+)'/g)].map((m) => m[1]);
+  assert.deepEqual(
+    [...REPLAY_EVENT_VISIBILITY_VALUES].toSorted(),
+    migrationValues.toSorted(),
+    'REPLAY_EVENT_VISIBILITY_VALUES must match migrations/0004_replay_event_types.sql'
   );
 });
 

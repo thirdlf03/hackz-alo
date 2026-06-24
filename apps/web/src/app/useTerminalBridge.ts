@@ -59,6 +59,7 @@ export function useTerminalBridge(options: {
     await options.api.resizeTerminal(activeSession.sessionId, cols, rows);
     const terminal = new TerminalSession({
       sessionId: activeSession.sessionId,
+      accessToken: options.api.sessionAccessToken(),
       cols,
       rows,
       onResize: (nextCols, nextRows) => {

@@ -97,8 +97,10 @@ export class SessionApi {
       onError?: (event: Event) => void;
     }
   ) {
+    const params = sessionAccessParams(this.http.getWriteToken());
+    const query = params.size > 0 ? `?${params.toString()}` : '';
     const source = new EventSource(
-      `/api/sessions/${encodeURIComponent(sessionId)}/events`
+      `/api/sessions/${encodeURIComponent(sessionId)}/events${query}`
     );
     source.addEventListener('snapshot', (event) => {
       handlers.onSnapshot?.(
@@ -215,4 +217,10 @@ export class SessionApi {
       keepalive: true,
     });
   }
+}
+
+function sessionAccessParams(token: string | undefined) {
+  const params = new URLSearchParams();
+  if (token) params.set('accessToken', token);
+  return params;
 }

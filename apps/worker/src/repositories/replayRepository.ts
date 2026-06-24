@@ -3,11 +3,38 @@ import type {Bindings} from '../types.js';
 
 export interface ReplayRow {
   id: string;
+  session_id: string;
+  scenario_id: string;
+  difficulty: string;
+  started_at: string;
+  finished_at: string | null;
+  duration_ms: number | null;
+  result: string | null;
+  ending_id: string | null;
+  video_object_key: string | null;
+  event_log_object_key: string | null;
   thumbnail_object_key: string | null;
+  featured: number;
+  visibility: string;
+  browser_info_json: string | null;
+  recording_status: string;
+  mime_type: string | null;
+  created_at: string;
+  updated_at: string;
+  video_duration_ms: number | null;
+  consent_recorded_at: string | null;
 }
 
 export async function getReplay(env: Bindings, replayId: string) {
-  return env.DB.prepare('select * from replays where id = ?')
+  return env.DB.prepare(
+    `select id, session_id, scenario_id, difficulty, started_at, finished_at,
+            duration_ms, result, ending_id, video_object_key,
+            event_log_object_key, thumbnail_object_key, featured, visibility,
+            browser_info_json, recording_status, mime_type, created_at,
+            updated_at, video_duration_ms, consent_recorded_at
+     from replays
+     where id = ?`
+  )
     .bind(replayId)
     .first<ReplayRow>();
 }
@@ -15,7 +42,10 @@ export async function getReplay(env: Bindings, replayId: string) {
 export async function listFeaturedReplays(env: Bindings) {
   const rows = await env.DB.prepare(
     `select id, scenario_id, difficulty, result, duration_ms, video_duration_ms, thumbnail_object_key, created_at
-     from replays where featured = 1 order by created_at desc limit 20`
+     from replays
+     where featured = 1 and visibility = 'public'
+     order by created_at desc
+     limit 20`
   ).all();
   return rows.results;
 }

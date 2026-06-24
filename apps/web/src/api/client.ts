@@ -15,6 +15,7 @@ import {
   ReplayApi,
   type ReplayComment,
   type ReplayRecord,
+  type ReplayShareLink,
 } from './replayApi.js';
 import {ScenarioApi} from './scenarioApi.js';
 import {
@@ -31,6 +32,7 @@ import {
 export type {
   ReplayComment,
   ReplayRecord,
+  ReplayShareLink,
   SessionClockResponse,
   SessionFileResponse,
   SessionFilesResponse,
@@ -57,11 +59,14 @@ export interface ApiClientSurface
       | 'fetchReplayChunkBlob'
       | 'assemblePartialReplayVideo'
       | 'waitForReplayVideo'
+      | 'replayVideoExists'
+      | 'fetchReplayVideoBlob'
       | 'finalizeReplayVideo'
       | 'getReplay'
       | 'getReplayEvents'
       | 'getReplayComments'
       | 'addReplayComment'
+      | 'createShareLink'
     >,
     Pick<
       SessionApi,
@@ -105,6 +110,7 @@ export interface ApiClientSurface
   ): EventSource;
   notifySessionTimeout(sessionId: string): void;
   resetEventSequence(replayId?: string): void;
+  sessionAccessToken(): string | undefined;
 }
 
 export class ApiClient {
@@ -123,11 +129,14 @@ export class ApiClient {
       'fetchReplayChunkBlob',
       'assemblePartialReplayVideo',
       'waitForReplayVideo',
+      'replayVideoExists',
+      'fetchReplayVideoBlob',
       'finalizeReplayVideo',
       'getReplay',
       'getReplayEvents',
       'getReplayComments',
       'addReplayComment',
+      'createShareLink',
     ]);
     bindApiMethods(this, this.sessions, [
       'prepareSession',
@@ -205,6 +214,10 @@ export class ApiClient {
 
   resetEventSequence(replayId?: string) {
     this.recordingUpload.resetEventSequence(replayId);
+  }
+
+  sessionAccessToken() {
+    return this.http.getWriteToken();
   }
 }
 

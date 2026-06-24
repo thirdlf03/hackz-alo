@@ -7,16 +7,30 @@ pnpm run build:scenarios
 pnpm run build
 pnpm run db:migrate:remote
 pnpm run deploy
-curl -sf "$INCIDENT_WORKER_URL/api/ready"
+INCIDENT_WORKER_URL=https://incident.thirdlf03.com \
+INCIDENT_SMOKE_TURNSTILE_TOKEN=<turnstile-test-token> \
+pnpm run deploy:smoke
 ```
 
-Or tag push / workflow_dispatch via `.github/workflows/deploy.yml`.
+Or tag push / workflow_dispatch via `.github/workflows/deploy.yml`. The deploy
+workflow requires these secrets:
+
+- `INCIDENT_WORKER_URL`
+- `INCIDENT_SMOKE_TURNSTILE_TOKEN`
+- `TURNSTILE_SITE_KEY`
+- `CLOUDFLARE_API_TOKEN`
+
+For a readiness-only emergency check:
+
+```sh
+INCIDENT_WORKER_URL=https://incident.thirdlf03.com pnpm run deploy:smoke -- --ready-only
+```
 
 ## Rollback
 
 1. `git checkout <previous-tag>`
 2. `pnpm run deploy`
-3. Verify `/api/ready`
+3. `pnpm run deploy:smoke`
 
 ## D1 migration failure
 
@@ -28,6 +42,20 @@ Or tag push / workflow_dispatch via `.github/workflows/deploy.yml`.
 1. Check Rate Limiting rules
 2. Run retention sweep manually (cron runs weekly)
 3. `pnpm run cleanup:sessions -- --stale`
+
+## Retention and cleanup
+
+| Job                     | Schedule                               | Structured log                              | Policy                                                                                                                                                                                                                             |
+| ----------------------- | -------------------------------------- | ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Replay retention        | Weekly cron (`sweepExpiredReplays`)    | `retention_sweep`, `retention_sweep_failed` | Finished replays older than **90 days**; deletes R2 prefix + D1 rows (chunks, events, comments, MPU state, replay)                                                                                                                 |
+| Stale sessions          | Every cron tick (`sweepStaleSessions`) | `session_sweep`, `session_sweep_failed`     | Running >30m wall or created/briefing >20m                                                                                                                                                                                         |
+| Multipart uploads (MPU) | On replay purge / session delete       | —                                           | `replay_multipart_uploads` row removed with replay; abandoned MPU without finished replay is cleaned when parent replay is purged. No separate orphan MPU sweeper yet — monitor `replay_multipart_uploads` count vs active replays |
+
+Manual session cleanup:
+
+```sh
+pnpm run cleanup:sessions -- --stale
+```
 
 ## Sandbox unavailable
 

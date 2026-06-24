@@ -11,12 +11,10 @@ export type SessionStatus =
   | 'retired'
   | 'aborted';
 
-export type ReplayVisibility =
-  | 'private'
-  | 'self'
-  | 'unlisted'
-  | 'team'
-  | 'public';
+export {
+  REPLAY_VISIBILITY_VALUES,
+  type ReplayVisibility,
+} from './replayVisibility.js';
 
 export type Actor = 'player' | 'system' | 'scenario' | 'sandbox';
 

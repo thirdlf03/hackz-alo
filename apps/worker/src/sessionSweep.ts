@@ -1,10 +1,23 @@
 import type {Bindings} from './types.js';
 import {getSessionDoStub} from './effect/sessionDoStub.js';
+import {logStructured} from './http/requestLog.js';
 
 const RUNNING_MAX_WALL_MINUTES = 30;
 const STALE_CREATED_MAX_MINUTES = 20;
 
 export async function sweepStaleSessions(env: Bindings) {
+  try {
+    return await sweepStaleSessionsOnce(env);
+  } catch (error) {
+    logStructured('session_sweep_failed', {
+      stage: 'sweep',
+      message: messageFrom(error),
+    });
+    throw error;
+  }
+}
+
+async function sweepStaleSessionsOnce(env: Bindings) {
   const running = await env.DB.prepare(
     `select id from play_sessions
      where status = 'running'
@@ -29,22 +42,27 @@ export async function sweepStaleSessions(env: Bindings) {
   }
 
   let cleaned = 0;
+  let failed = 0;
   for (const sessionId of sessionIds) {
     try {
       await finishStaleSession(env, sessionId);
       cleaned += 1;
     } catch (error) {
-      console.error(
-        '[session-sweep]',
+      failed += 1;
+      logStructured('session_sweep_failed', {
         sessionId,
-        error instanceof Error ? error.message : error
-      );
+        message: messageFrom(error),
+      });
     }
   }
 
-  if (cleaned > 0) {
-    console.log(`[session-sweep] cleaned ${String(cleaned)} stale session(s)`);
-  }
+  logStructured('session_sweep', {
+    runningCandidates: running.results.length,
+    staleCandidates: stale.results.length,
+    candidates: sessionIds.size,
+    cleaned,
+    failed,
+  });
   return cleaned;
 }
 
@@ -66,4 +84,8 @@ async function finishStaleSession(env: Bindings, sessionId: string) {
     `https://session.internal/internal/sessions/${encodeURIComponent(sessionId)}/delete`
   );
   await stub.fetch(new Request(deleteUrl, {method: 'DELETE'}));
+}
+
+function messageFrom(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
 }

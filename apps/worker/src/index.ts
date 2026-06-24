@@ -2,7 +2,7 @@ import {proxyToSandbox} from '@cloudflare/sandbox';
 import {Hono} from 'hono';
 import {SessionDurableObject} from './durable/SessionDurableObject.js';
 import {perfMiddleware} from '@incident/observability/worker';
-import {logStructured} from './http/requestLog.js';
+import {readRouteJsonObject} from './http/routeBody.js';
 import {
   securityHeadersMiddleware,
   serveAssetWithSecurityHeaders,
@@ -22,6 +22,7 @@ export {SessionDurableObject};
 export {Sandbox} from '@cloudflare/sandbox';
 
 const app = new Hono<{Bindings: Bindings}>();
+const DEV_TERMINAL_DEBUG_BODY_MAX_BYTES = 8 * 1024;
 
 app.use('*', requestIdMiddleware());
 app.use('*', perfMiddleware());
@@ -34,7 +35,13 @@ app.post('/api/dev/terminal-debug', async (c) => {
       404
     );
   }
-  const body = (await c.req.json().catch(() => ({}))) as {
+  const parsedBody = await readRouteJsonObject(
+    c,
+    DEV_TERMINAL_DEBUG_BODY_MAX_BYTES,
+    {emptyValue: {}}
+  );
+  if (parsedBody instanceof Response) return parsedBody;
+  const body = parsedBody as {
     event?: string;
     detail?: Record<string, unknown>;
     at?: number;
@@ -64,13 +71,7 @@ export default {
     return serveAssetWithSecurityHeaders(request, env.ASSETS);
   },
   scheduled(_event: ScheduledEvent, env: Bindings, ctx: ExecutionContext) {
-    ctx.waitUntil(
-      sweepStaleSessions(env).then((cleaned) => {
-        if (cleaned > 0) {
-          logStructured('session_sweep', {cleaned});
-        }
-      })
-    );
+    ctx.waitUntil(sweepStaleSessions(env));
     const now = new Date();
     if (
       now.getUTCDay() === 0 &&

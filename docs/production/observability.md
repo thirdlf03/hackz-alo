@@ -13,6 +13,9 @@ Worker emits JSON lines for:
 - `replay_chunk_uploaded`
 - `replay_finalized`
 - `session_sweep`
+- `session_sweep_failed`
+- `retention_sweep`
+- `retention_sweep_failed`
 - `rate_limit_hit`
 
 Each response includes `X-Request-Id`.
@@ -25,7 +28,7 @@ Each response includes `X-Request-Id`.
 | `POST /api/sessions` 503 | > 5/min                 |
 | p95 latency              | > 3s on `/api/sessions` |
 | R2 egress                | week-over-week 2x       |
-| `[session-sweep]` errors | any in 15m              |
+| `session_sweep_failed`   | any in 15m              |
 
 Uptime は Cloudflare Health Checks（Pro 要）ではなく **Uptime Kuma 等の自前監視**。
 Billing の Webhook の可否は [ops-notes.md](./ops-notes.md) を参照。

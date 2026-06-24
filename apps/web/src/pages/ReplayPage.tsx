@@ -51,6 +51,7 @@ export function ReplayPage({replayId, timeline}: Props) {
   const [videoDuration, setVideoDuration] = useState(0);
   const [commentDraft, setCommentDraft] = useState('');
   const [shareWarning, setShareWarning] = useState(false);
+  const [shareStatus, setShareStatus] = useState<string>();
 
   const browserInfo = useMemo(
     () => parseBrowserInfo(meta?.browser_info_json),
@@ -78,44 +79,48 @@ export function ReplayPage({replayId, timeline}: Props) {
     setVideoLoadState('loading');
     setVideoDuration(0);
     setCurrentTime(0);
+    let cancelled = false;
+    let videoObjectUrl: string | undefined;
+
     Promise.all([
       api.getReplay(replayId),
       api.getReplayEvents(replayId),
       api.getReplayComments(replayId),
     ])
       .then(([replay, indexed, loadedComments]) => {
+        if (cancelled) return;
         setMeta(replay as ReplayMeta);
         setEvents(indexed);
         setComments(loadedComments);
       })
       .catch((error: unknown) => {
-        setLoadError(error instanceof Error ? error.message : 'failed to load');
+        if (!cancelled) {
+          setLoadError(
+            error instanceof Error ? error.message : 'failed to load'
+          );
+        }
       });
 
-    fetch(`/api/replays/${encodeURIComponent(replayId)}/video`, {
-      method: 'HEAD',
-    })
-      .then(async (response) => {
-        if (response.ok) {
-          setVideoSrc(`/api/replays/${encodeURIComponent(replayId)}/video`);
-          setVideoLoadState('ready');
-          return;
-        }
-        const videoPath = await api
-          .waitForReplayVideo(replayId)
-          .catch(() => undefined);
-        if (!videoPath) {
-          setVideoSrc(undefined);
-          setVideoLoadState('unavailable');
-          return;
-        }
-        setVideoSrc(videoPath);
+    api
+      .waitForReplayVideo(replayId)
+      .then(async () => {
+        const blob = await api.fetchReplayVideoBlob(replayId);
+        if (cancelled) return;
+        videoObjectUrl = URL.createObjectURL(blob);
+        setVideoSrc(videoObjectUrl);
         setVideoLoadState('ready');
       })
       .catch(() => {
-        setVideoSrc(undefined);
-        setVideoLoadState('unavailable');
+        if (!cancelled) {
+          setVideoSrc(undefined);
+          setVideoLoadState('unavailable');
+        }
       });
+
+    return () => {
+      cancelled = true;
+      if (videoObjectUrl) URL.revokeObjectURL(videoObjectUrl);
+    };
   }, [replayId]);
 
   const visibleTimeline = useMemo(
@@ -183,13 +188,26 @@ export function ReplayPage({replayId, timeline}: Props) {
     setCommentDraft('');
   }
 
-  function copyShareLink() {
+  async function copyShareLink() {
     if (!shareWarning) {
       setShareWarning(true);
       return;
     }
-    const url = `${window.location.origin}/?replay=${encodeURIComponent(replayId)}`;
-    void navigator.clipboard.writeText(url);
+    try {
+      const share = await api.createShareLink(replayId);
+      const url = `${window.location.origin}${share.sharePath}`;
+      await navigator.clipboard.writeText(url);
+      const expiresAt = new Date(share.expiresAt).toLocaleString('ja-JP');
+      setShareStatus(
+        `共有リンクをコピーしました（範囲: ${share.scope}、期限: ${expiresAt}）`
+      );
+    } catch (error: unknown) {
+      setShareStatus(
+        error instanceof Error
+          ? error.message
+          : '共有リンクの発行に失敗しました'
+      );
+    }
   }
 
   const tabIds = {
@@ -244,7 +262,9 @@ export function ReplayPage({replayId, timeline}: Props) {
         <button
           type='button'
           aria-label='共有リンクをコピー'
-          onClick={copyShareLink}
+          onClick={() => {
+            void copyShareLink();
+          }}
         >
           共有リンクをコピー
         </button>
@@ -254,6 +274,7 @@ export function ReplayPage({replayId, timeline}: Props) {
             の内容が含まれる可能性があります。共有前に内容を確認してください。
           </p>
         )}
+        {shareStatus && <p class='replay-meta'>{shareStatus}</p>}
       </div>
       <aside class='replay-side'>
         <div class='replay-tabs' role='tablist' aria-label='リプレイ情報'>

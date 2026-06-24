@@ -7,6 +7,7 @@ import {
 } from '@incident/observability/browser';
 
 const WRITE_TOKEN_STORAGE_KEY = 'incident-write-token';
+const READ_TOKEN_QUERY_PARAM = 'readToken';
 
 export class HttpClient {
   private writeToken: string | undefined;
@@ -91,14 +92,8 @@ export class HttpClient {
   }
 
   private withAuth(init: RequestInit = {}, path = '') {
-    const token = this.getWriteToken();
-    const method = init.method ?? 'GET';
-    if (
-      !token ||
-      method === 'GET' ||
-      method === 'HEAD' ||
-      path === '/api/sessions'
-    ) {
+    const token = this.tokenForPath(path);
+    if (!token) {
       return init;
     }
     const headers = new Headers(init.headers ?? {});
@@ -106,6 +101,28 @@ export class HttpClient {
       headers.set('authorization', `Bearer ${token}`);
     }
     return {...init, headers};
+  }
+
+  private tokenForPath(path: string) {
+    if (path === '/api/sessions') return undefined;
+    const normalizedPath = path.split('?')[0] ?? path;
+    const protectsReplay =
+      normalizedPath.startsWith('/api/replays/') &&
+      normalizedPath !== '/api/replays/featured';
+    const protectsSession = normalizedPath.startsWith('/api/sessions/');
+    if (!protectsReplay && !protectsSession) return undefined;
+
+    const writeToken = this.getWriteToken();
+    if (writeToken) return writeToken;
+    return protectsReplay ? this.readTokenFromLocation() : undefined;
+  }
+
+  private readTokenFromLocation() {
+    if (typeof window === 'undefined') return undefined;
+    const token = new URLSearchParams(window.location.search)
+      .get(READ_TOKEN_QUERY_PARAM)
+      ?.trim();
+    return token && token.length > 0 ? token : undefined;
   }
 
   private startRequestSpan(

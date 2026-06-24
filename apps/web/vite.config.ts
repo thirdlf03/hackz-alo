@@ -31,5 +31,26 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
+    // vendor-terminal (~340kB) is the largest intentional chunk; xterm ships with gameplay UI.
+    chunkSizeWarningLimit: 360,
+    rolldownOptions: {
+      output: {
+        codeSplitting: {
+          minSize: 20_000,
+          groups: [
+            {name: 'vendor-terminal', test: /node_modules\/@xterm\//},
+            {
+              name: 'vendor-runtime',
+              test: /node_modules\/(?:@cloudflare\/sandbox|effect)\//,
+            },
+            {
+              name: 'vendor-preact',
+              test: /node_modules\/(?:preact|@preact|@prefresh)\//,
+            },
+            {name: 'vendor', test: /node_modules\//},
+          ],
+        },
+      },
+    },
   },
 });

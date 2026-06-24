@@ -1,5 +1,8 @@
 import type {WorkerApp} from '../http/context.js';
+import {readRouteJsonObject} from '../http/routeBody.js';
 import {err, ok} from '../http/response.js';
+
+const ADMIN_REPLAY_UPDATE_BODY_MAX_BYTES = 1024;
 
 export function registerAdminRoutes(app: WorkerApp) {
   app.post('/api/admin/replays/:replayId/featured', async (c) => {
@@ -15,7 +18,12 @@ export function registerAdminRoutes(app: WorkerApp) {
     }
 
     const replayId = c.req.param('replayId');
-    const body = (await c.req.json().catch(() => ({}))) as {featured?: unknown};
+    const body = await readRouteJsonObject(
+      c,
+      ADMIN_REPLAY_UPDATE_BODY_MAX_BYTES,
+      {emptyValue: {}}
+    );
+    if (body instanceof Response) return body;
     const featured = body.featured === false || body.featured === 0 ? 0 : 1;
     const replay = await c.env.DB.prepare('select id from replays where id = ?')
       .bind(replayId)

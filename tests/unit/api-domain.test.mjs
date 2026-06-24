@@ -19,6 +19,10 @@ function mockHttp() {
   const calls = [];
   const http = {
     calls,
+    writeToken: undefined,
+    getWriteToken() {
+      return this.writeToken;
+    },
     get: async (path) => {
       calls.push({method: 'GET', path});
       if (path.endsWith('/chunks'))
@@ -120,6 +124,12 @@ test('SessionApi covers session lifecycle, editor routes, and SSE handlers', asy
     },
   });
   assert.equal(source.url, '/api/sessions/session-1/events');
+  http.writeToken = 'writer-token';
+  const authedSource = sessions.subscribeSessionEvents('session-2', {});
+  assert.equal(
+    authedSource.url,
+    '/api/sessions/session-2/events?accessToken=writer-token'
+  );
   source.emit('snapshot', {sessionId: 'session-1', gameTimeMs: 1});
   source.emit('replay', {eventId: 'e1', type: 'play', atMs: 1});
   source.emit('error', {});

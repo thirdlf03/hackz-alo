@@ -98,21 +98,16 @@ export async function putReplayEvents(
   seq: number,
   events: ReplayEvent[]
 ) {
-  const normalizedEvents = events
-    .map((event) => normalizeReplayEvent(replayId, event))
-    .filter((event): event is ReplayEvent => event !== undefined);
-  if (normalizedEvents.length === 0) return {key: '', count: 0};
+  if (events.length === 0) return {key: '', count: 0};
 
   const eventSeq = await nextAvailableEventsSeq(env, replayId, seq);
   const key = replayEventsKey(replayId, eventSeq);
-  const body = normalizedEvents
-    .map((event) => `${JSON.stringify(event)}\n`)
-    .join('');
+  const body = events.map((event) => `${JSON.stringify(event)}\n`).join('');
   await env.REPLAY_BUCKET.put(key, body, {
     httpMetadata: {contentType: 'application/jsonl'},
   });
 
-  const statements = normalizedEvents.map((event) =>
+  const statements = events.map((event) =>
     env.DB.prepare(
       `insert or replace into replay_events_index
        (replay_id, event_id, type, at_ms, summary, visibility)
@@ -137,7 +132,7 @@ export async function putReplayEvents(
   )
     .bind(manifest.key, new Date().toISOString(), replayId)
     .run();
-  return {key, count: normalizedEvents.length};
+  return {key, count: events.length};
 }
 
 export async function putReplayEventsManifest(
@@ -185,7 +180,9 @@ export async function uploadMultipartPart(
   }
 ) {
   const row = await env.DB.prepare(
-    'select * from replay_multipart_uploads where replay_id = ?'
+    `select object_key, upload_id, uploaded_parts_json
+     from replay_multipart_uploads
+     where replay_id = ?`
   )
     .bind(input.replayId)
     .first<{
@@ -227,7 +224,9 @@ export async function uploadMultipartPart(
 
 export async function completeMultipartUpload(env: Bindings, replayId: string) {
   const row = await env.DB.prepare(
-    'select * from replay_multipart_uploads where replay_id = ?'
+    `select object_key, upload_id, uploaded_parts_json
+     from replay_multipart_uploads
+     where replay_id = ?`
   )
     .bind(replayId)
     .first<{
@@ -295,57 +294,6 @@ function contentTypeForBody(body: ReadableStream | ArrayBuffer | Blob) {
 function normalizeOptionalMs(value: number | undefined) {
   if (value === undefined || !Number.isFinite(value)) return null;
   return Math.max(0, Math.round(value));
-}
-
-function normalizeReplayEvent(
-  replayId: string,
-  value: unknown
-): ReplayEvent | undefined {
-  if (
-    !isRecord(value) ||
-    typeof value.type !== 'string' ||
-    value.type.length === 0
-  ) {
-    return undefined;
-  }
-  const id =
-    typeof value.id === 'string' && value.id.length > 0
-      ? value.id
-      : `evt_${crypto.randomUUID()}`;
-  const at =
-    typeof value.at === 'number' && Number.isFinite(value.at)
-      ? Math.max(0, Math.floor(value.at))
-      : 0;
-  const actor =
-    typeof value.actor === 'string' && value.actor.length > 0
-      ? value.actor
-      : 'system';
-  const visibility = isReplayVisibility(value.visibility)
-    ? value.visibility
-    : 'public_safe';
-  const event: ReplayEvent = {
-    id,
-    replayId,
-    type: value.type as ReplayEvent['type'],
-    at,
-    actor: actor as ReplayEvent['actor'],
-    payload: isRecord(value.payload) ? value.payload : {},
-    visibility,
-  };
-  if (typeof value.wallTime === 'string') event.wallTime = value.wallTime;
-  return event;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function isReplayVisibility(
-  value: unknown
-): value is ReplayEvent['visibility'] {
-  return (
-    value === 'public_safe' || value === 'private' || value === 'sensitive'
-  );
 }
 
 async function nextAvailableEventsSeq(

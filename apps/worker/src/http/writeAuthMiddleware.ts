@@ -14,6 +14,14 @@ export async function verifySessionWriteToken(
 ) {
   const token = parseBearerToken(authorization);
   if (!token) return false;
+  return verifySessionWriteTokenValue(env, sessionId, token);
+}
+
+export async function verifySessionWriteTokenValue(
+  env: Bindings,
+  sessionId: string,
+  token: string
+) {
   const row = await env.DB.prepare(
     'select write_token_hash from play_sessions where id = ?'
   )

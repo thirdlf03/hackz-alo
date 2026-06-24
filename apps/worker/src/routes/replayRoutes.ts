@@ -1,10 +1,16 @@
-import type {ReplayEvent} from '@incident/shared';
 import {
   parseOptionalNumber,
   parsePartNumber,
   parseSequence,
 } from '../http/params.js';
-import type {WorkerApp} from '../http/context.js';
+import type {WorkerApp, WorkerContext} from '../http/context.js';
+import {
+  readRouteJsonBody,
+  readRouteJsonObject,
+  readRouteRequestBody,
+} from '../http/routeBody.js';
+import {issueReplayShareLink} from '../http/replayShareLink.js';
+import {requireReplayReadAccess} from '../http/replayReadPolicy.js';
 import {err, ok} from '../http/response.js';
 import {
   bodySizeLimit,
@@ -22,6 +28,10 @@ import {
   markReplayFinished,
   putReplayThumbnail,
 } from '../repositories/replayRepository.js';
+import {
+  ReplayEventValidationError,
+  validateReplayEventBatch,
+} from '../pure/replayEventValidation.js';
 import {
   completeMultipartUpload,
   createMultipartUpload,
@@ -80,10 +90,12 @@ export function registerReplayRoutes(app: WorkerApp) {
       if (startedAtMs === null || endedAtMs === null) {
         return c.json(err('bad_request', 'invalid chunk time range'), 400);
       }
+      const body = await readRouteRequestBody(c, 16 * 1024 * 1024);
+      if (body instanceof Response) return body;
       const stored = await putReplayChunk(c.env, {
         replayId: replay.id,
         seq,
-        body: c.req.raw.body ?? new ArrayBuffer(0),
+        body,
         ...(startedAtMs === undefined ? {} : {startedAtMs}),
         ...(endedAtMs === undefined ? {} : {endedAtMs}),
       }).catch((error: unknown) => {
@@ -132,12 +144,14 @@ export function registerReplayRoutes(app: WorkerApp) {
       if (partNumber === undefined) {
         return c.json(err('bad_request', 'invalid part number'), 400);
       }
+      const body = await readRouteRequestBody(c, 16 * 1024 * 1024);
+      if (body instanceof Response) return body;
       return c.json(
         ok(
           await uploadMultipartPart(c.env, {
             replayId: replay.id,
             partNumber,
-            body: c.req.raw.body ?? new ArrayBuffer(0),
+            body,
           })
         )
       );
@@ -162,19 +176,15 @@ export function registerReplayRoutes(app: WorkerApp) {
       if (denied) return denied;
       const replay = await getReplay(c.env, replayId);
       if (!replay) return c.json(err('not_found', 'replay not found'), 404);
-      const events: unknown = await c.req.json().catch(() => []);
-      if (!Array.isArray(events)) {
-        return c.json(err('bad_request', 'events must be an array'), 400);
-      }
+      const body = await readRouteJsonBody(c, 256 * 1024);
+      if (body instanceof Response) return body;
+      const events = validateReplayEventsOrResponse(c, replay.id, body);
+      if (events instanceof Response) return events;
       const seq = parseSequence(c.req.query('seq'));
       if (seq === undefined) {
         return c.json(err('bad_request', 'invalid seq'), 400);
       }
-      return c.json(
-        ok(
-          await putReplayEvents(c.env, replay.id, seq, events as ReplayEvent[])
-        )
-      );
+      return c.json(ok(await putReplayEvents(c.env, replay.id, seq, events)));
     }
   );
 
@@ -184,32 +194,37 @@ export function registerReplayRoutes(app: WorkerApp) {
     if (denied) return denied;
     const replay = await getReplay(c.env, replayId);
     if (!replay) return c.json(err('not_found', 'replay not found'), 404);
-    const body = (await c.req.json().catch(() => ({}))) as {
-      browserInfo?: Record<string, unknown>;
-      videoDurationMs?: unknown;
-      consentRecorded?: boolean;
-    };
+    const body = await readRouteJsonObject(c, 64 * 1024, {emptyValue: {}});
+    if (body instanceof Response) return body;
     const object = await getReplayObject(c.env, replay.id);
     const status = object ? 'ready' : 'upload_degraded';
     await markReplayFinished(c.env, {
       replayId: replay.id,
       status,
-      browserInfo: body.browserInfo,
+      browserInfo: isRecord(body.browserInfo) ? body.browserInfo : undefined,
       videoDurationMs: normalizeOptionalMs(body.videoDurationMs),
       consentRecorded: body.consentRecorded === true,
     });
     return c.json(ok({replayId: replay.id, status}));
   });
 
+  app.post('/api/replays/:replayId/share-links', async (c) => {
+    const replayId = replayIdParam(c);
+    const body = await readRouteJsonObject(c, 4 * 1024, {emptyValue: {}});
+    if (body instanceof Response) return body;
+    return issueReplayShareLink(c, replayId, body);
+  });
+
   app.get('/api/replays/:replayId', async (c) => {
-    const replay = await getReplay(c.env, c.req.param('replayId'));
-    if (!replay) return c.json(err('not_found', 'replay not found'), 404);
-    return c.json(ok(replay));
+    const access = await requireReplayReadAccess(c, c.req.param('replayId'));
+    if (access instanceof Response) return access;
+    return c.json(ok(access.replay));
   });
 
   app.on(['GET', 'HEAD'], '/api/replays/:replayId/video', async (c) => {
-    const replay = await getReplay(c.env, c.req.param('replayId'));
-    if (!replay) return c.json(err('not_found', 'replay not found'), 404);
+    const access = await requireReplayReadAccess(c, c.req.param('replayId'));
+    if (access instanceof Response) return access;
+    const replay = access.replay;
     const meta = await headStoredReplayVideo(c.env, replay.id);
     if (!meta) return c.json(err('not_found', 'video not found'), 404);
     const contentType = meta.httpMetadata?.contentType ?? 'video/webm';
@@ -234,14 +249,16 @@ export function registerReplayRoutes(app: WorkerApp) {
   });
 
   app.get('/api/replays/:replayId/chunks', async (c) => {
-    const replay = await getReplay(c.env, c.req.param('replayId'));
-    if (!replay) return c.json(err('not_found', 'replay not found'), 404);
+    const access = await requireReplayReadAccess(c, c.req.param('replayId'));
+    if (access instanceof Response) return access;
+    const replay = access.replay;
     return c.json(ok(await listReplayChunks(c.env, replay.id)));
   });
 
   app.get('/api/replays/:replayId/chunks/:seq', async (c) => {
-    const replay = await getReplay(c.env, c.req.param('replayId'));
-    if (!replay) return c.json(err('not_found', 'replay not found'), 404);
+    const access = await requireReplayReadAccess(c, c.req.param('replayId'));
+    if (access instanceof Response) return access;
+    const replay = access.replay;
     const seq = parseSequence(c.req.param('seq'));
     if (seq === undefined) {
       return c.json(err('bad_request', 'invalid seq'), 400);
@@ -258,14 +275,21 @@ export function registerReplayRoutes(app: WorkerApp) {
   });
 
   app.get('/api/replays/:replayId/events', async (c) => {
-    const replay = await getReplay(c.env, c.req.param('replayId'));
-    if (!replay) return c.json(err('not_found', 'replay not found'), 404);
-    return c.json(ok(await listReplayEvents(c.env, replay.id)));
+    const access = await requireReplayReadAccess(c, c.req.param('replayId'));
+    if (access instanceof Response) return access;
+    return c.json(
+      ok(
+        await listReplayEvents(c.env, access.replay.id, {
+          includePrivate: access.includePrivateEvents,
+        })
+      )
+    );
   });
 
   app.get('/api/replays/:replayId/thumbnail', async (c) => {
-    const replay = await getReplay(c.env, c.req.param('replayId'));
-    if (!replay) return c.json(err('not_found', 'replay not found'), 404);
+    const access = await requireReplayReadAccess(c, c.req.param('replayId'));
+    if (access instanceof Response) return access;
+    const replay = access.replay;
     const key = replay.thumbnail_object_key;
     if (!key) return c.json(err('not_found', 'thumbnail not found'), 404);
     const object = await c.env.REPLAY_BUCKET.get(key);
@@ -278,14 +302,16 @@ export function registerReplayRoutes(app: WorkerApp) {
   });
 
   app.get('/api/replays/:replayId/comments', async (c) => {
-    const replay = await getReplay(c.env, c.req.param('replayId'));
-    if (!replay) return c.json(err('not_found', 'replay not found'), 404);
+    const access = await requireReplayReadAccess(c, c.req.param('replayId'));
+    if (access instanceof Response) return access;
+    const replay = access.replay;
     return c.json(ok(await listReplayComments(c.env, replay.id)));
   });
 
   app.post('/api/replays/:replayId/comments', async (c) => {
-    const replay = await getReplay(c.env, c.req.param('replayId'));
-    if (!replay) return c.json(err('not_found', 'replay not found'), 404);
+    const access = await requireReplayReadAccess(c, c.req.param('replayId'));
+    if (access instanceof Response) return access;
+    const replay = access.replay;
     const clientIp = c.req.header('cf-connecting-ip') ?? 'unknown';
     if (shouldEnforceRateLimit(c.env)) {
       const limited = await enforceRateLimit(
@@ -298,10 +324,8 @@ export function registerReplayRoutes(app: WorkerApp) {
         return c.json(err('rate_limited', 'too many comments'), 429);
       }
     }
-    const body = (await c.req.json().catch(() => ({}))) as {
-      atMs?: number;
-      body?: string;
-    };
+    const body = await readRouteJsonObject(c, 8 * 1024, {emptyValue: {}});
+    if (body instanceof Response) return body;
     if (
       typeof body.atMs !== 'number' ||
       typeof body.body !== 'string' ||
@@ -332,15 +356,28 @@ export function registerReplayRoutes(app: WorkerApp) {
       if (denied) return denied;
       const replay = await getReplay(c.env, replayId);
       if (!replay) return c.json(err('not_found', 'replay not found'), 404);
-      return c.json(
-        ok(
-          await putReplayThumbnail(
-            c.env,
-            replay.id,
-            c.req.raw.body ?? new ArrayBuffer(0)
-          )
-        )
-      );
+      const body = await readRouteRequestBody(c, 2 * 1024 * 1024);
+      if (body instanceof Response) return body;
+      return c.json(ok(await putReplayThumbnail(c.env, replay.id, body)));
     }
   );
+}
+
+function validateReplayEventsOrResponse(
+  c: WorkerContext,
+  replayId: string,
+  body: unknown
+) {
+  try {
+    return validateReplayEventBatch(replayId, body);
+  } catch (error) {
+    if (error instanceof ReplayEventValidationError) {
+      return c.json(err('bad_request', error.message), 400);
+    }
+    throw error;
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

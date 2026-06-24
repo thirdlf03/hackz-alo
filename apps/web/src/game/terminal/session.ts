@@ -18,6 +18,7 @@ export type TerminalConnectionState =
 
 export interface TerminalSessionOptions {
   sessionId: string;
+  accessToken?: string | undefined;
   cols?: number;
   rows?: number;
   onSnapshot: (snapshot: TerminalMirrorState) => void;
@@ -74,8 +75,15 @@ export class TerminalSession {
 
     this.addon = new SandboxAddon({
       reconnect: true,
-      getWebSocketUrl: ({origin}) =>
-        `${origin}/api/sessions/${encodeURIComponent(options.sessionId)}/ws/terminal`,
+      getWebSocketUrl: ({origin}) => {
+        const url = new URL(
+          `${origin}/api/sessions/${encodeURIComponent(options.sessionId)}/ws/terminal`
+        );
+        if (options.accessToken) {
+          url.searchParams.set('accessToken', options.accessToken);
+        }
+        return url.toString();
+      },
       onStateChange: (state, error) => {
         this.connectionState = state;
         terminalDebug('connection', {

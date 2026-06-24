@@ -11,7 +11,7 @@ export default defineConfig({
   use: {
     baseURL: 'http://127.0.0.1:5173',
     actionTimeout: 15_000,
-    trace: 'on-first-retry',
+    trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
   },
   webServer: {

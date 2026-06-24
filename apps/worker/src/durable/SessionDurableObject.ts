@@ -1,10 +1,8 @@
 import {
-  createReplayEvent,
   canDeclareRecovery,
   type ReplayEvent,
   type ScenarioDefinition,
   type SessionStatus,
-  type MetricsSnapshot,
 } from '@incident/shared';
 import {getScenario} from '@incident/scenarios';
 import {
@@ -12,6 +10,7 @@ import {
   INCIDENT_SPAN_NAMES,
   withWorkerSpan,
 } from '@incident/observability/worker';
+import {readJsonObjectBody, RequestBodyError} from '../http/body.js';
 import {
   errorResponse,
   HttpError,
@@ -21,18 +20,30 @@ import {
 } from '../http/response.js';
 import {logStructured} from '../http/requestLog.js';
 import type {Bindings} from '../types.js';
-import {lifecycleAlarmDeadline} from './sessionClock.js';
+import {emitSessionReplayEvent} from './sessionEventEmit.js';
+import {finishSessionTransaction} from './sessionFinish.js';
 import {
-  persistReplayEvent,
-  persistReplayResult,
-  persistReplayStart,
-  persistSession,
-} from './sessionPersistence.js';
+  BRIEFING_TIMEOUT_MS,
+  clearSessionLifecycleAlarms,
+  handleSessionAlarm,
+  scheduleSessionLifecycleAlarms,
+  touchSessionClientActivity,
+} from './sessionLifecycle.js';
+import {persistReplayStart, persistSession} from './sessionPersistence.js';
+import {
+  readSessionFileContent,
+  readSessionFiles,
+  readSessionLogs,
+  readSessionMetrics,
+  readSessionStorage,
+  writeSessionFileContent,
+  type MetricsCache,
+} from './sessionResourceHandlers.js';
+import {dispatchSessionRoute, matchSessionRoute} from './sessionRouter.js';
 import {
   buildClockPayload,
   buildSessionSnapshot,
   createBriefingSession,
-  finishStoredSession,
   getGameTimeMs,
   isTerminalStatus,
   startStoredSession,
@@ -40,43 +51,49 @@ import {
   type StoredSession,
   type SuccessCheck,
 } from './sessionState.js';
-import {dispatchSessionRoute} from './sessionRouter.js';
+import {SessionSseHub} from './sessionSseHub.js';
 import {SessionTimeline} from './sessionTimeline.js';
+import {
+  handleSessionTerminal,
+  handleSessionTerminalInterrupt,
+  mergeTerminalResize,
+  type TerminalDimensions,
+} from './sessionTerminalHandlers.js';
 import {
   destroySessionSandbox,
   evaluateSuccessCondition,
-  fetchSessionMetrics,
-  fetchSessionLogs,
-  fetchSessionStorage,
   injectFault,
-  interruptSessionTerminal,
-  listSessionFiles,
   prepareScenarioSandbox,
-  proxySessionTerminal,
-  readSessionFile,
-  writeSessionFile,
   startScenarioSandbox,
   type SandboxPrepareResult,
 } from '../sandbox/runtime.js';
-import {matchSessionRoute} from './sessionRouter.js';
 
-const SESSION_IDLE_TIMEOUT_MS = 3 * 60 * 1000;
-const BRIEFING_TIMEOUT_MS = 15 * 60 * 1000;
-const GAME_END_BUFFER_MS = 60 * 1000;
+const SESSION_BOOTSTRAP_BODY_MAX_BYTES = 8 * 1024;
+const SESSION_CONTROL_BODY_MAX_BYTES = 8 * 1024;
+const SESSION_FILE_BODY_MAX_BYTES = 1024 * 1024;
 
 export class SessionDurableObject implements DurableObject {
-  private metricsCache?: MetricsSnapshot;
-  private metricsCachedAt = 0;
+  private metricsCache: MetricsCache = {cachedAt: 0};
   private timeline: SessionTimeline;
+  private sseHub: SessionSseHub;
   private sandboxPreparePromise?: Promise<SandboxPrepareResult>;
-  private sseClients: Set<ReadableStreamDefaultController<Uint8Array>> =
-    new Set();
-  private static readonly METRICS_TTL_MS = 3000;
+  private terminalDimensions: TerminalDimensions = {cols: 80, rows: 24};
 
   constructor(
     private state: DurableObjectState,
     private env: Bindings
   ) {
+    this.sseHub = new SessionSseHub({
+      loadSnapshot: async () => await this.snapshot(),
+      loadReplayBuffer: async () =>
+        (await this.requireSession()).bufferedEvents.slice(-50),
+      touchClientActivity: async () => {
+        await this.touchClientActivity();
+      },
+      onClientClose: async () => {
+        await this.rescheduleIdleAlarm();
+      },
+    });
     this.timeline = new SessionTimeline({
       loadSession: () => this.requireSession(),
       saveSession: async (session) => {
@@ -89,44 +106,29 @@ export class SessionDurableObject implements DurableObject {
         this.emit(session, type, at, actor, payload),
       snapshotFor: (session) => this.snapshotFor(session),
       broadcastSse: (event, data) => {
-        this.broadcastSse(event, data);
+        this.sseHub.broadcast(event, data);
       },
     });
   }
 
   async alarm() {
-    try {
-      const session = await this.state.storage.get<StoredSession>('session');
-      if (!session) return;
-
-      if (session.status === 'briefing') {
-        await this.deleteSession();
-        return;
-      }
-
-      if (session.status !== 'running') return;
-
-      const scenario = requireScenario(session.scenarioId);
-      const timeLimitMs = scenario.timeLimitMinutes * 60 * 1000;
-      if (getGameTimeMs(session) >= timeLimitMs) {
-        await this.timeout();
-        return;
-      }
-
-      const lastActivity =
-        (await this.state.storage.get<number>('lastClientActivityAt')) ?? 0;
-      if (
-        this.sseClients.size === 0 &&
-        Date.now() - lastActivity >= SESSION_IDLE_TIMEOUT_MS
-      ) {
-        await this.timeout();
-        return;
-      }
-
-      await this.scheduleLifecycleAlarms(session, scenario);
-    } catch (error) {
-      console.error('[session-alarm]', messageFrom(error));
-    }
+    await handleSessionAlarm({
+      storage: this.state.storage,
+      sseHubSize: this.sseHub.size,
+      getSession: async () =>
+        await this.state.storage.get<StoredSession>('session'),
+      requireScenario,
+      handlers: {
+        deleteSession: async () => {
+          await this.deleteSession();
+        },
+        timeout: async () => {
+          await this.timeout();
+        },
+        scheduleLifecycleAlarms: (session, scenario) =>
+          this.scheduleLifecycleAlarms(session, scenario),
+      },
+    });
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -337,7 +339,10 @@ export class SessionDurableObject implements DurableObject {
         'clock updates require a running session'
       );
     }
-    const body = (await request.json().catch(() => ({}))) as {speed?: number};
+    const body = (await readInternalJsonObject(
+      request,
+      SESSION_CONTROL_BODY_MAX_BYTES
+    )) as {speed?: number};
     const speed =
       typeof body.speed === 'number' && body.speed > 0 && body.speed <= 8
         ? body.speed
@@ -357,217 +362,91 @@ export class SessionDurableObject implements DurableObject {
 
   private async events(request: Request) {
     await this.requireSession();
-    const encoder = new TextEncoder();
-    const stream = new ReadableStream<Uint8Array>({
-      start: async (controller) => {
-        this.sseClients.add(controller);
-        void this.touchClientActivity();
-        request.signal.addEventListener(
-          'abort',
-          () => {
-            this.sseClients.delete(controller);
-            void this.rescheduleIdleAlarm();
-            try {
-              controller.close();
-            } catch {
-              /* ignore */
-            }
-          },
-          {once: true}
-        );
-        const snapshot = await this.snapshot();
-        controller.enqueue(
-          encoder.encode(
-            `event: snapshot\ndata: ${JSON.stringify(snapshot)}\n\n`
-          )
-        );
-        const session = await this.requireSession();
-        for (const event of session.bufferedEvents.slice(-50)) {
-          controller.enqueue(
-            encoder.encode(`event: replay\ndata: ${JSON.stringify(event)}\n\n`)
-          );
-        }
-      },
-      cancel: () => {
-        // Removed on abort above or broadcast error handling.
-      },
-    });
-    return new Response(stream, {
-      headers: {
-        'content-type': 'text/event-stream',
-        'cache-control': 'no-cache',
-        connection: 'keep-alive',
-      },
-    });
+    return this.sseHub.response(request);
   }
-
-  private terminalCols = 80;
-  private terminalRows = 24;
 
   private async terminal(request: Request) {
     const session = await this.requireSession();
     await this.touchClientActivity();
-    return proxySessionTerminal(this.env, session.sessionId, request, {
-      cols: this.terminalCols,
-      rows: this.terminalRows,
-    });
+    return handleSessionTerminal(
+      this.env,
+      session,
+      request,
+      this.terminalDimensions
+    );
   }
 
   private async terminalResize(request: Request) {
-    const body = (await request.json().catch(() => ({}))) as {
-      cols?: number;
-      rows?: number;
-    };
-    if (typeof body.cols === 'number' && body.cols >= 40 && body.cols <= 200) {
-      this.terminalCols = body.cols;
-    }
-    if (typeof body.rows === 'number' && body.rows >= 10 && body.rows <= 60) {
-      this.terminalRows = body.rows;
-    }
-    return jsonOk({cols: this.terminalCols, rows: this.terminalRows});
+    const body = (await readInternalJsonObject(
+      request,
+      SESSION_CONTROL_BODY_MAX_BYTES
+    )) as {cols?: number; rows?: number};
+    this.terminalDimensions = mergeTerminalResize(
+      this.terminalDimensions,
+      body
+    );
+    return jsonOk(this.terminalDimensions);
   }
 
   private async terminalInterrupt() {
     const session = await this.requireSession();
-    if (session.status !== 'running') {
-      throw new HttpError(
-        409,
-        'invalid_state',
-        'terminal interrupt is only available while the session is running'
-      );
-    }
-    await interruptSessionTerminal(this.env, session.sessionId);
-    return jsonOk({interrupted: true});
+    return handleSessionTerminalInterrupt(this.env, session);
   }
 
   private async metrics() {
     const session = await this.requireSession();
-    if (session.status !== 'running') {
-      throw new HttpError(
-        409,
-        'invalid_state',
-        'metrics are only available while the session is running'
-      );
-    }
-    const now = Date.now();
-    if (
-      this.metricsCache &&
-      now - this.metricsCachedAt < SessionDurableObject.METRICS_TTL_MS
-    ) {
-      await withWorkerSpan(
-        this.env,
-        INCIDENT_SPAN_NAMES.doSnapshotPoll,
-        {
-          [INCIDENT_ATTRS.sessionId]: session.sessionId,
-          [INCIDENT_ATTRS.cached]: true,
-        },
-        () => undefined
-      );
-      return jsonOk(this.metricsCache);
-    }
-    const metrics = await withWorkerSpan(
+    const response = await readSessionMetrics(
       this.env,
-      INCIDENT_SPAN_NAMES.doSnapshotPoll,
-      {
-        [INCIDENT_ATTRS.sessionId]: session.sessionId,
-        [INCIDENT_ATTRS.cached]: false,
-      },
-      async () => await fetchSessionMetrics(this.env, session.sessionId)
+      session,
+      this.metricsCache
     );
-    if (!metrics) {
-      throw new HttpError(
-        502,
-        'sandbox_unavailable',
-        'failed to fetch sandbox metrics'
-      );
-    }
-    this.metricsCache = metrics;
-    this.metricsCachedAt = now;
     await this.touchClientActivity();
-    return jsonOk(metrics);
+    return response;
   }
 
   private async logs(request: Request) {
     const session = await this.requireSession();
-    if (session.status !== 'running') {
-      throw new HttpError(
-        409,
-        'invalid_state',
-        'logs are only available while the session is running'
-      );
-    }
-    const url = new URL(request.url);
-    const file = url.searchParams.get('file') ?? 'access';
-    const tail = Number(url.searchParams.get('tail') ?? '50');
-    const lines = await fetchSessionLogs(
-      this.env,
-      session.sessionId,
-      file,
-      tail
-    );
-    return jsonOk({file, lines});
+    return readSessionLogs(this.env, session, request);
   }
 
   private async storage() {
     const session = await this.requireSession();
-    if (session.status !== 'running') {
-      throw new HttpError(
-        409,
-        'invalid_state',
-        'storage is only available while the session is running'
-      );
-    }
-    const entries = await fetchSessionStorage(this.env, session.sessionId);
-    return jsonOk({entries});
+    return readSessionStorage(this.env, session);
   }
 
   private async files() {
     const session = await this.requireRunningSession(
       'files are only available while the session is running'
     );
-    const files = await listSessionFiles(this.env, session.sessionId);
+    const response = await readSessionFiles(this.env, session);
     await this.touchClientActivity();
-    return jsonOk({files});
+    return response;
   }
 
   private async readFile(request: Request) {
     const session = await this.requireRunningSession(
       'files are only available while the session is running'
     );
-    const path = new URL(request.url).searchParams.get('path') ?? '';
-    if (!path) throw new HttpError(400, 'bad_request', 'path is required');
-    const file = await readSessionFile(this.env, session.sessionId, path);
+    const response = await readSessionFileContent(this.env, session, request);
     await this.touchClientActivity();
-    return jsonOk(file);
+    return response;
   }
 
   private async writeFile(request: Request) {
     const session = await this.requireRunningSession(
       'files are only available while the session is running'
     );
-    const body = (await request.json().catch(() => ({}))) as {
-      path?: unknown;
-      content?: unknown;
-    };
-    if (typeof body.path !== 'string') {
-      throw new HttpError(400, 'bad_request', 'path is required');
-    }
-    if (typeof body.content !== 'string') {
-      throw new HttpError(400, 'bad_request', 'content is required');
-    }
-    const file = await writeSessionFile(
-      this.env,
-      session.sessionId,
-      body.path,
-      body.content
-    );
+    const body = (await readInternalJsonObject(
+      request,
+      SESSION_FILE_BODY_MAX_BYTES
+    )) as {path?: unknown; content?: unknown};
+    const response = await writeSessionFileContent(this.env, session, body);
     await this.touchClientActivity();
-    return jsonOk(file);
+    return response;
   }
 
   private clearMetricsCache() {
-    delete this.metricsCache;
-    this.metricsCachedAt = 0;
+    this.metricsCache = {cachedAt: 0};
   }
 
   private async snapshot() {
@@ -637,14 +516,13 @@ export class SessionDurableObject implements DurableObject {
   }
 
   private async touchClientActivity() {
-    await this.state.storage.put('lastClientActivityAt', Date.now());
     const session = await this.state.storage.get<StoredSession>('session');
-    if (session?.status === 'running') {
-      await this.scheduleLifecycleAlarms(
-        session,
-        requireScenario(session.scenarioId)
-      );
-    }
+    await touchSessionClientActivity(
+      this.state.storage,
+      session,
+      session ? requireScenario(session.scenarioId) : undefined,
+      this.sseHub.size
+    );
   }
 
   private async rescheduleIdleAlarm() {
@@ -661,39 +539,12 @@ export class SessionDurableObject implements DurableObject {
     session: StoredSession,
     scenario: ScenarioDefinition
   ) {
-    if (session.status !== 'running') return;
-
-    const lastActivity =
-      (await this.state.storage.get<number>('lastClientActivityAt')) ??
-      Date.now();
-    const deadline = lifecycleAlarmDeadline({
+    await scheduleSessionLifecycleAlarms(
+      this.state.storage,
       session,
-      timeLimitMs: scenario.timeLimitMinutes * 60 * 1000,
-      idleTimeoutMs: SESSION_IDLE_TIMEOUT_MS,
-      gameEndBufferMs: GAME_END_BUFFER_MS,
-      lastActivityAt: lastActivity,
-      hasSseClients: this.sseClients.size > 0,
-    });
-    if (deadline !== undefined) await this.state.storage.setAlarm(deadline);
-  }
-
-  private async clearLifecycleAlarms() {
-    await this.state.storage.deleteAlarm();
-    await this.state.storage.delete('lastClientActivityAt');
-  }
-
-  private broadcastSse(event: string, data: unknown) {
-    const encoder = new TextEncoder();
-    const chunk = encoder.encode(
-      `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`
+      scenario,
+      this.sseHub.size
     );
-    for (const client of this.sseClients) {
-      try {
-        client.enqueue(chunk);
-      } catch {
-        this.sseClients.delete(client);
-      }
-    }
   }
 
   private async finishSession(
@@ -703,21 +554,16 @@ export class SessionDurableObject implements DurableObject {
   ) {
     this.timeline.clear();
     this.clearMetricsCache();
-    await this.clearLifecycleAlarms();
-    const finished = finishStoredSession(
+    await clearSessionLifecycleAlarms(this.state.storage);
+    return finishSessionTransaction({
+      env: this.env,
       session,
       status,
-      new Date().toISOString(),
-      Date.now()
-    );
-    await this.state.storage.put('session', finished);
-    try {
-      await persistSession(this.env, finished, result);
-      await persistReplayResult(this.env, finished, result);
-    } finally {
-      await destroySessionSandbox(this.env, session.sessionId);
-    }
-    return finished;
+      result,
+      storagePut: async (finished) => {
+        await this.state.storage.put('session', finished);
+      },
+    });
   }
 
   private async emit(
@@ -727,22 +573,20 @@ export class SessionDurableObject implements DurableObject {
     actor: ReplayEvent['actor'],
     payload: Record<string, unknown>
   ): Promise<StoredSession> {
-    const event = createReplayEvent({
-      replayId: session.replayId,
+    return emitSessionReplayEvent({
+      env: this.env,
+      session,
       type,
       at,
       actor,
       payload,
+      storagePut: async (next) => {
+        await this.state.storage.put('session', next);
+      },
+      broadcast: (event) => {
+        this.sseHub.broadcast('replay', event);
+      },
     });
-    const next = {
-      ...session,
-      eventSeq: session.eventSeq + 1,
-      bufferedEvents: [...session.bufferedEvents, event].slice(-200),
-    };
-    await this.state.storage.put('session', next);
-    await persistReplayEvent(this.env, event);
-    this.broadcastSse('replay', event);
-    return next;
   }
 }
 
@@ -757,7 +601,19 @@ function requireScenario(id: string) {
 async function readBootstrap(
   request: Request
 ): Promise<Partial<SessionBootstrap>> {
-  const value = await request.json().catch(() => ({}));
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
-  return value as Partial<SessionBootstrap>;
+  return (await readInternalJsonObject(
+    request,
+    SESSION_BOOTSTRAP_BODY_MAX_BYTES
+  )) as Partial<SessionBootstrap>;
+}
+
+async function readInternalJsonObject(request: Request, maxBytes: number) {
+  try {
+    return await readJsonObjectBody(request, maxBytes, {emptyValue: {}});
+  } catch (error) {
+    if (error instanceof RequestBodyError) {
+      throw new HttpError(error.status, error.code, error.message);
+    }
+    throw error;
+  }
 }

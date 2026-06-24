@@ -15,6 +15,10 @@ pre-push:
       run: pnpm test
     audit-schema:
       run: pnpm run audit:schema-sync
+    audit-route-body:
+      run: pnpm run audit:route-body
+    audit-coupling:
+      run: pnpm run audit:coupling -- --strict
     scenarios:
       run: pnpm run build:scenarios && pnpm run check:sandbox-assets
     perf-bench:

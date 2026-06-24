@@ -20,6 +20,14 @@ export interface ReplayComment {
   created_at: string;
 }
 
+export interface ReplayShareLink {
+  scope: 'read';
+  expiresAt: string;
+  visibility: string;
+  sharePath: string;
+  readToken: string;
+}
+
 export class ReplayApi {
   constructor(private http: HttpClient) {}
 
@@ -68,6 +76,23 @@ export class ReplayApi {
     throw new Error('video not ready');
   }
 
+  async replayVideoExists(replayId: string) {
+    return this.http
+      .fetch(`/api/replays/${encodeURIComponent(replayId)}/video`, {
+        method: 'HEAD',
+      })
+      .then((response) => response.ok)
+      .catch(() => false);
+  }
+
+  async fetchReplayVideoBlob(replayId: string) {
+    const response = await this.http.fetch(
+      `/api/replays/${encodeURIComponent(replayId)}/video`
+    );
+    if (!response.ok) throw new Error('video fetch failed');
+    return response.blob();
+  }
+
   /** @deprecated Prefer waitForReplayVideo — avoids client-side chunk merging. */
   async assemblePartialReplayVideo(replayId: string) {
     return this.waitForReplayVideo(replayId);
@@ -76,6 +101,13 @@ export class ReplayApi {
   getReplay(replayId: string) {
     return this.http.get<ReplayRecord>(
       `/api/replays/${encodeURIComponent(replayId)}`
+    );
+  }
+
+  createShareLink(replayId: string, input?: {ttlHours?: number}) {
+    return this.http.post<ReplayShareLink>(
+      `/api/replays/${encodeURIComponent(replayId)}/share-links`,
+      input ?? {}
     );
   }
 

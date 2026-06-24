@@ -191,7 +191,7 @@ export function useCanvasRecording(options: {
         .catch(() => false);
       finalizerRef.current = null;
       if (!finalized) {
-        const headOk = await replayVideoExists(session.replayId);
+        const headOk = await options.api.replayVideoExists(session.replayId);
         if (!headOk) {
           await options.api
             .waitForReplayVideo(session.replayId)
@@ -216,7 +216,7 @@ export function useCanvasRecording(options: {
         .catch(console.error);
     }
     if (!shouldSaveVideo) return 'idle';
-    return (await replayVideoExists(session.replayId))
+    return (await options.api.replayVideoExists(session.replayId))
       ? 'ready'
       : 'upload_degraded';
   }
@@ -256,14 +256,6 @@ export function useCanvasRecording(options: {
     resetRecordingClock,
     shouldSaveVideo,
   };
-}
-
-async function replayVideoExists(replayId: string) {
-  return fetch(`/api/replays/${encodeURIComponent(replayId)}/video`, {
-    method: 'HEAD',
-  })
-    .then((response) => response.ok)
-    .catch(() => false);
 }
 
 function updateRecordingStatus(

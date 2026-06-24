@@ -2,8 +2,10 @@ import {getRandomScenarioByDifficulty, getScenario} from '@incident/scenarios';
 import type {Difficulty} from '@incident/shared';
 import {traceHeaders} from '@incident/observability/worker';
 import type {WorkerApp, WorkerContext} from '../http/context.js';
+import {readRouteJsonObject} from '../http/routeBody.js';
 import {enforceRateLimit, shouldEnforceRateLimit} from '../http/rateLimit.js';
 import {logStructured} from '../http/requestLog.js';
+import {requireSessionReadAccess} from '../http/sessionReadPolicy.js';
 import {verifyTurnstileToken} from '../http/turnstile.js';
 import {requireSessionWriteAccess} from '../http/writeAuthMiddleware.js';
 import {err, messageFrom, ok} from '../http/response.js';
@@ -24,6 +26,9 @@ const sessionActionsWithoutDbLookup = new Set([
   'logs',
   'storage',
 ]);
+const SESSION_CREATE_BODY_MAX_BYTES = 8 * 1024;
+const SESSION_CONTROL_BODY_MAX_BYTES = 8 * 1024;
+const SESSION_FILE_BODY_MAX_BYTES = 1024 * 1024;
 
 export function registerSessionRoutes(app: WorkerApp) {
   app.post('/api/sessions', async (c) => {
@@ -45,7 +50,15 @@ export function registerSessionRoutes(app: WorkerApp) {
       }
     }
 
-    const body = (await c.req.json().catch(() => ({}))) as {
+    const parsedBody = await readRouteJsonObject(
+      c,
+      SESSION_CREATE_BODY_MAX_BYTES,
+      {
+        emptyValue: {},
+      }
+    );
+    if (parsedBody instanceof Response) return parsedBody;
+    const body = parsedBody as {
       scenarioId?: string;
       difficulty?: string;
       turnstileToken?: string;
@@ -124,7 +137,9 @@ export function registerSessionRoutes(app: WorkerApp) {
     return c.json(ok({sessionId, replayId, writeToken, scenario}));
   });
 
-  app.get('/api/sessions/:sessionId', async (c) => proxySession(c, 'snapshot'));
+  app.get('/api/sessions/:sessionId', async (c) =>
+    proxySessionRead(c, 'snapshot')
+  );
   app.post('/api/sessions/:sessionId/prepare', async (c) => {
     const denied = await requireSessionWriteAccess(c, c.req.param('sessionId'));
     if (denied) return denied;
@@ -170,38 +185,46 @@ export function registerSessionRoutes(app: WorkerApp) {
     return proxySessionDelete(c, 'delete');
   });
   app.get('/api/sessions/:sessionId/events', async (c) =>
-    proxySession(c, 'events')
+    proxySessionRead(c, 'events')
   );
   app.get('/api/sessions/:sessionId/clock', async (c) =>
-    proxySession(c, 'clock')
+    proxySessionRead(c, 'clock')
   );
   app.post('/api/sessions/:sessionId/clock', async (c) => {
     const denied = await requireSessionWriteAccess(c, c.req.param('sessionId'));
     if (denied) return denied;
-    return proxySession(c, 'clock', await c.req.json().catch(() => ({})));
+    const body = await readRouteJsonObject(c, SESSION_CONTROL_BODY_MAX_BYTES, {
+      emptyValue: {},
+    });
+    if (body instanceof Response) return body;
+    return proxySession(c, 'clock', body);
   });
   app.get('/api/sessions/:sessionId/metrics', async (c) =>
-    proxySession(c, 'metrics')
+    proxySessionRead(c, 'metrics')
   );
   app.get('/api/sessions/:sessionId/logs', async (c) =>
-    proxySession(c, 'logs')
+    proxySessionRead(c, 'logs')
   );
   app.get('/api/sessions/:sessionId/storage', async (c) =>
-    proxySession(c, 'storage')
+    proxySessionRead(c, 'storage')
   );
   app.get('/api/sessions/:sessionId/files', async (c) =>
-    proxySession(c, 'files')
+    proxySessionRead(c, 'files')
   );
   app.get('/api/sessions/:sessionId/file', async (c) =>
-    proxySession(c, 'file')
+    proxySessionRead(c, 'file')
   );
   app.put('/api/sessions/:sessionId/file', async (c) => {
     const denied = await requireSessionWriteAccess(c, c.req.param('sessionId'));
     if (denied) return denied;
-    return proxySession(c, 'file', await c.req.json().catch(() => ({})));
+    const body = await readRouteJsonObject(c, SESSION_FILE_BODY_MAX_BYTES, {
+      emptyValue: {},
+    });
+    if (body instanceof Response) return body;
+    return proxySession(c, 'file', body);
   });
   app.get('/api/sessions/:sessionId/ws/terminal', async (c) =>
-    proxySession(c, 'terminal')
+    proxySessionRead(c, 'terminal')
   );
   app.post('/api/sessions/:sessionId/terminal/interrupt', async (c) => {
     const denied = await requireSessionWriteAccess(c, c.req.param('sessionId'));
@@ -211,11 +234,11 @@ export function registerSessionRoutes(app: WorkerApp) {
   app.post('/api/sessions/:sessionId/terminal/resize', async (c) => {
     const denied = await requireSessionWriteAccess(c, c.req.param('sessionId'));
     if (denied) return denied;
-    return proxySession(
-      c,
-      'terminal-resize',
-      await c.req.json().catch(() => ({}))
-    );
+    const body = await readRouteJsonObject(c, SESSION_CONTROL_BODY_MAX_BYTES, {
+      emptyValue: {},
+    });
+    if (body instanceof Response) return body;
+    return proxySession(c, 'terminal-resize', body);
   });
 }
 
@@ -236,6 +259,16 @@ function resolveRequestedScenario(body: {
 function randomFloat() {
   const values = crypto.getRandomValues(new Uint32Array(1));
   return (values[0] ?? 0) / 0x100000000;
+}
+
+async function proxySessionRead(c: WorkerContext, action: string) {
+  const sessionId = c.req.param('sessionId');
+  if (!sessionId) {
+    return c.json(err('bad_request', 'sessionId is required'), 400);
+  }
+  const denied = await requireSessionReadAccess(c, sessionId);
+  if (denied) return denied;
+  return proxySession(c, action);
 }
 
 async function proxySession(c: WorkerContext, action: string, body?: unknown) {
@@ -345,7 +378,11 @@ interface SessionRow {
 }
 
 async function getSession(env: Bindings, sessionId: string) {
-  return env.DB.prepare('select * from play_sessions where id = ?')
+  return env.DB.prepare(
+    `select id, scenario_id, replay_id
+     from play_sessions
+     where id = ?`
+  )
     .bind(sessionId)
     .first<SessionRow>();
 }

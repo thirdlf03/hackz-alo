@@ -11,6 +11,18 @@ import {logStructured} from '../http/requestLog.js';
 const retentionDays = 90;
 
 export async function sweepExpiredReplays(env: Bindings) {
+  try {
+    return await sweepExpiredReplaysOnce(env);
+  } catch (error) {
+    logStructured('retention_sweep_failed', {
+      stage: 'sweep',
+      message: messageFrom(error),
+    });
+    throw error;
+  }
+}
+
+async function sweepExpiredReplaysOnce(env: Bindings) {
   const cutoff = new Date(
     Date.now() - retentionDays * 86_400_000
   ).toISOString();
@@ -24,16 +36,28 @@ export async function sweepExpiredReplays(env: Bindings) {
     .all<{id: string}>();
 
   let purged = 0;
+  let failed = 0;
   for (const row of rows.results) {
     const replayId = row.id;
     if (!replayId) continue;
-    await purgeReplayStorage(env, replayId);
-    purged += 1;
+    try {
+      await purgeReplayStorage(env, replayId);
+      purged += 1;
+    } catch (error) {
+      failed += 1;
+      logStructured('retention_sweep_failed', {
+        replayId,
+        message: messageFrom(error),
+      });
+    }
   }
 
-  if (purged > 0) {
-    logStructured('retention_sweep', {purged, cutoff});
-  }
+  logStructured('retention_sweep', {
+    candidates: rows.results.length,
+    purged,
+    failed,
+    cutoff,
+  });
   return purged;
 }
 
@@ -91,4 +115,8 @@ export async function purgeReplayChunksOnly(env: Bindings, replayId: string) {
 
 export function replayEventsPrefix(replayId: string) {
   return replayEventsKey(replayId, 0).replace(/000000\.jsonl$/, '');
+}
+
+function messageFrom(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
 }

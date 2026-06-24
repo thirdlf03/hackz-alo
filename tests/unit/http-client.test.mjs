@@ -84,6 +84,61 @@ test('HttpClient.fetch delegates to global fetch', async () => {
   assert.equal(response.status, 200);
 });
 
+test('HttpClient attaches stored token to protected replay and session requests', async () => {
+  const calls = [];
+  globalThis.sessionStorage = memorySessionStorage();
+  globalThis.fetch = async (path, init) => {
+    calls.push({
+      path,
+      authorization: new Headers(init?.headers).get('authorization'),
+    });
+    return jsonResponse({ok: true, data: {}});
+  };
+
+  const http = new HttpClient();
+  http.setWriteToken('writer-token');
+  await http.get('/api/replays/repl_1');
+  await http.fetch('/api/replays/repl_1/video', {method: 'HEAD'});
+  await http.get('/api/sessions/sess_1/clock');
+  await http.get('/api/replays/featured');
+  await http.get('/api/scenarios');
+
+  assert.deepEqual(
+    calls.map((call) => call.authorization),
+    [
+      'Bearer writer-token',
+      'Bearer writer-token',
+      'Bearer writer-token',
+      null,
+      null,
+    ]
+  );
+  delete globalThis.sessionStorage;
+});
+
+test('HttpClient uses replay read token from page URL when no write token exists', async () => {
+  const calls = [];
+  delete globalThis.sessionStorage;
+  globalThis.window = {location: {search: '?readToken=reader-token'}};
+  globalThis.fetch = async (path, init) => {
+    calls.push({
+      path,
+      authorization: new Headers(init?.headers).get('authorization'),
+    });
+    return jsonResponse({ok: true, data: {}});
+  };
+
+  const http = new HttpClient();
+  await http.get('/api/replays/repl_1');
+  await http.get('/api/sessions/sess_1/clock');
+
+  assert.deepEqual(
+    calls.map((call) => call.authorization),
+    ['Bearer reader-token', null]
+  );
+  delete globalThis.window;
+});
+
 test('HttpClient injects traceparent when browser perf is enabled', async () => {
   resetBrowserPerfForTests();
   initBrowserPerf({enabled: true, exporter: 'memory'});
@@ -103,3 +158,18 @@ test('HttpClient injects traceparent when browser perf is enabled', async () => 
   );
   resetBrowserPerfForTests();
 });
+
+function memorySessionStorage() {
+  const values = new Map();
+  return {
+    getItem(key) {
+      return values.get(key) ?? null;
+    },
+    setItem(key, value) {
+      values.set(key, String(value));
+    },
+    removeItem(key) {
+      values.delete(key);
+    },
+  };
+}
