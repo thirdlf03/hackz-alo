@@ -273,7 +273,11 @@ function GameSpeedControl(props: {
   onSetGameSpeed: (speed: number) => void;
 }) {
   return (
-    <div class='speed-control play-speed-control' role='group' aria-label='ゲーム速度'>
+    <div
+      class='speed-control play-speed-control'
+      role='group'
+      aria-label='ゲーム速度'
+    >
       {speedOptions.map((speed) => (
         <button
           key={speed}
