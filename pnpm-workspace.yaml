@@ -2,8 +2,15 @@ packages:
   - 'apps/*'
   - 'packages/*'
 
-onlyBuiltDependencies:
-  - esbuild
-  - lefthook
-  - sharp
-  - workerd
+# Supply chain protection — https://pnpm.io/blog/2025/12/05/newsroom-npm-supply-chain-security
+minimumReleaseAge: 1440
+trustPolicy: no-downgrade
+trustPolicyIgnoreAfter: 1440
+blockExoticSubdeps: true
+strictDepBuilds: true
+
+allowBuilds:
+  esbuild: true
+  lefthook: true
+  sharp: true
+  workerd: true
