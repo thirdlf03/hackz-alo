@@ -111,6 +111,12 @@ test('timelineDisplaySeconds maps timeline labels to video time when video is av
     ]),
     2
   );
+  assert.equal(
+    timelineDisplaySeconds(11, true, 0, 21_000, 6_000, [
+      {gameMs: 7_000, videoMs: 0, speed: 2},
+    ]),
+    2
+  );
   assert.equal(timelineDisplaySeconds(11, false, 0, 21_000, 6_000), 11);
 });
 

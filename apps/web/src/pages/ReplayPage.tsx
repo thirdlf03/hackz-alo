@@ -73,6 +73,11 @@ export function ReplayPage({replayId, timeline}: Props) {
     () => parseRecordingClockSegments(browserInfo),
     [browserInfo]
   );
+  const canUseVideoTimelineMapping = Boolean(
+    videoLoadState === 'ready' &&
+    videoSrc &&
+    (effectiveVideoDuration > 0 || recordingClockSegments?.length)
+  );
 
   useEffect(() => {
     setVideoSrc(undefined);
@@ -109,6 +114,7 @@ export function ReplayPage({replayId, timeline}: Props) {
         videoObjectUrl = URL.createObjectURL(blob);
         setVideoSrc(videoObjectUrl);
         setVideoLoadState('ready');
+        void refreshReplayTimingMeta(replayId, () => cancelled, setMeta);
       })
       .catch(() => {
         if (!cancelled) {
@@ -130,22 +136,18 @@ export function ReplayPage({replayId, timeline}: Props) {
   const commands = events.filter((event) => event.type === 'command_detected');
   const alerts = events.filter((event) => event.type === 'alert');
   const runbooks = events.filter((event) => event.type === 'runbook_open');
-  const hasReplayVideo = videoLoadState === 'ready' && Boolean(videoSrc);
-  const isVideoTimingReady =
-    videoLoadState === 'unavailable' || effectiveVideoDuration > 0;
+  const isTimelineLoading =
+    !meta && events.length === 0 && timeline.length === 0 && !loadError;
   const displayDurationMs =
     effectiveVideoDuration > 0
       ? Math.round(effectiveVideoDuration * 1000)
       : (meta?.duration_ms ?? 0);
-  const durationLabel =
-    (videoLoadState === 'loading' || hasReplayVideo) && !isVideoTimingReady
-      ? '計算中…'
-      : formatDuration(displayDurationMs);
+  const durationLabel = meta ? formatDuration(displayDurationMs) : '計算中…';
 
   function timelineVideoSeconds(gameSeconds: number) {
     return timelineDisplaySeconds(
       gameSeconds,
-      hasReplayVideo,
+      canUseVideoTimelineMapping,
       effectiveVideoDuration,
       meta?.duration_ms ?? 0,
       recordingStartMs,
@@ -248,7 +250,7 @@ export function ReplayPage({replayId, timeline}: Props) {
             }}
           />
         ) : videoLoadState === 'loading' ? (
-          <p class='result-replay-note'>動画の時間を計算中です…</p>
+          <p class='result-replay-note'>動画を準備中です…</p>
         ) : (
           <p class='result-replay-note'>
             保存された録画はありません。タイムラインのみ表示しています。
@@ -299,7 +301,16 @@ export function ReplayPage({replayId, timeline}: Props) {
         </div>
         <div class='replay-panel-scroll' tabIndex={0}>
           {tab === 'timeline' &&
-            (isVideoTimingReady ? (
+            (isTimelineLoading ? (
+              <p
+                class='result-replay-note'
+                id={panelIds.timeline}
+                role='tabpanel'
+                aria-labelledby={tabIds.timeline}
+              >
+                タイムラインを読み込み中です…
+              </p>
+            ) : (
               <ol
                 id={panelIds.timeline}
                 class='timeline'
@@ -311,7 +322,7 @@ export function ReplayPage({replayId, timeline}: Props) {
                   const seekSeconds = videoSeconds - timelineSeekPrerollSeconds;
                   return (
                     <li key={event.id}>
-                      {videoSrc ? (
+                      {canUseVideoTimelineMapping ? (
                         <button
                           type='button'
                           aria-current={
@@ -335,15 +346,6 @@ export function ReplayPage({replayId, timeline}: Props) {
                   );
                 })}
               </ol>
-            ) : (
-              <p
-                class='result-replay-note'
-                id={panelIds.timeline}
-                role='tabpanel'
-                aria-labelledby={tabIds.timeline}
-              >
-                タイムラインの時間を計算中です…
-              </p>
             ))}
           {tab === 'commands' && (
             <ul
@@ -465,6 +467,35 @@ function seekMediaElement(
     return;
   }
   timeout = window.setTimeout(done, 800);
+}
+
+async function refreshReplayTimingMeta(
+  replayId: string,
+  isCancelled: () => boolean,
+  setMeta: (meta: ReplayMeta) => void
+) {
+  const deadline = Date.now() + 10_000;
+  while (!isCancelled() && Date.now() < deadline) {
+    const replay = (await api.getReplay(replayId).catch(() => undefined)) as
+      | ReplayMeta
+      | undefined;
+    if (isCancelled()) return;
+    if (replay) {
+      setMeta(replay);
+      if (hasReplayTimingMetadata(replay)) return;
+    }
+    await sleep(500);
+  }
+}
+
+function hasReplayTimingMetadata(meta: ReplayMeta) {
+  if ((meta.video_duration_ms ?? 0) > 0) return true;
+  const browserInfo = parseBrowserInfo(meta.browser_info_json);
+  return Boolean(parseRecordingClockSegments(browserInfo)?.length);
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
 function tabLabel(

@@ -185,6 +185,17 @@ test.describe('replay playback journeys', () => {
       session.replayId,
       session.writeToken
     );
+    const replay = await waitForReplayButton(page);
+    await replay.click();
+    await expect(page.getByRole('tab', {name: 'タイムライン'})).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(page.getByText('タイムラインの時間を計算中です…')).toHaveCount(
+      0
+    );
+    await expect(page.locator('.timeline li').first()).toBeVisible({
+      timeout: 15_000,
+    });
   });
 
   test('shared replay link opens standalone replay under read token policy', async ({
