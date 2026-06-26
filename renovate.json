@@ -1,0 +1,89 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    ":dependencyDashboard",
+    ":semanticCommits",
+    "group:monorepos",
+    "group:recommended"
+  ],
+  "minimumReleaseAge": "1 day",
+  "labels": ["dependencies"],
+  "schedule": ["before 9am on Monday"],
+  "prConcurrentLimit": 5,
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["before 9am on Monday"]
+  },
+  "postUpdateOptions": ["pnpmDedupe"],
+  "packageRules": [
+    {
+      "description": "Security fixes may ship before minimumReleaseAge",
+      "matchCategories": ["security"],
+      "minimumReleaseAge": null,
+      "dependencyDashboardApproval": false
+    },
+    {
+      "description": "Require dashboard approval for major bumps",
+      "matchUpdateTypes": ["major"],
+      "dependencyDashboardApproval": true
+    },
+    {
+      "description": "Batch non-major devDependency bumps",
+      "matchDepTypes": ["devDependencies"],
+      "matchUpdateTypes": ["patch", "minor"],
+      "groupName": "dev-dependencies (non-major)"
+    },
+    {
+      "description": "Batch non-major production dependency bumps",
+      "matchDepTypes": ["dependencies"],
+      "matchUpdateTypes": ["patch", "minor"],
+      "groupName": "dependencies (non-major)"
+    },
+    {
+      "description": "Cloudflare toolchain (overrides broad groups above)",
+      "matchPackageNames": ["@cloudflare/**", "wrangler"],
+      "groupName": "cloudflare"
+    },
+    {
+      "description": "Vite + Preact frontend stack",
+      "matchPackageNames": [
+        "vite",
+        "@preact/preset-vite",
+        "preact",
+        "@xterm/xterm"
+      ],
+      "groupName": "frontend-build"
+    },
+    {
+      "description": "Oxlint / oxfmt toolchain",
+      "matchPackageNames": [
+        "oxfmt",
+        "oxlint",
+        "oxlint-config-presets",
+        "oxlint-tsgolint"
+      ],
+      "groupName": "oxlint"
+    },
+    {
+      "description": "ESLint toolchain",
+      "matchPackageNames": [
+        "eslint",
+        "@eslint/**",
+        "typescript-eslint",
+        "eslint-plugin-functional",
+        "globals"
+      ],
+      "groupName": "eslint"
+    },
+    {
+      "description": "TypeScript + types",
+      "matchPackageNames": ["typescript", "@types/node"],
+      "groupName": "typescript"
+    }
+  ],
+  "vulnerabilityAlerts": {
+    "enabled": true,
+    "labels": ["security"]
+  }
+}
