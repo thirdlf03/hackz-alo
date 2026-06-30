@@ -31,6 +31,14 @@ const navigationPanels = new Set([
 ]);
 const alertSeverities = new Set(['info', 'warning', 'critical']);
 const alertSources = new Set(['scenario', 'monitor']);
+const participantRoles = new Set([
+  'incident_commander',
+  'ops',
+  'scribe',
+  'comms',
+  'facilitator',
+  'observer',
+]);
 const successTypes = new Set([
   'http_status',
   'disk_usage_below',
@@ -195,10 +203,43 @@ export function validateScenarioDefinition(
     });
   }
 
+  if (value.exercise !== undefined) {
+    if (!isObject(value.exercise)) {
+      errors.push('exercise must be an object');
+    } else {
+      validateExercise(value.exercise, errors);
+    }
+  }
+
   validateTimelineBounds(value, errors);
 
   if (errors.length > 0) return {ok: false, errors};
   return {ok: true, value: input as ScenarioDefinition};
+}
+
+function validateExercise(exercise: Record<string, unknown>, errors: string[]) {
+  if (exercise.injects === undefined) return;
+  const injectIds = new Set<string>();
+  validateArray(exercise, 'injects', errors, (item, path) => {
+    if (!isObject(item)) {
+      errors.push(`${path} must be an object`);
+      return;
+    }
+    requireId(item, 'id', errors, path);
+    rememberUnique(injectIds, item.id, `${path}.id`, errors);
+    if (item.atMs !== undefined) {
+      requireNonNegativeInteger(item, 'atMs', errors, path);
+    }
+    requireString(item, 'title', errors, path);
+    requireString(item, 'body', errors, path);
+    if (
+      item.roleHint !== undefined &&
+      (typeof item.roleHint !== 'string' ||
+        !participantRoles.has(item.roleHint))
+    ) {
+      errors.push(`${path}.roleHint must be a supported participant role`);
+    }
+  });
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {

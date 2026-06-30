@@ -35,6 +35,7 @@ export function useCanvasInteraction(options: {
   submitSlackMessage: () => void;
   loadEditorFiles: () => Promise<void>;
   openEditorFile: (path: string) => Promise<void>;
+  onCursorMove?: (point: {x: number; y: number}) => void;
 }) {
   const {
     screen,
@@ -50,6 +51,7 @@ export function useCanvasInteraction(options: {
     submitSlackMessage,
     loadEditorFiles,
     openEditorFile,
+    onCursorMove,
   } = options;
 
   function handleCanvasClick(event: MouseEvent) {
@@ -215,6 +217,7 @@ export function useCanvasInteraction(options: {
   function handleCanvasMove(event: MouseEvent) {
     if (!canvasRef.current || screen !== 'play') return;
     const point = toLogicalCanvasPoint(event, canvasRef.current);
+    onCursorMove?.(point);
     patchGameStateRef(
       (current) => {
         const cursor = current.cursor;

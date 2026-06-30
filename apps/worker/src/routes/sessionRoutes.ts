@@ -25,6 +25,7 @@ const sessionActionsWithoutDbLookup = new Set([
   'metrics',
   'logs',
   'storage',
+  'exercise',
 ]);
 const SESSION_CREATE_BODY_MAX_BYTES = 8 * 1024;
 const SESSION_CONTROL_BODY_MAX_BYTES = 8 * 1024;
@@ -240,6 +241,118 @@ export function registerSessionRoutes(app: WorkerApp) {
     if (body instanceof Response) return body;
     return proxySession(c, 'terminal-resize', body);
   });
+
+  app.get('/api/sessions/:sessionId/exercise', async (c) =>
+    proxySessionRead(c, 'exercise')
+  );
+  app.post('/api/sessions/:sessionId/participants/join', async (c) => {
+    const denied = await requireSessionWriteAccess(c, c.req.param('sessionId'));
+    if (denied) return denied;
+    const body = await readRouteJsonObject(c, SESSION_CONTROL_BODY_MAX_BYTES, {
+      emptyValue: {},
+    });
+    if (body instanceof Response) return body;
+    return proxySession(c, 'participant-join', body);
+  });
+  app.post('/api/sessions/:sessionId/participants/heartbeat', async (c) => {
+    const denied = await requireSessionWriteAccess(c, c.req.param('sessionId'));
+    if (denied) return denied;
+    const body = await readRouteJsonObject(c, SESSION_CONTROL_BODY_MAX_BYTES, {
+      emptyValue: {},
+    });
+    if (body instanceof Response) return body;
+    return proxySession(c, 'participant-heartbeat', body);
+  });
+  app.post('/api/sessions/:sessionId/participants/cursor', async (c) => {
+    const denied = await requireSessionWriteAccess(c, c.req.param('sessionId'));
+    if (denied) return denied;
+    const body = await readRouteJsonObject(c, SESSION_CONTROL_BODY_MAX_BYTES, {
+      emptyValue: {},
+    });
+    if (body instanceof Response) return body;
+    return proxySession(c, 'participant-cursor', body);
+  });
+  app.post('/api/sessions/:sessionId/participants/role', async (c) => {
+    const denied = await requireSessionWriteAccess(c, c.req.param('sessionId'));
+    if (denied) return denied;
+    const body = await readRouteJsonObject(c, SESSION_CONTROL_BODY_MAX_BYTES, {
+      emptyValue: {},
+    });
+    if (body instanceof Response) return body;
+    return proxySession(c, 'participant-role', body);
+  });
+  app.post('/api/sessions/:sessionId/participants/leave', async (c) => {
+    const denied = await requireSessionWriteAccess(c, c.req.param('sessionId'));
+    if (denied) return denied;
+    const body = await readRouteJsonObject(c, SESSION_CONTROL_BODY_MAX_BYTES, {
+      emptyValue: {},
+    });
+    if (body instanceof Response) return body;
+    return proxySession(c, 'participant-leave', body);
+  });
+  app.post('/api/sessions/:sessionId/exercise/ready', async (c) => {
+    const denied = await requireSessionWriteAccess(c, c.req.param('sessionId'));
+    if (denied) return denied;
+    const body = await readRouteJsonObject(c, SESSION_CONTROL_BODY_MAX_BYTES, {
+      emptyValue: {},
+    });
+    if (body instanceof Response) return body;
+    return proxySession(c, 'exercise-ready', body);
+  });
+  app.post('/api/sessions/:sessionId/tasks', async (c) => {
+    const denied = await requireSessionWriteAccess(c, c.req.param('sessionId'));
+    if (denied) return denied;
+    const body = await readRouteJsonObject(c, SESSION_CONTROL_BODY_MAX_BYTES, {
+      emptyValue: {},
+    });
+    if (body instanceof Response) return body;
+    return proxySession(c, 'task-create', body);
+  });
+  app.post('/api/sessions/:sessionId/tasks/:taskId/update', async (c) => {
+    const denied = await requireSessionWriteAccess(c, c.req.param('sessionId'));
+    if (denied) return denied;
+    const body = await readRouteJsonObject(c, SESSION_CONTROL_BODY_MAX_BYTES, {
+      emptyValue: {},
+    });
+    if (body instanceof Response) return body;
+    return proxySession(c, 'task-update', {
+      ...body,
+      taskId: c.req.param('taskId'),
+    });
+  });
+  app.post('/api/sessions/:sessionId/injects/:injectId/fire', async (c) => {
+    const denied = await requireSessionWriteAccess(c, c.req.param('sessionId'));
+    if (denied) return denied;
+    const body = await readRouteJsonObject(c, SESSION_CONTROL_BODY_MAX_BYTES, {
+      emptyValue: {},
+    });
+    if (body instanceof Response) return body;
+    return proxySession(c, 'inject-fire', {
+      ...body,
+      injectId: c.req.param('injectId'),
+    });
+  });
+  app.post('/api/sessions/:sessionId/incident-log', async (c) => {
+    const denied = await requireSessionWriteAccess(c, c.req.param('sessionId'));
+    if (denied) return denied;
+    const body = await readRouteJsonObject(c, SESSION_CONTROL_BODY_MAX_BYTES, {
+      emptyValue: {},
+    });
+    if (body instanceof Response) return body;
+    return proxySession(c, 'incident-log', body);
+  });
+  app.post('/api/sessions/:sessionId/hotwash', async (c) => {
+    const denied = await requireSessionWriteAccess(c, c.req.param('sessionId'));
+    if (denied) return denied;
+    const body = await readRouteJsonObject(c, SESSION_CONTROL_BODY_MAX_BYTES, {
+      emptyValue: {},
+    });
+    if (body instanceof Response) return body;
+    return proxySession(c, 'hotwash', body);
+  });
+  app.get('/api/sessions/:sessionId/aar', async (c) =>
+    proxySessionRead(c, 'aar')
+  );
 }
 
 function resolveRequestedScenario(body: {

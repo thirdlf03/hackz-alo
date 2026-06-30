@@ -1,5 +1,10 @@
 import type {
+  AfterActionReport,
   Difficulty,
+  ExerciseSnapshot,
+  ExerciseTaskStatus,
+  IncidentLogEntryKind,
+  ParticipantRole,
   ReplayEvent,
   ScenarioDefinition,
 } from '@incident/shared';
@@ -44,6 +49,7 @@ export type {
 
 interface SessionHandlers {
   onSnapshot?: (snapshot: SessionSnapshotResponse) => void;
+  onExercise?: (snapshot: ExerciseSnapshot) => void;
   onReplay?: (event: ReplayEvent) => void;
   onError?: (event: Event) => void;
 }
@@ -86,6 +92,18 @@ export interface ApiClientSurface
       | 'resolveSession'
       | 'retireSession'
       | 'timeoutSession'
+      | 'getExerciseState'
+      | 'joinParticipant'
+      | 'heartbeatParticipant'
+      | 'updateParticipantCursor'
+      | 'updateParticipantRole'
+      | 'setParticipantReady'
+      | 'createTask'
+      | 'updateTask'
+      | 'fireInject'
+      | 'appendIncidentLog'
+      | 'submitHotwash'
+      | 'getAfterActionReport'
     >,
     Pick<
       RecordingUploadApi,
@@ -111,6 +129,75 @@ export interface ApiClientSurface
   notifySessionTimeout(sessionId: string): void;
   resetEventSequence(replayId?: string): void;
   sessionAccessToken(): string | undefined;
+  getExerciseState(sessionId: string): Promise<ExerciseSnapshot>;
+  joinParticipant(
+    sessionId: string,
+    input: {
+      participantId: string;
+      displayName: string;
+      role: ParticipantRole;
+      teamId?: string;
+      ready?: boolean;
+    }
+  ): Promise<{exercise: ExerciseSnapshot}>;
+  heartbeatParticipant(
+    sessionId: string,
+    input: {participantId: string; ready?: boolean}
+  ): Promise<{exercise: ExerciseSnapshot}>;
+  updateParticipantCursor(
+    sessionId: string,
+    input: {participantId: string; x: number; y: number; visible?: boolean}
+  ): Promise<{exercise: ExerciseSnapshot}>;
+  updateParticipantRole(
+    sessionId: string,
+    input: {participantId: string; role: ParticipantRole}
+  ): Promise<{exercise: ExerciseSnapshot}>;
+  setParticipantReady(
+    sessionId: string,
+    input: {participantId: string; ready: boolean}
+  ): Promise<{exercise: ExerciseSnapshot}>;
+  createTask(
+    sessionId: string,
+    input: {
+      title: string;
+      taskId?: string;
+      assigneeParticipantId?: string;
+      actorParticipantId?: string;
+    }
+  ): Promise<{exercise: ExerciseSnapshot}>;
+  updateTask(
+    sessionId: string,
+    taskId: string,
+    input: {
+      title?: string;
+      status?: ExerciseTaskStatus;
+      assigneeParticipantId?: string | null;
+    }
+  ): Promise<{exercise: ExerciseSnapshot}>;
+  fireInject(
+    sessionId: string,
+    injectId: string,
+    input?: {title?: string; body?: string; actorParticipantId?: string}
+  ): Promise<{exercise: ExerciseSnapshot}>;
+  appendIncidentLog(
+    sessionId: string,
+    input: {
+      body: string;
+      kind?: IncidentLogEntryKind;
+      entryId?: string;
+      actorParticipantId?: string;
+    }
+  ): Promise<{exercise: ExerciseSnapshot}>;
+  submitHotwash(
+    sessionId: string,
+    input: {
+      participantId?: string;
+      wentWell: string;
+      improve: string;
+      followUp: string;
+    }
+  ): Promise<{exercise: ExerciseSnapshot}>;
+  getAfterActionReport(sessionId: string): Promise<{report: AfterActionReport}>;
 }
 
 export class ApiClient {
@@ -155,6 +242,18 @@ export class ApiClient {
       'resolveSession',
       'retireSession',
       'timeoutSession',
+      'getExerciseState',
+      'joinParticipant',
+      'heartbeatParticipant',
+      'updateParticipantCursor',
+      'updateParticipantRole',
+      'setParticipantReady',
+      'createTask',
+      'updateTask',
+      'fireInject',
+      'appendIncidentLog',
+      'submitHotwash',
+      'getAfterActionReport',
     ]);
     bindApiMethods(this, this.recordingUpload, [
       'uploadChunk',

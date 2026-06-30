@@ -14,6 +14,7 @@ interface Props {
   onGoHome: () => void;
   onRetry: () => void;
   onOpenReplay: () => void;
+  onOpenHotwash: () => void;
   canOpenReplay: boolean;
   isRetrying?: boolean;
 }
@@ -43,6 +44,7 @@ export function ResultPage({
   onGoHome,
   onRetry,
   onOpenReplay,
+  onOpenHotwash,
   canOpenReplay,
   isRetrying = false,
 }: Props) {
@@ -191,6 +193,13 @@ export function ResultPage({
           disabled={isRetrying}
         >
           {isRetrying ? '開始中…' : '再挑戦'}
+        </button>
+        <button
+          type='button'
+          class='result-action-secondary'
+          onClick={onOpenHotwash}
+        >
+          Hotwash
         </button>
         <button
           type='button'

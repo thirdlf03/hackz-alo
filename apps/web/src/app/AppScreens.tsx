@@ -1,6 +1,9 @@
 import type {
+  AfterActionReport,
   Difficulty,
+  ExerciseSnapshot,
   GameRenderState,
+  ParticipantRole,
   ScenarioDefinition,
 } from '@incident/shared';
 import {setCenterTool, updateEditorPanel} from '../game/state/gameState.js';
@@ -268,6 +271,97 @@ export function BriefingScreen(props: {
   );
 }
 
+const participantRoleLabels: Record<ParticipantRole, string> = {
+  incident_commander: 'IC',
+  ops: 'Ops',
+  scribe: 'Scribe',
+  comms: 'Comms',
+  facilitator: 'Facilitator',
+  observer: 'Observer',
+};
+
+const participantRoles = Object.keys(
+  participantRoleLabels
+) as ParticipantRole[];
+
+export function LobbyScreen(props: {
+  scenario: ScenarioDefinition;
+  participantId: string;
+  participantName: string;
+  participantRole: ParticipantRole;
+  exercise: ExerciseSnapshot | undefined;
+  sandboxReady: boolean;
+  onSetParticipantName: (name: string) => void;
+  onSetParticipantRole: (role: ParticipantRole) => void;
+  onReady: () => void;
+  onContinue: () => void;
+}) {
+  const participants = props.exercise?.participants ?? [];
+  const ready = participants.find(
+    (participant) => participant.participantId === props.participantId
+  )?.ready;
+  return (
+    <section class='panel lobby-panel' aria-labelledby='lobby-heading'>
+      <p class='eyebrow'>Exercise Room</p>
+      <h1 id='lobby-heading'>{props.scenario.title}</h1>
+      <div class='lobby-controls'>
+        <label>
+          表示名
+          <input
+            type='text'
+            value={props.participantName}
+            maxLength={40}
+            onInput={(event) => {
+              props.onSetParticipantName(event.currentTarget.value);
+            }}
+          />
+        </label>
+        <label>
+          ロール
+          <select
+            value={props.participantRole}
+            onChange={(event) => {
+              props.onSetParticipantRole(
+                event.currentTarget.value as ParticipantRole
+              );
+            }}
+          >
+            {participantRoles.map((role) => (
+              <option key={role} value={role}>
+                {participantRoleLabels[role]}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <div class='participant-list'>
+        {participants.map((participant) => (
+          <div
+            key={participant.participantId}
+            class={`participant-row${participant.online ? '' : ' offline'}`}
+          >
+            <strong>{participant.displayName}</strong>
+            <span>{participantRoleLabels[participant.role]}</span>
+            <span>{participant.ready ? 'Ready' : '待機中'}</span>
+          </div>
+        ))}
+      </div>
+      <div class='lobby-actions'>
+        <button type='button' onClick={props.onReady} disabled={ready}>
+          {ready ? 'Ready' : 'Ready'}
+        </button>
+        <button
+          type='button'
+          onClick={props.onContinue}
+          disabled={!props.sandboxReady}
+        >
+          {props.sandboxReady ? 'ブリーフィングへ' : '環境準備中…'}
+        </button>
+      </div>
+    </section>
+  );
+}
+
 function GameSpeedControl(props: {
   gameSpeed: number;
   onSetGameSpeed: (speed: number) => void;
@@ -298,6 +392,8 @@ function GameSpeedControl(props: {
 export function PlayScreen(props: {
   gameState: GameRenderState | undefined;
   gameSpeed: number;
+  participantId: string;
+  exercise: ExerciseSnapshot | undefined;
   canvasRef: {current: HTMLCanvasElement | null};
   editorTextareaRef: {current: HTMLTextAreaElement | null};
   patchGameStateRef: PatchGameState;
@@ -308,6 +404,9 @@ export function PlayScreen(props: {
   onCanvasWheel: (event: WheelEvent) => void;
   onTerminalKey: (event: KeyboardEvent) => void;
   onCanvasPaste: (event: ClipboardEvent) => void;
+  onCreateTask: (title: string) => void;
+  onAppendIncidentLog: (body: string) => void;
+  onFireInject: (injectId: string) => void;
 }) {
   return (
     <section class='game-layout'>
@@ -388,9 +487,219 @@ export function PlayScreen(props: {
         />
         <PerfOverlay />
       </div>
+      <TeamExercisePanel
+        exercise={props.exercise}
+        onCreateTask={props.onCreateTask}
+        onAppendIncidentLog={props.onAppendIncidentLog}
+        onFireInject={props.onFireInject}
+      />
       <p id='canvas-play-hint' class='visually-hidden'>
         ターミナルにフォーカスしてキーボードでコマンドを入力できます。画面上のボタンはマウスで操作します。
       </p>
+    </section>
+  );
+}
+
+function TeamExercisePanel(props: {
+  exercise: ExerciseSnapshot | undefined;
+  onCreateTask: (title: string) => void;
+  onAppendIncidentLog: (body: string) => void;
+  onFireInject: (injectId: string) => void;
+}) {
+  const participants = props.exercise?.participants ?? [];
+  const tasks = props.exercise?.tasks ?? [];
+  const incidentLog = props.exercise?.incidentLog.slice(-6) ?? [];
+  return (
+    <aside class='team-panel' aria-label='訓練ルーム'>
+      <section>
+        <h2>Team</h2>
+        <div class='team-participants'>
+          {participants.map((participant) => (
+            <span
+              key={participant.participantId}
+              class={participant.online ? '' : 'offline'}
+            >
+              {participant.displayName} /{' '}
+              {participantRoleLabels[participant.role]}
+            </span>
+          ))}
+        </div>
+      </section>
+      <section>
+        <h2>Tasks</h2>
+        <TaskComposer onCreateTask={props.onCreateTask} />
+        <ol class='team-list'>
+          {tasks.slice(-6).map((task) => (
+            <li key={task.id}>
+              <strong>{task.title}</strong>
+              <span>{task.status}</span>
+            </li>
+          ))}
+        </ol>
+      </section>
+      <section>
+        <h2>Incident Log</h2>
+        <LogComposer onAppendIncidentLog={props.onAppendIncidentLog} />
+        <ol class='team-list'>
+          {incidentLog.map((entry) => (
+            <li key={entry.id}>
+              <strong>{entry.kind}</strong>
+              <span>{entry.body}</span>
+            </li>
+          ))}
+        </ol>
+      </section>
+      <section>
+        <h2>Injects</h2>
+        <ol class='team-list'>
+          {(props.exercise?.injects ?? []).map((inject) => (
+            <li key={inject.id}>
+              <strong>{inject.title}</strong>
+              <span>{inject.fired ? 'fired' : inject.body}</span>
+              {!inject.fired && (
+                <button
+                  type='button'
+                  onClick={() => {
+                    props.onFireInject(inject.id);
+                  }}
+                >
+                  Fire
+                </button>
+              )}
+            </li>
+          ))}
+        </ol>
+      </section>
+    </aside>
+  );
+}
+
+function TaskComposer(props: {onCreateTask: (title: string) => void}) {
+  return (
+    <form
+      class='team-composer'
+      onSubmit={(event) => {
+        event.preventDefault();
+        const input = event.currentTarget.elements.namedItem('task');
+        if (!(input instanceof HTMLInputElement)) return;
+        const title = input.value.trim();
+        if (!title) return;
+        props.onCreateTask(title);
+        input.value = '';
+      }}
+    >
+      <input name='task' type='text' maxLength={160} placeholder='タスク追加' />
+      <button type='submit'>追加</button>
+    </form>
+  );
+}
+
+function LogComposer(props: {onAppendIncidentLog: (body: string) => void}) {
+  return (
+    <form
+      class='team-composer'
+      onSubmit={(event) => {
+        event.preventDefault();
+        const input = event.currentTarget.elements.namedItem('log');
+        if (!(input instanceof HTMLInputElement)) return;
+        const body = input.value.trim();
+        if (!body) return;
+        props.onAppendIncidentLog(body);
+        input.value = '';
+      }}
+    >
+      <input name='log' type='text' maxLength={2000} placeholder='記録追加' />
+      <button type='submit'>記録</button>
+    </form>
+  );
+}
+
+export function HotwashScreen(props: {
+  exercise: ExerciseSnapshot | undefined;
+  report: AfterActionReport | undefined;
+  onSubmit: (input: {
+    wentWell: string;
+    improve: string;
+    followUp: string;
+  }) => void;
+  onGenerateAar: () => void;
+  onOpenReplay: () => void;
+}) {
+  return (
+    <section class='panel hotwash-panel' aria-labelledby='hotwash-heading'>
+      <p class='eyebrow'>Hotwash</p>
+      <h1 id='hotwash-heading'>ふりかえり</h1>
+      <form
+        class='hotwash-form'
+        onSubmit={(event) => {
+          event.preventDefault();
+          const form = event.currentTarget;
+          const value = (name: string) => {
+            const field = form.elements.namedItem(name);
+            return field instanceof HTMLTextAreaElement ? field.value : '';
+          };
+          props.onSubmit({
+            wentWell: value('wentWell'),
+            improve: value('improve'),
+            followUp: value('followUp'),
+          });
+          form.reset();
+        }}
+      >
+        <label>
+          うまくいったこと
+          <textarea name='wentWell' required />
+        </label>
+        <label>
+          改善したいこと
+          <textarea name='improve' required />
+        </label>
+        <label>
+          Follow-up
+          <textarea name='followUp' required />
+        </label>
+        <button type='submit'>提出</button>
+      </form>
+      <div class='participant-list'>
+        {(props.exercise?.hotwashNotes ?? []).map((note) => (
+          <div key={note.id} class='participant-row'>
+            <strong>{note.wentWell}</strong>
+            <span>{note.improve}</span>
+            <span>{note.followUp}</span>
+          </div>
+        ))}
+      </div>
+      <section class='aar-summary'>
+        <h2>AAR</h2>
+        <button type='button' onClick={props.onGenerateAar}>
+          AAR 生成
+        </button>
+        {props.report && (
+          <dl>
+            <div>
+              <dt>Participants</dt>
+              <dd>{props.report.participants.length}</dd>
+            </div>
+            <div>
+              <dt>Tasks</dt>
+              <dd>{props.report.tasks.length}</dd>
+            </div>
+            <div>
+              <dt>Injects</dt>
+              <dd>
+                {props.report.injects.filter((item) => item.fired).length}
+              </dd>
+            </div>
+            <div>
+              <dt>Log</dt>
+              <dd>{props.report.incidentLog.length}</dd>
+            </div>
+          </dl>
+        )}
+      </section>
+      <button type='button' onClick={props.onOpenReplay}>
+        Replay
+      </button>
     </section>
   );
 }
@@ -404,6 +713,7 @@ export function ResultScreen(props: {
   onGoHome: () => void;
   onRetry: () => void;
   onOpenReplay: () => void;
+  onOpenHotwash: () => void;
 }) {
   return (
     <ResultPage
@@ -414,6 +724,7 @@ export function ResultScreen(props: {
       onGoHome={props.onGoHome}
       onRetry={props.onRetry}
       onOpenReplay={props.onOpenReplay}
+      onOpenHotwash={props.onOpenHotwash}
       isRetrying={props.isRetrying}
     />
   );

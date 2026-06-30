@@ -28,6 +28,19 @@ function stubHandlers(overrides = {}) {
     'writeFile',
     'terminal',
     'terminalInterrupt',
+    'participantJoin',
+    'participantHeartbeat',
+    'participantCursor',
+    'participantRole',
+    'participantLeave',
+    'exerciseState',
+    'exerciseReady',
+    'taskCreate',
+    'taskUpdate',
+    'injectFire',
+    'incidentLog',
+    'hotwash',
+    'aar',
     'snapshot',
   ];
   const handlers = Object.fromEntries(
@@ -55,6 +68,29 @@ test('matchSessionRoute maps durable object HTTP actions', () => {
   assert.equal(
     matchSessionRoute(new Request('https://do/events', {method: 'GET'})),
     'events'
+  );
+  assert.equal(
+    matchSessionRoute(
+      new Request('https://do/participant-join', {
+        method: 'POST',
+        body: '{}',
+      })
+    ),
+    'participantJoin'
+  );
+  assert.equal(
+    matchSessionRoute(new Request('https://do/exercise', {method: 'GET'})),
+    'exerciseState'
+  );
+  assert.equal(
+    matchSessionRoute(
+      new Request('https://do/task-create', {method: 'POST', body: '{}'})
+    ),
+    'taskCreate'
+  );
+  assert.equal(
+    matchSessionRoute(new Request('https://do/aar', {method: 'GET'})),
+    'aar'
   );
   assert.equal(
     matchSessionRoute(

@@ -1,7 +1,12 @@
 import type {
+  AfterActionReport,
   AlertDefinition,
   Difficulty,
+  ExerciseSnapshot,
+  ExerciseTaskStatus,
+  IncidentLogEntryKind,
   MetricsSnapshot,
+  ParticipantRole,
   ReplayEvent,
   ScenarioDefinition,
   SessionStatus,
@@ -93,6 +98,7 @@ export class SessionApi {
     sessionId: string,
     handlers: {
       onSnapshot?: (snapshot: SessionSnapshotResponse) => void;
+      onExercise?: (snapshot: ExerciseSnapshot) => void;
       onReplay?: (event: ReplayEvent) => void;
       onError?: (event: Event) => void;
     }
@@ -114,8 +120,161 @@ export class SessionApi {
         JSON.parse((event as MessageEvent<string>).data) as ReplayEvent
       );
     });
+    for (const eventName of [
+      'exercise_state',
+      'presence',
+      'task',
+      'inject',
+      'incident_log',
+      'hotwash',
+    ]) {
+      source.addEventListener(eventName, (event) => {
+        handlers.onExercise?.(
+          JSON.parse((event as MessageEvent<string>).data) as ExerciseSnapshot
+        );
+      });
+    }
     source.addEventListener('error', (event) => handlers.onError?.(event));
     return source;
+  }
+
+  getExerciseState(sessionId: string) {
+    return this.http.get<ExerciseSnapshot>(
+      `/api/sessions/${encodeURIComponent(sessionId)}/exercise`
+    );
+  }
+
+  joinParticipant(
+    sessionId: string,
+    input: {
+      participantId: string;
+      displayName: string;
+      role: ParticipantRole;
+      teamId?: string;
+      ready?: boolean;
+    }
+  ) {
+    return this.http.post<{exercise: ExerciseSnapshot}>(
+      `/api/sessions/${encodeURIComponent(sessionId)}/participants/join`,
+      input
+    );
+  }
+
+  heartbeatParticipant(
+    sessionId: string,
+    input: {participantId: string; ready?: boolean}
+  ) {
+    return this.http.post<{exercise: ExerciseSnapshot}>(
+      `/api/sessions/${encodeURIComponent(sessionId)}/participants/heartbeat`,
+      input
+    );
+  }
+
+  updateParticipantCursor(
+    sessionId: string,
+    input: {participantId: string; x: number; y: number; visible?: boolean}
+  ) {
+    return this.http.post<{exercise: ExerciseSnapshot}>(
+      `/api/sessions/${encodeURIComponent(sessionId)}/participants/cursor`,
+      input
+    );
+  }
+
+  updateParticipantRole(
+    sessionId: string,
+    input: {participantId: string; role: ParticipantRole}
+  ) {
+    return this.http.post<{exercise: ExerciseSnapshot}>(
+      `/api/sessions/${encodeURIComponent(sessionId)}/participants/role`,
+      input
+    );
+  }
+
+  setParticipantReady(
+    sessionId: string,
+    input: {participantId: string; ready: boolean}
+  ) {
+    return this.http.post<{exercise: ExerciseSnapshot}>(
+      `/api/sessions/${encodeURIComponent(sessionId)}/exercise/ready`,
+      input
+    );
+  }
+
+  createTask(
+    sessionId: string,
+    input: {
+      title: string;
+      taskId?: string;
+      assigneeParticipantId?: string;
+      actorParticipantId?: string;
+    }
+  ) {
+    return this.http.post<{exercise: ExerciseSnapshot}>(
+      `/api/sessions/${encodeURIComponent(sessionId)}/tasks`,
+      input
+    );
+  }
+
+  updateTask(
+    sessionId: string,
+    taskId: string,
+    input: {
+      title?: string;
+      status?: ExerciseTaskStatus;
+      assigneeParticipantId?: string | null;
+    }
+  ) {
+    return this.http.post<{exercise: ExerciseSnapshot}>(
+      `/api/sessions/${encodeURIComponent(sessionId)}/tasks/${encodeURIComponent(taskId)}/update`,
+      input
+    );
+  }
+
+  fireInject(
+    sessionId: string,
+    injectId: string,
+    input: {title?: string; body?: string; actorParticipantId?: string} = {}
+  ) {
+    return this.http.post<{exercise: ExerciseSnapshot}>(
+      `/api/sessions/${encodeURIComponent(sessionId)}/injects/${encodeURIComponent(injectId)}/fire`,
+      input
+    );
+  }
+
+  appendIncidentLog(
+    sessionId: string,
+    input: {
+      body: string;
+      kind?: IncidentLogEntryKind;
+      entryId?: string;
+      actorParticipantId?: string;
+    }
+  ) {
+    return this.http.post<{exercise: ExerciseSnapshot}>(
+      `/api/sessions/${encodeURIComponent(sessionId)}/incident-log`,
+      input
+    );
+  }
+
+  submitHotwash(
+    sessionId: string,
+    input: {
+      participantId?: string;
+      wentWell: string;
+      improve: string;
+      followUp: string;
+    }
+  ) {
+    return this.http.post<{exercise: ExerciseSnapshot}>(
+      `/api/sessions/${encodeURIComponent(sessionId)}/hotwash`,
+      input
+    );
+  }
+
+  getAfterActionReport(sessionId: string) {
+    return this.http.get<{report: AfterActionReport}>(
+      `/api/sessions/${encodeURIComponent(sessionId)}/aar`
+    );
   }
 
   updateSessionClock(sessionId: string, speed: number) {

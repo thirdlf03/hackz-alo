@@ -212,6 +212,7 @@ export function drawCursor(
   surface: CanvasRenderSurface,
   state: GameRenderState
 ) {
+  drawParticipantCursors(surface, state);
   if (!state.cursor.visible) return;
   surface.ctx.fillStyle = palette.textPrimary;
   surface.ctx.beginPath();
@@ -220,6 +221,36 @@ export function drawCursor(
   surface.ctx.lineTo(state.cursor.x + 32, state.cursor.y + 28);
   surface.ctx.closePath();
   surface.ctx.fill();
+}
+
+function drawParticipantCursors(
+  surface: CanvasRenderSurface,
+  state: GameRenderState
+) {
+  const colors = [
+    palette.accentCyan,
+    palette.accentGreen,
+    palette.accentPurple,
+    palette.accentPink,
+    palette.textClock,
+  ];
+  state.room.participants.forEach((participant, index) => {
+    if (!participant.cursor?.visible || !participant.online) return;
+    const color = colors[index % colors.length] ?? palette.accentCyan;
+    const {x, y} = participant.cursor;
+    surface.ctx.save();
+    surface.ctx.globalAlpha = 0.82;
+    surface.ctx.fillStyle = color;
+    surface.ctx.beginPath();
+    surface.ctx.moveTo(x, y);
+    surface.ctx.lineTo(x + 14, y + 30);
+    surface.ctx.lineTo(x + 24, y + 20);
+    surface.ctx.closePath();
+    surface.ctx.fill();
+    surface.ctx.font = uiFont(14, 'bold');
+    surface.ctx.fillText(participant.displayName, x + 16, y + 18);
+    surface.ctx.restore();
+  });
 }
 
 export function drawCommandWarning(

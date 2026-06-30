@@ -1,5 +1,9 @@
 import {useEffect, useRef} from 'preact/hooks';
-import type {GameRenderState, ScenarioDefinition} from '@incident/shared';
+import type {
+  ExerciseSnapshot,
+  GameRenderState,
+  ScenarioDefinition,
+} from '@incident/shared';
 import {
   INCIDENT_ATTRS,
   INCIDENT_SPAN_NAMES,
@@ -64,6 +68,14 @@ export function useSessionRuntime(options: {
       | undefined
       | ((current: GameRenderState | undefined) => GameRenderState | undefined)
   ) => void;
+  setExerciseSnapshot: (
+    value:
+      | ExerciseSnapshot
+      | undefined
+      | ((
+          current: ExerciseSnapshot | undefined
+        ) => ExerciseSnapshot | undefined)
+  ) => void;
   setTimeline: (
     value:
       | Array<{at: number; label: string}>
@@ -117,6 +129,7 @@ export function useSessionRuntime(options: {
     setSession,
     setScenario,
     setGameState,
+    setExerciseSnapshot,
     setTimeline,
     setAppError,
     setIsStarting,
@@ -279,6 +292,23 @@ export function useSessionRuntime(options: {
     if (clock.gameTimeMs >= clock.timeLimitMs) void endSession('timeout');
   };
 
+  const applyExerciseSnapshot = (snapshot: ExerciseSnapshot) => {
+    setExerciseSnapshot(snapshot);
+    setGameState((current) =>
+      current
+        ? {
+            ...current,
+            room: {
+              participants: snapshot.participants,
+              tasks: snapshot.tasks,
+              incidentLog: snapshot.incidentLog,
+              injects: snapshot.injects,
+            },
+          }
+        : current
+    );
+  };
+
   const bindings: SessionRuntimeBindings = {
     api,
     screen,
@@ -295,6 +325,7 @@ export function useSessionRuntime(options: {
     currentGameTimeMs,
     endSession,
     applyClockSnapshot,
+    applyExerciseSnapshot,
   };
 
   async function createSessionForScenario(scenarioId: string) {
@@ -333,7 +364,7 @@ export function useSessionRuntime(options: {
           {speed: gameSpeed}
         )
       );
-      setScreen('briefing');
+      setScreen('lobby');
       markJourney(INCIDENT_SPAN_NAMES.journeyBriefingReady, {
         [INCIDENT_ATTRS.sessionId]: created.sessionId,
         [INCIDENT_ATTRS.scenarioId]: created.scenario.id,

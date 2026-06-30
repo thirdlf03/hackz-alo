@@ -1,11 +1,16 @@
 import {useEffect, useMemo, useRef, useState} from 'preact/hooks';
 import type {
+  AfterActionReport,
   Difficulty,
+  ExerciseSnapshot,
   GameRenderState,
+  ParticipantRole,
   ScenarioDefinition,
 } from '@incident/shared';
 import {
   BriefingScreen,
+  HotwashScreen,
+  LobbyScreen,
   PlayScreen,
   ReplayScreen,
   ResultScreen,
@@ -34,6 +39,9 @@ import '@xterm/xterm/css/xterm.css';
 
 const CONSENT_KEY = 'incident-recording-consent';
 const SAVE_RECORDING_KEY = 'incident-recording-save';
+const PARTICIPANT_ID_KEY = 'incident-participant-id';
+const PARTICIPANT_NAME_KEY = 'incident-participant-name';
+const PARTICIPANT_ROLE_KEY = 'incident-participant-role';
 
 export function App() {
   const initialReplayId = readReplayIdFromSearch();
@@ -44,6 +52,7 @@ export function App() {
   const gameSpeedRef = useRef(1);
   const recordingRef = useRef<SessionRecordingBridge | undefined>(undefined);
   const terminalBridgeRef = useRef<TerminalBridgeRef | undefined>(undefined);
+  const lastCursorSentAtRef = useRef(0);
 
   const [screen, setScreen] = useState<Screen>(
     initialReplayId ? 'replay' : 'select'
@@ -53,10 +62,23 @@ export function App() {
   const [selectedDifficulty, setSelectedDifficulty] = useState<Difficulty>();
   const [scenarios, setScenarios] = useState<ScenarioSummary[]>([]);
   const [scenario, setScenario] = useState<ScenarioDefinition | undefined>();
+  const [exerciseSnapshot, setExerciseSnapshot] = useState<
+    ExerciseSnapshot | undefined
+  >();
+  const [afterActionReport, setAfterActionReport] = useState<
+    AfterActionReport | undefined
+  >();
   const [session, setSession] = useState<{
     sessionId: string;
     replayId: string;
   }>();
+  const [participantId] = useState(() => readOrCreateParticipantId());
+  const [participantName, setParticipantName] = useState(
+    () => sessionStorage.getItem(PARTICIPANT_NAME_KEY) ?? 'Player'
+  );
+  const [participantRole, setParticipantRole] = useState<ParticipantRole>(() =>
+    readParticipantRole()
+  );
   const [gameState, setGameState] = useState<GameRenderState>();
   const [timeline, setTimeline] = useState<Array<{at: number; label: string}>>(
     []
@@ -94,6 +116,7 @@ export function App() {
     setSession,
     setScenario,
     setGameState,
+    setExerciseSnapshot,
     setTimeline,
     setAppError,
     setIsStarting,
@@ -103,6 +126,55 @@ export function App() {
     setDeepLinkValidated,
     setScenarios,
   });
+
+  useEffect(() => {
+    sessionStorage.setItem(PARTICIPANT_NAME_KEY, participantName);
+  }, [participantName]);
+
+  useEffect(() => {
+    sessionStorage.setItem(PARTICIPANT_ROLE_KEY, participantRole);
+  }, [participantRole]);
+
+  useEffect(() => {
+    if (
+      !session ||
+      !['lobby', 'briefing', 'play', 'result', 'hotwash'].includes(screen)
+    ) {
+      return;
+    }
+    let cancelled = false;
+    const join = () => {
+      void api
+        .joinParticipant(session.sessionId, {
+          participantId,
+          displayName: participantName,
+          role: participantRole,
+        })
+        .then(({exercise}) => {
+          if (!cancelled) setExerciseSnapshot(exercise);
+        })
+        .catch(console.error);
+    };
+    join();
+    const interval = window.setInterval(() => {
+      void api
+        .heartbeatParticipant(session.sessionId, {participantId})
+        .then(({exercise}) => {
+          if (!cancelled) setExerciseSnapshot(exercise);
+        })
+        .catch(console.error);
+    }, 15_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [
+    screen,
+    session?.sessionId,
+    participantId,
+    participantName,
+    participantRole,
+  ]);
 
   const {
     gameStateRef,
@@ -199,6 +271,18 @@ export function App() {
       submitSlackMessage,
       loadEditorFiles,
       openEditorFile,
+      onCursorMove: (point) => {
+        if (!session) return;
+        const now = performance.now();
+        if (now - lastCursorSentAtRef.current < 180) return;
+        lastCursorSentAtRef.current = now;
+        void api.updateParticipantCursor(session.sessionId, {
+          participantId,
+          x: point.x,
+          y: point.y,
+          visible: true,
+        });
+      },
     });
 
   useEffect(() => {
@@ -288,6 +372,38 @@ export function App() {
         />
       )}
 
+      {screen === 'lobby' && session && scenario && (
+        <LobbyScreen
+          scenario={scenario}
+          participantId={participantId}
+          participantName={participantName}
+          participantRole={participantRole}
+          exercise={exerciseSnapshot}
+          sandboxReady={sandboxReady}
+          onSetParticipantName={setParticipantName}
+          onSetParticipantRole={(role) => {
+            setParticipantRole(role);
+            void api.updateParticipantRole(session.sessionId, {
+              participantId,
+              role,
+            });
+          }}
+          onReady={() => {
+            void api
+              .setParticipantReady(session.sessionId, {
+                participantId,
+                ready: true,
+              })
+              .then(({exercise}) => {
+                setExerciseSnapshot(exercise);
+              });
+          }}
+          onContinue={() => {
+            setScreen('briefing');
+          }}
+        />
+      )}
+
       {screen === 'play' && (
         <PlayScreen
           gameState={gameState}
@@ -302,6 +418,66 @@ export function App() {
           onCanvasWheel={handleCanvasWheel}
           onTerminalKey={handleTerminalKey}
           onCanvasPaste={handleCanvasPaste}
+          participantId={participantId}
+          exercise={exerciseSnapshot}
+          onCreateTask={(title) => {
+            if (!session) return;
+            void api
+              .createTask(session.sessionId, {
+                title,
+                actorParticipantId: participantId,
+              })
+              .then(({exercise}) => {
+                setExerciseSnapshot(exercise);
+              });
+          }}
+          onAppendIncidentLog={(body) => {
+            if (!session) return;
+            void api
+              .appendIncidentLog(session.sessionId, {
+                body,
+                kind: 'note',
+                actorParticipantId: participantId,
+              })
+              .then(({exercise}) => {
+                setExerciseSnapshot(exercise);
+              });
+          }}
+          onFireInject={(injectId) => {
+            if (!session) return;
+            void api
+              .fireInject(session.sessionId, injectId, {
+                actorParticipantId: participantId,
+              })
+              .then(({exercise}) => {
+                setExerciseSnapshot(exercise);
+              });
+          }}
+        />
+      )}
+
+      {screen === 'hotwash' && session && (
+        <HotwashScreen
+          exercise={exerciseSnapshot}
+          report={afterActionReport}
+          onSubmit={(input) => {
+            void api
+              .submitHotwash(session.sessionId, {
+                participantId,
+                ...input,
+              })
+              .then(({exercise}) => {
+                setExerciseSnapshot(exercise);
+              });
+          }}
+          onGenerateAar={() => {
+            void api
+              .getAfterActionReport(session.sessionId)
+              .then(({report}) => {
+                setAfterActionReport(report);
+              });
+          }}
+          onOpenReplay={openReplay}
         />
       )}
 
@@ -319,6 +495,9 @@ export function App() {
             void createSessionForScenario(scenario.id);
           }}
           onOpenReplay={openReplay}
+          onOpenHotwash={() => {
+            setScreen('hotwash');
+          }}
         />
       )}
 
@@ -331,4 +510,27 @@ export function App() {
       )}
     </main>
   );
+}
+
+function readOrCreateParticipantId() {
+  const existing = sessionStorage.getItem(PARTICIPANT_ID_KEY);
+  if (existing) return existing;
+  const created = `part_${crypto.randomUUID().replaceAll('-', '')}`;
+  sessionStorage.setItem(PARTICIPANT_ID_KEY, created);
+  return created;
+}
+
+function readParticipantRole(): ParticipantRole {
+  const value = sessionStorage.getItem(PARTICIPANT_ROLE_KEY);
+  if (
+    value === 'incident_commander' ||
+    value === 'ops' ||
+    value === 'scribe' ||
+    value === 'comms' ||
+    value === 'facilitator' ||
+    value === 'observer'
+  ) {
+    return value;
+  }
+  return 'ops';
 }

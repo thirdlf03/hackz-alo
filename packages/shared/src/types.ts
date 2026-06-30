@@ -177,6 +177,122 @@ export interface NavigationStep {
   suggestedCommand?: string;
 }
 
+export const PARTICIPANT_ROLES = [
+  'incident_commander',
+  'ops',
+  'scribe',
+  'comms',
+  'facilitator',
+  'observer',
+] as const;
+
+export type ParticipantRole = (typeof PARTICIPANT_ROLES)[number];
+
+export type ExercisePhase =
+  | 'lobby'
+  | 'briefing'
+  | 'running'
+  | 'resolved'
+  | 'hotwash'
+  | 'aar';
+
+export interface ParticipantCursor {
+  x: number;
+  y: number;
+  visible: boolean;
+  updatedAt: string;
+}
+
+export interface ParticipantPresence {
+  participantId: string;
+  displayName: string;
+  role: ParticipantRole;
+  teamId?: string | undefined;
+  ready: boolean;
+  online: boolean;
+  joinedAt: string;
+  lastSeenAt: string;
+  cursor?: ParticipantCursor | undefined;
+}
+
+export type ExerciseTaskStatus = 'open' | 'in_progress' | 'done' | 'blocked';
+
+export interface ExerciseTask {
+  id: string;
+  title: string;
+  status: ExerciseTaskStatus;
+  assigneeParticipantId?: string | undefined;
+  createdByParticipantId?: string | undefined;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ExerciseInjectDefinition {
+  id: string;
+  atMs?: number;
+  title: string;
+  body: string;
+  roleHint?: ParticipantRole;
+}
+
+export interface ExerciseInject {
+  id: string;
+  title: string;
+  body: string;
+  fired: boolean;
+  firedAt?: string | undefined;
+  firedByParticipantId?: string | undefined;
+}
+
+export type IncidentLogEntryKind =
+  | 'note'
+  | 'decision'
+  | 'hypothesis'
+  | 'comms'
+  | 'follow_up'
+  | 'role_deviation';
+
+export interface IncidentLogEntry {
+  id: string;
+  kind: IncidentLogEntryKind;
+  body: string;
+  actorParticipantId?: string | undefined;
+  createdAt: string;
+}
+
+export interface HotwashNote {
+  id: string;
+  participantId?: string | undefined;
+  wentWell: string;
+  improve: string;
+  followUp: string;
+  createdAt: string;
+}
+
+export interface AfterActionReport {
+  sessionId: string;
+  generatedAt: string;
+  participants: ParticipantPresence[];
+  tasks: ExerciseTask[];
+  injects: ExerciseInject[];
+  incidentLog: IncidentLogEntry[];
+  hotwashNotes: HotwashNote[];
+}
+
+export interface ExerciseSnapshot {
+  sessionId: string;
+  phase: ExercisePhase;
+  participants: ParticipantPresence[];
+  tasks: ExerciseTask[];
+  injects: ExerciseInject[];
+  incidentLog: IncidentLogEntry[];
+  hotwashNotes: HotwashNote[];
+}
+
+export interface ScenarioExerciseDefinition {
+  injects?: ExerciseInjectDefinition[];
+}
+
 export interface EditorPanelState {
   files: Array<{path: string; size?: number}>;
   currentPath: string | undefined;
@@ -243,6 +359,7 @@ export interface ScenarioDefinition {
   runbooks: RunbookDefinition[];
   slackMessages: SlackMessageDefinition[];
   navigationSteps?: NavigationStep[];
+  exercise?: ScenarioExerciseDefinition;
 }
 
 export interface MetricsSnapshot {
@@ -323,6 +440,12 @@ export interface GameRenderState {
   };
   commandInputFocused: boolean;
   cursor: {x: number; y: number; visible: boolean};
+  room: {
+    participants: ParticipantPresence[];
+    tasks: ExerciseTask[];
+    incidentLog: IncidentLogEntry[];
+    injects: ExerciseInject[];
+  };
   clickEffects: Array<{id: string; x: number; y: number; ageMs: number}>;
   recording: {
     status:

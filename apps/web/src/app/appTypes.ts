@@ -3,9 +3,11 @@ import type {Difficulty, ScenarioDefinition} from '@incident/shared';
 export type Screen =
   | 'select'
   | 'scenario-list'
+  | 'lobby'
   | 'briefing'
   | 'play'
   | 'result'
+  | 'hotwash'
   | 'replay';
 
 export type ScenarioSummary = Pick<

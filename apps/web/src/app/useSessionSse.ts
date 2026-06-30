@@ -4,13 +4,26 @@ import {isTimelineEventType} from '../replay/replayMediaUtils.js';
 import type {SessionRuntimeBindings} from './sessionRuntimeTypes.js';
 
 export function useSessionSse(bindings: SessionRuntimeBindings) {
-  const {api, screen, session, refs, setTimeline, applyClockSnapshot} =
-    bindings;
+  const {
+    api,
+    screen,
+    session,
+    refs,
+    setTimeline,
+    applyClockSnapshot,
+    applyExerciseSnapshot,
+  } = bindings;
 
   useEffect(() => {
-    if (screen !== 'play' || !session) return;
+    if (
+      !session ||
+      !['lobby', 'briefing', 'play', 'result', 'hotwash'].includes(screen)
+    ) {
+      return;
+    }
     const source = api.subscribeSessionEvents(session.sessionId, {
       onSnapshot: applyClockSnapshot,
+      onExercise: applyExerciseSnapshot,
       onReplay: (event) => {
         if (
           refs.liveReplayEventIdsRef.current.has(event.id) ||

@@ -1,5 +1,9 @@
 import type {MutableRef} from 'preact/hooks';
-import type {GameRenderState, ScenarioDefinition} from '@incident/shared';
+import type {
+  ExerciseSnapshot,
+  GameRenderState,
+  ScenarioDefinition,
+} from '@incident/shared';
 import type {ApiClientSurface} from '../api/client.js';
 import type {ReplayEventEmitter} from '../game/events/emitReplayEvent.js';
 import type {SessionClockResponse} from './appRuntime.js';
@@ -66,6 +70,7 @@ export interface SessionRuntimeBindings {
   currentGameTimeMs: () => number;
   endSession: (mode: FinishMode) => Promise<void>;
   applyClockSnapshot: (clock: SessionClockResponse) => void;
+  applyExerciseSnapshot: (snapshot: ExerciseSnapshot) => void;
 }
 
 export interface SessionRuntimeBootstrapOptions {

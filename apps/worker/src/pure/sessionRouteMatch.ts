@@ -18,6 +18,19 @@ export type SessionRouteName =
   | 'writeFile'
   | 'terminal'
   | 'terminalInterrupt'
+  | 'participantJoin'
+  | 'participantHeartbeat'
+  | 'participantCursor'
+  | 'participantRole'
+  | 'participantLeave'
+  | 'exerciseState'
+  | 'exerciseReady'
+  | 'taskCreate'
+  | 'taskUpdate'
+  | 'injectFire'
+  | 'incidentLog'
+  | 'hotwash'
+  | 'aar'
   | 'snapshot';
 
 const routeTable: Record<string, Partial<Record<string, SessionRouteName>>> = {
@@ -31,6 +44,17 @@ const routeTable: Record<string, Partial<Record<string, SessionRouteName>>> = {
     clock: 'updateClock',
     'terminal-resize': 'terminalResize',
     'terminal-interrupt': 'terminalInterrupt',
+    'participant-join': 'participantJoin',
+    'participant-heartbeat': 'participantHeartbeat',
+    'participant-cursor': 'participantCursor',
+    'participant-role': 'participantRole',
+    'participant-leave': 'participantLeave',
+    'exercise-ready': 'exerciseReady',
+    'task-create': 'taskCreate',
+    'task-update': 'taskUpdate',
+    'inject-fire': 'injectFire',
+    'incident-log': 'incidentLog',
+    hotwash: 'hotwash',
   },
   GET: {
     events: 'events',
@@ -41,6 +65,8 @@ const routeTable: Record<string, Partial<Record<string, SessionRouteName>>> = {
     files: 'files',
     file: 'readFile',
     terminal: 'terminal',
+    exercise: 'exerciseState',
+    aar: 'aar',
   },
   PUT: {
     file: 'writeFile',

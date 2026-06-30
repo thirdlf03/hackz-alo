@@ -106,6 +106,12 @@ export function createInitialGameState(
     world: {narrativeHour: 0, expandedMonitor: null},
     commandInputFocused: false,
     cursor: {x: 960, y: 540, visible: true},
+    room: {
+      participants: [],
+      tasks: [],
+      incidentLog: [],
+      injects: [],
+    },
     clickEffects: [],
     recording: {
       status: options.recordingStatus ?? 'idle',

@@ -31,3 +31,58 @@ test('navigation step schema validates optional fields', () => {
   });
   assert.equal(result.ok, true);
 });
+
+test('exercise inject schema validates optional room events', () => {
+  const result = validateScenarioDefinition({
+    id: 'exercise-test',
+    version: 1,
+    title: 'Exercise',
+    difficulty: 'intermediate',
+    timeLimitMinutes: 10,
+    service: {name: 'API', healthUrl: 'http://localhost:8080/health'},
+    briefing: ['hello'],
+    startup: [{id: 'api', command: 'node app.js'}],
+    triggers: [],
+    alerts: [],
+    successConditions: [
+      {type: 'http_status', url: 'http://localhost:8080/health', status: 200},
+    ],
+    runbooks: [{id: 'rb', title: 'RB', body: 'body'}],
+    slackMessages: [],
+    exercise: {
+      injects: [
+        {
+          id: 'customer-impact',
+          atMs: 120000,
+          title: '顧客問い合わせ',
+          body: '問い合わせが増えています',
+          roleHint: 'comms',
+        },
+      ],
+    },
+  });
+  assert.equal(result.ok, true);
+
+  const invalid = validateScenarioDefinition({
+    id: 'exercise-test',
+    version: 1,
+    title: 'Exercise',
+    difficulty: 'intermediate',
+    timeLimitMinutes: 10,
+    service: {name: 'API', healthUrl: 'http://localhost:8080/health'},
+    briefing: ['hello'],
+    startup: [{id: 'api', command: 'node app.js'}],
+    triggers: [],
+    alerts: [],
+    successConditions: [
+      {type: 'http_status', url: 'http://localhost:8080/health', status: 200},
+    ],
+    runbooks: [{id: 'rb', title: 'RB', body: 'body'}],
+    slackMessages: [],
+    exercise: {
+      injects: [{id: 'bad-role', title: 'x', body: 'y', roleHint: 'manager'}],
+    },
+  });
+  assert.equal(invalid.ok, false);
+  assert.match(invalid.errors.join('\n'), /roleHint/);
+});

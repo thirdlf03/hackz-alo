@@ -1,6 +1,7 @@
 export interface SessionSseHubDependencies {
   loadSnapshot(): Promise<unknown>;
   loadReplayBuffer(): Promise<unknown[]>;
+  loadExerciseSnapshot?: () => Promise<unknown>;
   touchClientActivity(): Promise<void>;
   onClientClose(): Promise<void>;
 }
@@ -33,6 +34,11 @@ export class SessionSseHub {
         );
         const snapshot = await this.dependencies.loadSnapshot();
         controller.enqueue(this.encode('snapshot', snapshot));
+        const exerciseSnapshot =
+          await this.dependencies.loadExerciseSnapshot?.();
+        if (exerciseSnapshot) {
+          controller.enqueue(this.encode('exercise_state', exerciseSnapshot));
+        }
         for (const event of await this.dependencies.loadReplayBuffer()) {
           controller.enqueue(this.encode('replay', event));
         }
