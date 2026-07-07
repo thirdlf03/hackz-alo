@@ -32,13 +32,13 @@ test('buildFaultCommand covers every registered fault type', () => {
       `${faultInjector} disk_full '/workspace/logs/debug.log' 1500`,
     ],
     [
-      'unlang_batch_failure',
+      'kodama_batch_failure',
       {
-        path: "/workspace/services/batch/sale's.un",
+        path: "/workspace/services/batch/sale's.kdm",
         jobId: 'sales-nightly',
         specInComments: true,
       },
-      `${faultInjector} unlang_batch_failure '/workspace/services/batch/sale'"'"'s.un' 'sales-nightly' spec-in-comments`,
+      `${faultInjector} kodama_batch_failure '/workspace/services/batch/sale'"'"'s.kdm' 'sales-nightly' spec-in-comments`,
     ],
     ['queue_backlog', {count: 7}, `${faultInjector} queue_backlog 7`],
     [
@@ -118,10 +118,10 @@ test('buildSuccessCheckCommand covers every success condition type', () => {
   assert.deepEqual(Object.keys(successConditionBuilders).sort(), [
     'disk_usage_below',
     'http_status',
+    'kodama_batch_ok',
     'log_absent',
     'marker_absent',
     'process_running',
-    'unlang_batch_ok',
   ]);
 
   const httpScript =
@@ -146,8 +146,8 @@ test('buildSuccessCheckCommand covers every success condition type', () => {
     `test ! -e ${shellArg("/workspace/run/api's.down")}`
   );
   assert.equal(
-    buildSuccessCheckCommand({type: 'unlang_batch_ok', jobId: 'nightly'}),
-    'node /workspace/bin/unlang.mjs run /workspace/services/batch/sales.un'
+    buildSuccessCheckCommand({type: 'kodama_batch_ok', jobId: 'nightly'}),
+    'node /workspace/bin/kodama.mjs run /workspace/services/batch/sales.kdm'
   );
 });
 

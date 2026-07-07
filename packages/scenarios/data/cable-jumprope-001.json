@@ -5,7 +5,7 @@
   "difficulty": "intermediate",
   "timeLimitMinutes": 5,
   "service": {
-    "name": "うん用 API",
+    "name": "やまびこ API",
     "healthUrl": "http://localhost:8080/health"
   },
   "briefing": [
@@ -16,7 +16,7 @@
   "startup": [
     {
       "id": "api",
-      "command": "PORT=8080 node /workspace/services/unyoh-api/server.mjs",
+      "command": "PORT=8080 node /workspace/services/yamabiko-api/server.mjs",
       "waitForPort": 8080
     },
     {
@@ -70,10 +70,10 @@
     {
       "id": "runbook.jumprope",
       "title": "ケーブル縄跳び対応",
-      "body": "1. cat /workspace/run/network.jumprope で状況確認\\n2. rm /workspace/run/network.jumprope /workspace/run/hosts.override /workspace/run/api.down\\n3. unctl restart api\\n4. curl localhost:8080/health"
+      "body": "1. cat /workspace/run/network.jumprope で状況確認\\n2. rm /workspace/run/network.jumprope /workspace/run/hosts.override /workspace/run/api.down\\n3. yamactl restart api\\n4. curl localhost:8080/health"
     }
   ],
-  "slackMessages": [
+  "chatMessages": [
     {
       "id": "infra-joke",
       "atMs": 95000,

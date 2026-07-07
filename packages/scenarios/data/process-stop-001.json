@@ -5,11 +5,11 @@
   "difficulty": "beginner",
   "timeLimitMinutes": 5,
   "service": {
-    "name": "うん用 API",
+    "name": "やまびこ API",
     "healthUrl": "http://localhost:8080/health"
   },
   "briefing": [
-    "うん用 API は社内売上確認画面の裏側で使われている。",
+    "やまびこ API は社内売上確認画面の裏側で使われている。",
     "通常は /health が 200 を返し、access.log にリクエストが流れる。",
     "障害時は app.log と run/api.down マーカーにも手がかりが出る。",
     "困ったらまず監視、ログ、サービス状態を順番に見る。"
@@ -17,7 +17,7 @@
   "startup": [
     {
       "id": "api",
-      "command": "PORT=8080 node /workspace/services/unyoh-api/server.mjs",
+      "command": "PORT=8080 node /workspace/services/yamabiko-api/server.mjs",
       "waitForPort": 8080
     },
     {
@@ -48,7 +48,7 @@
       "id": "health-check-failed",
       "atMs": 110000,
       "severity": "critical",
-      "message": "うん用 API health check failed",
+      "message": "やまびこ API health check failed",
       "source": "monitor"
     }
   ],
@@ -67,10 +67,10 @@
     {
       "id": "runbook.process",
       "title": "API プロセス停止時の初動",
-      "body": "1. 左の監視画面で HTTP 5xx と SERVICE HEALTH を確認する\\n2. tail -n 50 /workspace/logs/app.log を確認する\\n3. unctl status api または ls /workspace/run で停止原因を見る\\n4. unctl restart api で暫定復旧する\\n5. curl localhost:8080/health で復旧確認する"
+      "body": "1. 左の監視画面で HTTP 5xx と SERVICE HEALTH を確認する\\n2. tail -n 50 /workspace/logs/app.log を確認する\\n3. yamactl status api または ls /workspace/run で停止原因を見る\\n4. yamactl restart api で暫定復旧する\\n5. curl localhost:8080/health で復旧確認する"
     }
   ],
-  "slackMessages": [
+  "chatMessages": [
     {
       "id": "boss-restart",
       "atMs": 120000,
@@ -95,9 +95,9 @@
     {
       "id": "nav-status",
       "atMs": 45000,
-      "hint": "unctl status api でサービス状態を確認する",
+      "hint": "yamactl status api でサービス状態を確認する",
       "panel": "terminal",
-      "suggestedCommand": "unctl status api"
+      "suggestedCommand": "yamactl status api"
     },
     {
       "id": "nav-runbook",

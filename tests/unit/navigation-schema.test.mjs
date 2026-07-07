@@ -18,7 +18,7 @@ test('navigation step schema validates optional fields', () => {
       {type: 'http_status', url: 'http://localhost:8080/health', status: 200},
     ],
     runbooks: [{id: 'rb', title: 'RB', body: 'body'}],
-    slackMessages: [],
+    chatMessages: [],
     navigationSteps: [
       {
         id: 'step-1',
@@ -48,7 +48,7 @@ test('exercise inject schema validates optional room events', () => {
       {type: 'http_status', url: 'http://localhost:8080/health', status: 200},
     ],
     runbooks: [{id: 'rb', title: 'RB', body: 'body'}],
-    slackMessages: [],
+    chatMessages: [],
     exercise: {
       injects: [
         {
@@ -78,7 +78,7 @@ test('exercise inject schema validates optional room events', () => {
       {type: 'http_status', url: 'http://localhost:8080/health', status: 200},
     ],
     runbooks: [{id: 'rb', title: 'RB', body: 'body'}],
-    slackMessages: [],
+    chatMessages: [],
     exercise: {
       injects: [{id: 'bad-role', title: 'x', body: 'y', roleHint: 'manager'}],
     },

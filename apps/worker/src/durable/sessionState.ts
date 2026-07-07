@@ -18,7 +18,7 @@ export interface StoredSession {
   gameClockWallMs?: number;
   triggeredIds: string[];
   firedAlertIds: string[];
-  firedSlackIds: string[];
+  firedChatIds: string[];
   eventSeq: number;
   bufferedEvents: ReplayEvent[];
 }
@@ -43,7 +43,7 @@ export function createBriefingSession(input: SessionBootstrap): StoredSession {
     gameSpeed: 1,
     triggeredIds: [],
     firedAlertIds: [],
-    firedSlackIds: [],
+    firedChatIds: [],
     eventSeq: 0,
     bufferedEvents: [],
   };
@@ -103,7 +103,7 @@ export function buildSessionSnapshot(
     gameTimeMs,
     elapsedMs: gameTimeMs,
     alerts: firedAlerts(scenario, session),
-    slackMessages: firedSlackMessages(scenario, session),
+    chatMessages: firedChatMessages(scenario, session),
     scenario,
   };
 }
@@ -118,7 +118,7 @@ export function buildClockPayload(
     gameSpeed: session.gameSpeed,
     timeLimitMs: scenario.timeLimitMinutes * 60 * 1000,
     alerts: firedAlerts(scenario, session),
-    slackMessages: firedSlackMessages(scenario, session),
+    chatMessages: firedChatMessages(scenario, session),
   };
 }
 
@@ -131,11 +131,11 @@ function firedAlerts(
   );
 }
 
-function firedSlackMessages(
+function firedChatMessages(
   scenario: ScenarioDefinition,
   session: StoredSession
 ) {
-  return scenario.slackMessages.filter((message) =>
-    session.firedSlackIds.includes(message.id)
+  return scenario.chatMessages.filter((message) =>
+    session.firedChatIds.includes(message.id)
   );
 }

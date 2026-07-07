@@ -4,7 +4,7 @@ title: Runbook が全部「気合いで直す」の夜
 difficulty: intermediate
 timeLimitMinutes: 10
 service:
-  name: うん用 API
+  name: やまびこ API
   healthUrl: http://localhost:8080/health
 briefing:
   - Runbook が改ざんされ、役に立たない文言だけが表示されることがある。
@@ -12,7 +12,7 @@ briefing:
   - サービス自体は動いている。騙されないこと。
 startup:
   - id: api
-    command: PORT=8080 node /workspace/services/unyoh-api/server.mjs
+    command: PORT=8080 node /workspace/services/yamabiko-api/server.mjs
     waitForPort: 8080
   - id: fake-db
     command: node /workspace/services/fake-db/server.mjs
@@ -39,7 +39,7 @@ runbooks:
   - id: runbook.gaslight
     title: Runbook 改ざん対応
     body: 1. Runbook の文言がおかしければ信用しない\n2. ls /workspace/run で runbook.gaslight.json を探す\n3. rm /workspace/run/runbook.gaslight.json\n4. curl localhost:8080/health で実際の状態を確認\n5. 正しい手順はメトリクスとログから再構築する
-slackMessages:
+chatMessages:
   - id: wiki-broken
     atMs: 65000
     from: 先輩

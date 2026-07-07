@@ -2,7 +2,7 @@ import type {ReplayEvent, ScenarioDefinition} from '@incident/shared';
 import {getGameTimeMs, type StoredSession} from './sessionState.js';
 
 export interface PendingTimer {
-  kind: 'trigger' | 'alert' | 'slack';
+  kind: 'trigger' | 'alert' | 'chat';
   id: string;
   handle: ReturnType<typeof setTimeout>;
 }
@@ -139,24 +139,24 @@ export class SessionTimeline {
       );
     }
 
-    for (const message of scenario.slackMessages) {
-      if (session.firedSlackIds.includes(message.id)) continue;
+    for (const message of scenario.chatMessages) {
+      if (session.firedChatIds.includes(message.id)) continue;
       this.scheduleAtGameTime(
         session,
         message.atMs,
-        'slack',
+        'chat',
         message.id,
         async () => {
           const latest = await this.dependencies.loadSession();
           if (
             latest.status !== 'running' ||
-            latest.firedSlackIds.includes(message.id)
+            latest.firedChatIds.includes(message.id)
           ) {
             return;
           }
           const next: StoredSession = {
             ...latest,
-            firedSlackIds: [...latest.firedSlackIds, message.id],
+            firedChatIds: [...latest.firedChatIds, message.id],
           };
           await this.dependencies.saveSession(next);
           this.dependencies.broadcastSse(

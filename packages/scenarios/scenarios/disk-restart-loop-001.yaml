@@ -4,14 +4,14 @@ title: 再起動ループの夜
 difficulty: advanced
 timeLimitMinutes: 15
 service:
-  name: うん用 API
+  name: やまびこ API
   healthUrl: http://localhost:8080/health
 briefing:
   - disk full のまま再起動するとすぐ再障害する。
   - 容量を確保してから再起動する。
 startup:
   - id: api
-    command: PORT=8080 node /workspace/services/unyoh-api/server.mjs
+    command: PORT=8080 node /workspace/services/yamabiko-api/server.mjs
     waitForPort: 8080
   - id: fake-db
     command: node /workspace/services/fake-db/server.mjs
@@ -47,5 +47,5 @@ successConditions:
 runbooks:
   - id: runbook.loop
     title: 再起動ループ
-    body: 1. df -h\n2. ログ削除\n3. unctl restart api\n4. health 確認
-slackMessages: []
+    body: 1. df -h\n2. ログ削除\n3. yamactl restart api\n4. health 確認
+chatMessages: []

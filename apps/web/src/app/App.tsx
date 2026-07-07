@@ -186,7 +186,7 @@ export function App() {
     createSessionForScenario,
     startPlay,
     endSession,
-    submitSlackMessage,
+    submitChatMessage,
   } = sessionRuntime;
 
   const {
@@ -204,7 +204,7 @@ export function App() {
     eventEmitterRef,
     patchGameStateRef,
     currentGameTimeMs,
-    submitSlackMessage,
+    submitChatMessage,
   });
   terminalBridgeRef.current = {
     attachTerminalSession,
@@ -268,7 +268,7 @@ export function App() {
       patchGameStateRef,
       currentGameTimeMs,
       endSession,
-      submitSlackMessage,
+      submitChatMessage,
       loadEditorFiles,
       openEditorFile,
       onCursorMove: (point) => {

@@ -157,7 +157,7 @@ function validScenario(overrides = {}) {
         body: 'Check health.',
       },
     ],
-    slackMessages: [],
+    chatMessages: [],
     ...overrides,
   };
 }

@@ -272,7 +272,7 @@ export function ReplayPage({replayId, timeline}: Props) {
         </button>
         {shareWarning && (
           <p class='visibility-warning' role='alert'>
-            ターミナル入力や Slack
+            ターミナル入力や チャット
             の内容が含まれる可能性があります。共有前に内容を確認してください。
           </p>
         )}

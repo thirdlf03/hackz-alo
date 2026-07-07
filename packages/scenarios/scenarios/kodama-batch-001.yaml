@@ -1,0 +1,70 @@
+id: kodama-batch-001
+version: 1
+title: こだまが返ってこないバッチ
+difficulty: intermediate
+timeLimitMinutes: 8
+service:
+  name: やまびこ batch
+  healthUrl: http://localhost:8080/health
+briefing:
+  - 深夜バッチはこだまで書かれている。
+  - Runbook は曖昧だが、ソースのやまびこ帳に仕様が書いてあるかもしれない。
+  - まず batch.log と sales.kdm を確認する。
+startup:
+  - id: api
+    command: PORT=8080 node /workspace/services/yamabiko-api/server.mjs
+    waitForPort: 8080
+  - id: fake-db
+    command: node /workspace/services/fake-db/server.mjs
+    waitForPort: 15432
+triggers:
+  - id: break-sales-batch
+    atMs: 90000
+    type: kodama_batch_failure
+    params:
+      jobId: sales-nightly
+      path: /workspace/services/batch/sales.kdm
+      specInComments: true
+alerts:
+  - id: batch-failed
+    atMs: 120000
+    severity: critical
+    message: sales-nightly batch failed
+    source: scenario
+successConditions:
+  - type: kodama_batch_ok
+    jobId: sales-nightly
+  - type: log_absent
+    path: /workspace/logs/batch.log
+    pattern: こだまが返ってきません
+runbooks:
+  - id: runbook.kodama
+    title: こだまバッチ調査
+    body: |-
+      こだま仕様表みてがんばれ。
+
+      バッチファイルは /workspace/services/batch/sales.kdm
+  - id: runbook.kodama-spec
+    title: こだま仕様表
+    body: |-
+      文
+      やまびこ帳: コメント（無視）
+      よぶ <name> = <expr>: 変数定義
+      はかる <expr>: 式を評価
+      かえす [<expr>]: 終了（省略時は直前の値）
+
+      演算子（優先: かける/わる → たす/ひく）
+      たす: +  ひく: -
+      かける: *  わる: /（右辺 0 で error）
+
+      リテラル: 数値 / しずか(0) / こだま(1) / 変数名 / ( )
+
+      エラーはすべて「こだまが返ってきません」のみ表示
+      kodama run <file> … 実行  kodama check <file> … 構文チェック
+
+      例: よぶ y = しずか  のまま x わる y → 0 除算で失敗
+chatMessages:
+  - id: mystery-error
+    atMs: 130000
+    from: 経理
+    body: 売上集計が止まってるんですが、こだまが返ってきません。

@@ -40,7 +40,7 @@ function mockHttp() {
     },
     put: async (path, body) => {
       calls.push({method: 'PUT', path, body});
-      return {path: '/workspace/app.un', byteLength: 3};
+      return {path: '/workspace/app.kdm', byteLength: 3};
     },
     request: async (path, init) => {
       calls.push({method: init.method, path, body: init.body});
@@ -67,14 +67,14 @@ test('ScenarioApi and SessionApi build expected routes', async () => {
   await scenarios.getScenario('demo/tutorial');
   await sessions.prepareSession('session-id');
   await sessions.startSession('session-id');
-  await sessions.readSessionFile('session-1', '/workspace/app.un');
-  await sessions.writeSessionFile('session-1', '/workspace/app.un', 'うん');
+  await sessions.readSessionFile('session-1', '/workspace/app.kdm');
+  await sessions.writeSessionFile('session-1', '/workspace/app.kdm', 'よぶ');
 
   assert.deepEqual(http.calls[0], {method: 'GET', path: '/api/scenarios'});
   assert.equal(http.calls[1]?.path, '/api/scenarios/demo%2Ftutorial');
   assert.equal(http.calls[2]?.path, '/api/sessions/session-id/prepare');
   assert.equal(http.calls[3]?.path, '/api/sessions/session-id/start');
-  assert.match(http.calls[4]?.path, /file\?path=%2Fworkspace%2Fapp\.un$/);
+  assert.match(http.calls[4]?.path, /file\?path=%2Fworkspace%2Fapp\.kdm$/);
   assert.equal(http.calls[5]?.path, '/api/sessions/session-1/file');
 });
 

@@ -10,7 +10,7 @@ import type {
   ReplayEvent,
   ScenarioDefinition,
   SessionStatus,
-  SlackMessageDefinition,
+  ChatMessageDefinition,
 } from '@incident/shared';
 import type {HttpClient} from './httpClient.js';
 
@@ -39,7 +39,7 @@ export interface SessionClockResponse {
   gameSpeed: number;
   timeLimitMs: number;
   alerts: AlertDefinition[];
-  slackMessages: SlackMessageDefinition[];
+  chatMessages: ChatMessageDefinition[];
 }
 
 export type SessionSnapshotResponse = SessionClockResponse & {

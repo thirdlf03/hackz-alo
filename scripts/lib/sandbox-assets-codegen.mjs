@@ -13,21 +13,21 @@ const defaultRoot = path.resolve(
 export const SANDBOX_ASSET_FILES = [
   ["services/metrics/collector.mjs", "/workspace/services/metrics/collector.mjs"],
   ["services/metrics/export.mjs", "/workspace/services/metrics/export.mjs"],
-  ["services/unyoh-api/server.mjs", "/workspace/services/unyoh-api/server.mjs"],
+  ["services/yamabiko-api/server.mjs", "/workspace/services/yamabiko-api/server.mjs"],
   ["services/fake-db/server.mjs", "/workspace/services/fake-db/server.mjs"],
   ["bin/fault-injector.mjs", "/workspace/bin/fault-injector.mjs"],
-  ["bin/unctl.mjs", "/workspace/bin/unctl.mjs"],
-  ["bin/unlang.mjs", "/workspace/bin/unlang.mjs"],
-  ["services/batch/sales.un", "/workspace/services/batch/sales.un"],
+  ["bin/yamactl.mjs", "/workspace/bin/yamactl.mjs"],
+  ["bin/kodama.mjs", "/workspace/bin/kodama.mjs"],
+  ["services/batch/sales.kdm", "/workspace/services/batch/sales.kdm"],
 ];
 
 export const ASSETS_TS_RELATIVE_PATH = "apps/worker/src/sandbox/assets.ts";
 
 const INSTALL_BIN_COMMAND =
   "chmod +x /workspace/bin/*.mjs && " +
-  "printf '%s\\n' '#!/bin/sh' 'exec node /workspace/bin/unctl.mjs \"$@\"' > /usr/local/bin/unctl && " +
-  "printf '%s\\n' '#!/bin/sh' 'exec node /workspace/bin/unlang.mjs \"$@\"' > /usr/local/bin/unlang && " +
-  "chmod +x /usr/local/bin/unctl /usr/local/bin/unlang";
+  "printf '%s\\n' '#!/bin/sh' 'exec node /workspace/bin/yamactl.mjs \"$@\"' > /usr/local/bin/yamactl && " +
+  "printf '%s\\n' '#!/bin/sh' 'exec node /workspace/bin/kodama.mjs \"$@\"' > /usr/local/bin/kodama && " +
+  "chmod +x /usr/local/bin/yamactl /usr/local/bin/kodama";
 
 export function sandboxAssetPath(root = defaultRoot, relativePath) {
   return path.join(root, "sandbox", relativePath);
@@ -64,7 +64,7 @@ interface SandboxAsset {
 const assets: SandboxAsset[] = ${JSON.stringify(assets, null, 2)};
 
 export async function installSandboxAssets(sandbox: SandboxRuntime) {
-  await sandbox.exec("mkdir -p /workspace/services/metrics /workspace/services/unyoh-api /workspace/services/fake-db /workspace/services/batch /workspace/bin /workspace/logs /workspace/run");
+  await sandbox.exec("mkdir -p /workspace/services/metrics /workspace/services/yamabiko-api /workspace/services/fake-db /workspace/services/batch /workspace/bin /workspace/logs /workspace/run");
   for (const asset of assets) {
     await sandbox.writeFile(asset.path, asset.content);
   }

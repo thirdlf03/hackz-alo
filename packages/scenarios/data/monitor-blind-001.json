@@ -5,7 +5,7 @@
   "difficulty": "advanced",
   "timeLimitMinutes": 15,
   "service": {
-    "name": "うん用 API",
+    "name": "やまびこ API",
     "healthUrl": "http://localhost:8080/health"
   },
   "briefing": [
@@ -15,7 +15,7 @@
   "startup": [
     {
       "id": "api",
-      "command": "PORT=8080 node /workspace/services/unyoh-api/server.mjs",
+      "command": "PORT=8080 node /workspace/services/yamabiko-api/server.mjs",
       "waitForPort": 8080
     },
     {
@@ -76,5 +76,5 @@
       "body": "1. curl で直接確認\\n2. app.log を読む\\n3. rm monitor.blind.json\\n4. 復旧"
     }
   ],
-  "slackMessages": []
+  "chatMessages": []
 }

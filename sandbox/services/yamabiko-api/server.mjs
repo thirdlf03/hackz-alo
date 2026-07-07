@@ -17,7 +17,7 @@ export async function prepareWorkspace(workspace = DEFAULT_WORKSPACE) {
   await mkdir(path.join(workspace, 'run'), {recursive: true});
 }
 
-export function createUnyohApiServer(options = {}) {
+export function createYamabikoApiServer(options = {}) {
   const workspace = options.workspace ?? DEFAULT_WORKSPACE;
 
   const server = http.createServer(async (req, res) => {
@@ -176,8 +176,8 @@ if (
 ) {
   const port = parsePort(process.env.PORT ?? 8080);
   await prepareWorkspace(DEFAULT_WORKSPACE);
-  const server = createUnyohApiServer({workspace: DEFAULT_WORKSPACE});
+  const server = createYamabikoApiServer({workspace: DEFAULT_WORKSPACE});
   server.listen(port, () => {
-    console.log(`unyoh-api listening on ${port}`);
+    console.log(`yamabiko-api listening on ${port}`);
   });
 }

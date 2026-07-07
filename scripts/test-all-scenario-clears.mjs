@@ -13,34 +13,34 @@ const COMMAND_DELAY_MS = 2500;
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SCENARIO_DIR = path.join(ROOT, "packages/scenarios/data");
 
-const SALES_UN_FIXED = `うんちく 売上集計バッチ
-うん x = 100
-うん y = うんあり
-うん z = x うんわり y
-うん！ z
+const SALES_KDM_FIXED = `やまびこ帳 売上集計バッチ
+よぶ x = 100
+よぶ y = こだま
+よぶ z = x わる y
+かえす z
 `;
 
 /** @type {Record<string, { commands?: string[], files?: Array<{ path: string, content: string }>, waitGameMs: number }>} */
 const FIXES = {
   "process-stop-001": {
     waitGameMs: 60_000,
-    commands: ["unctl restart api"]
+    commands: ["yamactl restart api"]
   },
   "disk-full-001": {
     waitGameMs: 60_000,
-    commands: ["rm -f /workspace/logs/debug.log", "unctl restart api"]
+    commands: ["rm -f /workspace/logs/debug.log", "yamactl restart api"]
   },
-  "unlang-batch-001": {
+  "kodama-batch-001": {
     waitGameMs: 90_000,
-    files: [{ path: "/workspace/services/batch/sales.un", content: SALES_UN_FIXED }],
+    files: [{ path: "/workspace/services/batch/sales.kdm", content: SALES_KDM_FIXED }],
     commands: [
-      "unlang run /workspace/services/batch/sales.un",
+      "kodama run /workspace/services/batch/sales.kdm",
       ": > /workspace/logs/batch.log"
     ]
   },
   "db-pool-001": {
     waitGameMs: 60_000,
-    commands: ["rm -f /workspace/run/db.pool.exhausted", "unctl restart api"]
+    commands: ["rm -f /workspace/run/db.pool.exhausted", "yamactl restart api"]
   },
   "bad-deploy-001": {
     waitGameMs: 45_000,
@@ -52,17 +52,17 @@ const FIXES = {
   },
   "disk-restart-loop-001": {
     waitGameMs: 60_000,
-    commands: ["rm -f /workspace/logs/debug.log", "unctl restart api"]
+    commands: ["rm -f /workspace/logs/debug.log", "yamactl restart api"]
   },
   "monitor-blind-001": {
     waitGameMs: 90_000,
-    commands: ["rm -f /workspace/run/monitor.blind.json", "unctl restart api"]
+    commands: ["rm -f /workspace/run/monitor.blind.json", "yamactl restart api"]
   },
-  "unlang-mystery-001": {
+  "kodama-mystery-001": {
     waitGameMs: 90_000,
-    files: [{ path: "/workspace/services/batch/sales.un", content: SALES_UN_FIXED }],
+    files: [{ path: "/workspace/services/batch/sales.kdm", content: SALES_KDM_FIXED }],
     commands: [
-      "unlang run /workspace/services/batch/sales.un",
+      "kodama run /workspace/services/batch/sales.kdm",
       ": > /workspace/logs/batch.log"
     ]
   },
@@ -70,14 +70,14 @@ const FIXES = {
     waitGameMs: 60_000,
     commands: [
       "rm -f /workspace/run/janitor.power.pulled /workspace/run/api.down",
-      "unctl restart api"
+      "yamactl restart api"
     ]
   },
   "cable-jumprope-001": {
     waitGameMs: 55_000,
     commands: [
       "rm -f /workspace/run/network.jumprope /workspace/run/hosts.override /workspace/run/api.down",
-      "unctl restart api"
+      "yamactl restart api"
     ]
   },
   "keyboard-spill-001": {
@@ -86,7 +86,7 @@ const FIXES = {
   },
   "alert-spam-001": {
     waitGameMs: 120_000,
-    commands: ["rm -f /workspace/run/alert.spam.json", "unctl restart api"]
+    commands: ["rm -f /workspace/run/alert.spam.json", "yamactl restart api"]
   },
   "runbook-gaslight-001": {
     waitGameMs: 40_000,
@@ -97,7 +97,7 @@ const FIXES = {
     commands: [
       "rm -f /workspace/run/alert.spam.json /workspace/run/runbook.gaslight.json /workspace/run/janitor.power.pulled /workspace/run/api.down",
       "rm -f /workspace/logs/debug.log",
-      "unctl restart api"
+      "yamactl restart api"
     ]
   }
 };
@@ -337,7 +337,7 @@ for (const scenarioId of restartOnlyBlocked) {
       body: JSON.stringify({ speed: GAME_SPEED })
     });
     await sleep(Math.ceil((fix.waitGameMs ?? 60_000) / GAME_SPEED) + 4000);
-    await runCommands(sessionId, ["unctl restart api"]);
+    await runCommands(sessionId, ["yamactl restart api"]);
     const resolved = await api(`/api/sessions/${sessionId}/resolve`, { method: "POST", body: "{}" });
     blocked = resolved.data.ok !== true;
   } catch {

@@ -5,7 +5,7 @@
   "difficulty": "advanced",
   "timeLimitMinutes": 15,
   "service": {
-    "name": "うん用 API",
+    "name": "やまびこ API",
     "healthUrl": "http://localhost:8080/health"
   },
   "briefing": [
@@ -16,7 +16,7 @@
   "startup": [
     {
       "id": "api",
-      "command": "PORT=8080 node /workspace/services/unyoh-api/server.mjs",
+      "command": "PORT=8080 node /workspace/services/yamabiko-api/server.mjs",
       "waitForPort": 8080
     },
     {
@@ -77,7 +77,7 @@
       "id": "power",
       "atMs": 95000,
       "severity": "critical",
-      "message": "うん用 API health check failed",
+      "message": "やまびこ API health check failed",
       "source": "monitor"
     },
     {
@@ -120,10 +120,10 @@
     {
       "id": "runbook.chaos",
       "title": "混沌シフト初動",
-      "body": "1. ノイズ alert を無視して HTTP 5xx を見る\\n2. ls /workspace/run でマーカー一覧\\n3. rm alert.spam.json runbook.gaslight.json janitor.power.pulled api.down\\n4. debug.log を削除して df -h\\n5. unctl restart api"
+      "body": "1. ノイズ alert を無視して HTTP 5xx を見る\\n2. ls /workspace/run でマーカー一覧\\n3. rm alert.spam.json runbook.gaslight.json janitor.power.pulled api.down\\n4. debug.log を削除して df -h\\n5. yamactl restart api"
     }
   ],
-  "slackMessages": [
+  "chatMessages": [
     {
       "id": "all-hands",
       "atMs": 100000,

@@ -2,7 +2,7 @@ import type {
   GameRenderState,
   RunbookDefinition,
   ScenarioDefinition,
-  SlackMessageDefinition,
+  ChatMessageDefinition,
 } from '@incident/shared';
 
 export function visibleRunbooks(
@@ -14,12 +14,12 @@ export function visibleRunbooks(
   );
 }
 
-export function mergedSlackMessages(
+export function mergedChatMessages(
   state: GameRenderState
-): SlackMessageDefinition[] {
+): ChatMessageDefinition[] {
   return [
-    ...state.monitors.right.slackMessages,
-    ...state.playerSlackMessages,
+    ...state.monitors.right.chatMessages,
+    ...state.playerChatMessages,
   ].toSorted((a, b) => a.atMs - b.atMs);
 }
 
@@ -27,10 +27,10 @@ export function unreadNotificationCount(state: GameRenderState) {
   const unreadAlerts = state.monitors.left.alerts.filter(
     (alert) => !state.notifications.readAlertIds.includes(alert.id)
   ).length;
-  const unreadSlack = mergedSlackMessages(state).filter(
-    (message) => !state.seenSlackIds.includes(message.id)
+  const unreadChat = mergedChatMessages(state).filter(
+    (message) => !state.seenChatIds.includes(message.id)
   ).length;
-  return unreadAlerts + unreadSlack;
+  return unreadAlerts + unreadChat;
 }
 
 export function unreadAlertCount(state: GameRenderState) {

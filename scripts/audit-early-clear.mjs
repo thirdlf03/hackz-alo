@@ -37,8 +37,8 @@ function conditionPassesAtStart(condition) {
     case "marker_absent":
       return INITIAL_ABSENT_MARKERS.has(condition.path);
     case "log_absent":
-      return condition.path === "/workspace/logs/batch.log" && condition.pattern === "うんともすんとも";
-    case "unlang_batch_ok":
+      return condition.path === "/workspace/logs/batch.log" && condition.pattern === "こだまが返ってきません";
+    case "kodama_batch_ok":
       return true;
     default:
       return false;

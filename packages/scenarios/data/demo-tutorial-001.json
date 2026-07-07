@@ -5,7 +5,7 @@
   "difficulty": "beginner",
   "timeLimitMinutes": 1,
   "service": {
-    "name": "うん用 API",
+    "name": "やまびこ API",
     "healthUrl": "http://localhost:8080/health"
   },
   "briefing": [
@@ -16,7 +16,7 @@
   "startup": [
     {
       "id": "api",
-      "command": "PORT=8080 node /workspace/services/unyoh-api/server.mjs",
+      "command": "PORT=8080 node /workspace/services/yamabiko-api/server.mjs",
       "waitForPort": 8080
     },
     {
@@ -47,7 +47,7 @@
       "id": "health-check-failed",
       "atMs": 20000,
       "severity": "critical",
-      "message": "うん用 API health check failed",
+      "message": "やまびこ API health check failed",
       "source": "monitor"
     }
   ],
@@ -66,10 +66,10 @@
     {
       "id": "runbook.demo",
       "title": "1分復旧 Runbook",
-      "body": "1. 左の監視で HTTP 5xx を確認する\\n2. tail -n 20 /workspace/logs/app.log で停止を確認する\\n3. unctl restart api で再起動する\\n4. curl localhost:8080/health で 200 を確認する"
+      "body": "1. 左の監視で HTTP 5xx を確認する\\n2. tail -n 20 /workspace/logs/app.log で停止を確認する\\n3. yamactl restart api で再起動する\\n4. curl localhost:8080/health で 200 を確認する"
     }
   ],
-  "slackMessages": [
+  "chatMessages": [
     {
       "id": "boss-demo",
       "atMs": 25000,
@@ -94,9 +94,9 @@
     {
       "id": "nav-status",
       "atMs": 8000,
-      "hint": "unctl status api でサービス状態を確認する",
+      "hint": "yamactl status api でサービス状態を確認する",
       "panel": "terminal",
-      "suggestedCommand": "unctl status api"
+      "suggestedCommand": "yamactl status api"
     },
     {
       "id": "nav-runbook",

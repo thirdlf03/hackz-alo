@@ -5,7 +5,7 @@
   "difficulty": "intermediate",
   "timeLimitMinutes": 12,
   "service": {
-    "name": "うん用 API",
+    "name": "やまびこ API",
     "healthUrl": "http://localhost:8080/health"
   },
   "briefing": [
@@ -15,7 +15,7 @@
   "startup": [
     {
       "id": "api",
-      "command": "PORT=8080 node /workspace/services/unyoh-api/server.mjs",
+      "command": "PORT=8080 node /workspace/services/yamabiko-api/server.mjs",
       "waitForPort": 8080
     },
     {
@@ -70,7 +70,7 @@
       "body": "1. du -sh /workspace/logs/*\\n2. 不要ログを削除\\n3. curl localhost:8080/health"
     }
   ],
-  "slackMessages": [],
+  "chatMessages": [],
   "navigationSteps": [
     {
       "id": "nav-disk",

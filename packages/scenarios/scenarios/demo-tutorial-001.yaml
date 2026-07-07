@@ -4,7 +4,7 @@ title: 'デモ: 1分復旧ドリル'
 difficulty: beginner
 timeLimitMinutes: 1
 service:
-  name: うん用 API
+  name: やまびこ API
   healthUrl: http://localhost:8080/health
 briefing:
   - これは約1分で遊べるデモ用シナリオです。
@@ -12,7 +12,7 @@ briefing:
   - 困ったら右の Runbook を見てください。
 startup:
   - id: api
-    command: PORT=8080 node /workspace/services/unyoh-api/server.mjs
+    command: PORT=8080 node /workspace/services/yamabiko-api/server.mjs
     waitForPort: 8080
   - id: fake-db
     command: node /workspace/services/fake-db/server.mjs
@@ -32,7 +32,7 @@ alerts:
   - id: health-check-failed
     atMs: 20000
     severity: critical
-    message: うん用 API health check failed
+    message: やまびこ API health check failed
     source: monitor
 successConditions:
   - type: http_status
@@ -43,8 +43,8 @@ successConditions:
 runbooks:
   - id: runbook.demo
     title: 1分復旧 Runbook
-    body: 1. 左の監視で HTTP 5xx を確認する\n2. tail -n 20 /workspace/logs/app.log で停止を確認する\n3. unctl restart api で再起動する\n4. curl localhost:8080/health で 200 を確認する
-slackMessages:
+    body: 1. 左の監視で HTTP 5xx を確認する\n2. tail -n 20 /workspace/logs/app.log で停止を確認する\n3. yamactl restart api で再起動する\n4. curl localhost:8080/health で 200 を確認する
+chatMessages:
   - id: boss-demo
     atMs: 25000
     from: 上司
@@ -61,9 +61,9 @@ navigationSteps:
     suggestedCommand: tail -n 20 /workspace/logs/app.log
   - id: nav-status
     atMs: 8000
-    hint: unctl status api でサービス状態を確認する
+    hint: yamactl status api でサービス状態を確認する
     panel: terminal
-    suggestedCommand: unctl status api
+    suggestedCommand: yamactl status api
   - id: nav-runbook
     atMs: 12000
     hint: 右の Runbook で復旧手順を確認する

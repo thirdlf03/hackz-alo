@@ -4,18 +4,18 @@ import {access, appendFile, mkdir, open, rm, writeFile} from 'node:fs/promises';
 import net from 'node:net';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {getHealth} from '../services/unyoh-api/server.mjs';
+import {getHealth} from '../services/yamabiko-api/server.mjs';
 
 const DEFAULT_WORKSPACE = process.env.WORKSPACE_DIR ?? '/workspace';
 const SANDBOX_CONTROL_URL =
   process.env.SANDBOX_CONTROL_URL ?? 'http://127.0.0.1:3000';
 const API_PROCESS_ID = 'api';
 const API_PORT = 8080;
-const API_START_COMMAND = `PORT=${API_PORT} node /workspace/services/unyoh-api/server.mjs`;
+const API_START_COMMAND = `PORT=${API_PORT} node /workspace/services/yamabiko-api/server.mjs`;
 const PORT_WAIT_MS = 30_000;
-const USAGE = 'usage: unctl <status|restart|stop> api';
+const USAGE = 'usage: yamactl <status|restart|stop> api';
 
-export async function runUnctl(command, service, options = {}) {
+export async function runYamactl(command, service, options = {}) {
   const workspace = options.workspace ?? DEFAULT_WORKSPACE;
   if (!['status', 'restart', 'stop'].includes(command) || service !== 'api') {
     throw usageError();
@@ -34,7 +34,7 @@ export async function runUnctl(command, service, options = {}) {
 
   if (command === 'restart') {
     await rm(downMarker, {force: true});
-    await appendAppLog(workspace, 'api restarted by unctl\n');
+    await appendAppLog(workspace, 'api restarted by yamactl\n');
     if (options.ensureProcess) {
       await ensureApiProcess(workspace);
     }
@@ -42,7 +42,7 @@ export async function runUnctl(command, service, options = {}) {
   }
 
   await writeFile(downMarker, new Date().toISOString());
-  await appendAppLog(workspace, 'api stopped by unctl\n');
+  await appendAppLog(workspace, 'api stopped by yamactl\n');
   return 'api stopped';
 }
 
@@ -114,16 +114,16 @@ async function restartViaSandboxControlPlane(workspace) {
 async function restartViaDetachedSpawn(workspace) {
   await mkdir(path.join(workspace, 'logs'), {recursive: true});
   const stdout = await open(
-    path.join(workspace, 'logs', 'unyoh-api.out.log'),
+    path.join(workspace, 'logs', 'yamabiko-api.out.log'),
     'a'
   );
   const stderr = await open(
-    path.join(workspace, 'logs', 'unyoh-api.err.log'),
+    path.join(workspace, 'logs', 'yamabiko-api.err.log'),
     'a'
   );
   const child = spawn(
     'node',
-    [path.join(workspace, 'services', 'unyoh-api', 'server.mjs')],
+    [path.join(workspace, 'services', 'yamabiko-api', 'server.mjs')],
     {
       cwd: workspace,
       detached: true,
@@ -167,7 +167,7 @@ if (
   const [command, service] = process.argv.slice(2);
   try {
     process.stdout.write(
-      `${await runUnctl(command, service, {ensureProcess: true})}\n`
+      `${await runYamactl(command, service, {ensureProcess: true})}\n`
     );
   } catch (error) {
     console.error(error.code === 'USAGE' ? USAGE : error.message);

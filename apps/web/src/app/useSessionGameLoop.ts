@@ -33,7 +33,7 @@ export function useSessionGameLoop(bindings: SessionRuntimeBindings) {
         previous.clock.speed,
         delta,
         previous.monitors.left.alerts,
-        previous.monitors.right.slackMessages
+        previous.monitors.right.chatMessages
       );
       refs.gameStateRef.current = next;
       setGameState(next);

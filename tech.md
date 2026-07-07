@@ -31,6 +31,8 @@ Cloudflare Sandbox はプレイセッションごとに分離する。Sandbox SD
 | Object storage      | R2                                     | 動画、thumbnail、JSONL event log の保存先。Workers binding から stream を put/get できる。                   | [R10][R11]           |
 | Static config cache | KV                                     | scenario/runbook の配布キャッシュ。live state には使わない。                                                 | [R15][R16]           |
 
+> 命名に関する注記: 本書に登場するコード識別子 `unyoh` / `unlang` / `unctl` / `slack_*` は現行実装のもの。新名称(社内基幹サービス「やまびこ」/ 社内 DSL「こだま」/ チャット)への移行は youken.md「旧名称からの移行メモ」を参照。ドキュメント側の世界観記述が正であり、コード識別子は移行完了まで現行のまま併記する。
+
 ## 2. 全体アーキテクチャ
 
 ```txt
@@ -55,7 +57,7 @@ Session Durable Object  <----------------------+
   |             - log generator
   |             - metrics exporter
   |             - fault injector
-  |             - un language runtime
+  |             - kodama runtime
   |
   +--> D1: session/replay/scenario metadata
   |
@@ -76,7 +78,7 @@ D1 は検索可能な metadata。session 一覧、replay 一覧、scenario versi
 
 R2 は巨大/追記的 object。動画、録画 chunk、JSONL event log、thumbnail を持つ。R2 は object put/get/list と multipart upload を Workers binding 経由で扱える [R10][R11]。
 
-KV は配布用 cache。scenario YAML、runbook markdown、うん言語仕様表の immutable version を cache する。KV は global low-latency だが read-after-write の最新性が弱い場面があるため、プレイ中状態には使わない [R15][R16]。
+KV は配布用 cache。scenario YAML、runbook markdown、こだま仕様表の immutable version を cache する。KV は global low-latency だが read-after-write の最新性が弱い場面があるため、プレイ中状態には使わない [R15][R16]。
 
 ## 3. Frontend 設計
 
@@ -84,7 +86,7 @@ KV は配布用 cache。scenario YAML、runbook markdown、うん言語仕様表
 
 MVP の画面は次の 4 layer に分ける。
 
-1. `gameCanvas`: 録画対象。トリプルモニター、terminal 表示、metrics、Runbook、Slack 風通知、cursor、click effect、REC overlay、game clock を描画する。
+1. `gameCanvas`: 録画対象。トリプルモニター、terminal 表示、metrics、Runbook、チャット風通知、cursor、click effect、REC overlay、game clock を描画する。
 2. `inputLayer`: キーボード入力、pointer event、focus 管理を受ける透明 DOM layer。
 3. `assistiveDom`: スクリーンリーダーや copy/paste 用の補助 DOM。録画には入らない。
 4. `debugDom`: 開発中のみ使う。production では off。
@@ -514,7 +516,7 @@ MVP sandbox:
 ```txt
 /workspace
   /services
-    unyoh-api/
+    unyoh-api/      # やまびこ の疑似 API（現行実装の識別子は unyoh-api のまま。移行予定）
     fake-db/
     batch/
   /runbooks
@@ -528,9 +530,9 @@ MVP sandbox:
 
 起動プロセス:
 
-- `unyoh-api`: 疑似 Web API。`/health`, `/orders`, `/metrics` を持つ。
+- `unyoh-api`: 社内基幹サービス「やまびこ」の疑似 Web API。`/health`, `/orders`, `/metrics` を持つ（現行実装の識別子は unyoh-api のまま。移行予定）。
 - `fake-db`: lightweight process。実 DB でなくてもよい。port と log を持つ。
-- `batch-runner`: うん言語 batch を実行する。
+- `batch-runner`: こだま batch を実行する。
 - `log-generator`: access log / application log を出す。
 - `metrics-exporter`: JSON metrics を吐く。
 - `fault-injector`: scenario trigger から呼ばれる。
@@ -587,7 +589,7 @@ MVP plugins:
 
 - `process_stop`: `api.down` マーカーを書き、`unyoh-api` プロセスを停止する。
 - `disk_full`: log file を増やす。または quota directory に大きな file を作る。
-- `unlang_batch_failure`: うん言語 batch に 0 division を仕込む。
+- `unlang_batch_failure`: こだま batch に 0 division を仕込む（現行実装の識別子は unlang_batch_failure のまま。移行予定）。
 
 障害は「実際に壊れる」が、sandbox 外に影響しないことを最優先する。
 
@@ -605,11 +607,11 @@ difficulty: beginner
 time_limit_minutes: 12
 
 service:
-  name: 'うん用 API'
+  name: 'やまびこ API'
   health_url: 'http://localhost:3000/health'
 
 sandbox:
-  image: 'unyoh-mvp:2026-06-20'
+  image: 'unyoh-mvp:2026-06-20'  # やまびこ MVP イメージ（現行実装の識別子は unyoh-mvp のまま。移行予定）
   startup:
     - id: api
       command: 'node /workspace/services/unyoh-api/server.js'
@@ -771,7 +773,7 @@ type ReplayEventType =
   | 'ui_click'
   | 'ui_panel_open'
   | 'runbook_open'
-  | 'slack_message_read'
+  | 'slack_message_read' // 現行実装の識別子。`chat_message_read` へ改称予定
   | 'file_opened'
   | 'service_restart'
   | 'recovery_check'
@@ -861,13 +863,15 @@ type Alert = {
 };
 ```
 
-## 12. うん言語
+## 12. こだま
+
+> 注記: 本章の構文・CLI(`unlang`)・拡張子(`.un`)は現行実装のもの。目標仕様(新構文)は youken.md「こだま(社内 DSL)」節で定義済みで、DSL トークン・CLI 名・拡張子の移行は未着手。
 
 ### 12.1 目的
 
-うん言語は、障害対応で「仕様を読んで原因を推測する」体験を作るための小さな DSL。MVP では batch script と config expression に限定する。
+こだまは、障害対応で「仕様を読んで原因を推測する」体験を作るための小さな DSL。MVP では batch script と config expression に限定する。
 
-### 12.2 Syntax
+### 12.2 Syntax(現行実装)
 
 ```txt
 うんちく <text>              comment
@@ -887,7 +891,7 @@ literals:
   うんあり    1 / true
 
 runtime error:
-  うんともすんとも
+  こだまが返ってきません
 ```
 
 ### 12.3 Parser / evaluator
@@ -912,11 +916,11 @@ type UnlangRuntimeError = {
   line: number;
   column: number;
   internalMessage: string;
-  playerMessage: 'うんともすんとも';
+  playerMessage: 'こだまが返ってきません'; // 現行データは移行予定
 };
 ```
 
-player-facing log は `うんともすんとも` のみ。Runbook / 仕様表 / file 内容から 0 division を推測させる。
+player-facing log は `こだまが返ってきません` のみ。Runbook / 仕様表 / file 内容から 0 division を推測させる。
 
 ### 12.4 実行方法
 
@@ -965,14 +969,14 @@ await sandbox.exec(command.render(validatedParams));
 
 ### 13.3 Replay privacy
 
-録画には terminal input、Slack 風 UI、表示名が映る可能性がある。共有前に preview と warning を出す。
+録画には terminal input、チャット風 UI、表示名が映る可能性がある。共有前に preview と warning を出す。
 
 共有 replay で隠す候補:
 
 - user display name
 - player_note
 - terminal_input marked sensitive
-- Slack 風 private message
+- チャット風 private message
 
 MVP では sandbox に PII/secret を入れず、ユーザー自由入力を最小化する。
 
@@ -1058,7 +1062,7 @@ Sandbox が落ちた場合:
 - trigger scheduling
 - success condition evaluation
 - event log schema
-- un language lexer/parser/evaluator
+- kodama lexer/parser/evaluator
 - R2 key generation
 - MIME type selection
 
@@ -1094,6 +1098,8 @@ Playwright で確認:
 
 ## 17. MVP 実装順
 
+> 注記: 本章は初期実装時の計画。現状のステータスは youken.md「現状ステータスとロードマップ」節を参照。
+
 1. Project scaffold
    - Vite + Preact + TypeScript
    - Hono Worker
@@ -1101,7 +1107,7 @@ Playwright で確認:
 
 2. Scenario schema
    - YAML loader
-   - 3 MVP scenarios
+   - 16 scenarios(beginner 3 / intermediate 9 / advanced 4。当初計画は 3 本)
    - runbook data
 
 3. Sandbox image
@@ -1127,7 +1133,7 @@ Playwright で確認:
    - triple monitor renderer
    - metrics panel
    - terminal panel
-   - runbook/slack panel
+   - runbook/チャット panel
    - cursor/click effects
    - REC overlay
 
@@ -1170,11 +1176,11 @@ Playwright で確認:
 | replay 共有で入力内容露出                 | privacy issue                        | preview、warning、redaction flag                 |
 | full-screen terminal app の mirror 不完全 | replay 表示ずれ                      | MVP は必要操作を line-oriented command に寄せる  |
 
-## 19. 将来拡張
+## 19. 拡張(実装済み・将来)
 
-### 19.1 Multiplayer
+### 19.1 Multiplayer(実装済み: Exercise Room)
 
-Durable Object を session room として使う。roles は `incident_commander`, `operator`, `investigator`, `communicator`, `observer`。WebSocket hibernation を使う場合は attachment と storage で connection state を復元する [R8]。
+当初「将来拡張」として置いていた multiplayer は Exercise Room として実装済み(`apps/worker/src/pure/exerciseRoom.ts`、Durable Object 上)。roles は `incident_commander` / `ops` / `scribe` / `comms` / `facilitator` / `observer` の6種。room state として参加者 presence、task、inject、incident log、hotwash note、after-action report を保持する。WebSocket hibernation を使う場合は attachment と storage で connection state を復元する [R8]。
 
 ### 19.2 DevTools 風 UI
 

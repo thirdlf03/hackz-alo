@@ -51,7 +51,7 @@ const benchmarks = {
       1,
       500,
       initialState.monitors.left.alerts,
-      initialState.monitors.right.slackMessages
+      initialState.monitors.right.chatMessages
     );
   }),
   buildMetricSections: runBench('buildMetricSections', 5000, () => {

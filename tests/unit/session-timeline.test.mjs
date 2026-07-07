@@ -60,7 +60,7 @@ test('SessionTimeline emits sandbox errors when trigger injection fails', async 
   });
 });
 
-test('SessionTimeline fires alerts and slack messages', async () => {
+test('SessionTimeline fires alerts and chat messages', async () => {
   const harness = createTimelineHarness(testSession({gameTimeMs: 100}));
   const scenario = testScenario({
     alerts: [
@@ -72,9 +72,9 @@ test('SessionTimeline fires alerts and slack messages', async () => {
         source: 'monitor',
       },
     ],
-    slackMessages: [
+    chatMessages: [
       {
-        id: 'slack_1',
+        id: 'chat_1',
         atMs: 0,
         from: 'SRE',
         body: 'checking',
@@ -86,7 +86,7 @@ test('SessionTimeline fires alerts and slack messages', async () => {
   await waitForTimers();
 
   assert.deepEqual(harness.session.firedAlertIds, ['alert_1']);
-  assert.deepEqual(harness.session.firedSlackIds, ['slack_1']);
+  assert.deepEqual(harness.session.firedChatIds, ['chat_1']);
   assert.deepEqual(
     harness.calls.emitted.map((event) => event.type),
     ['alert']
@@ -163,7 +163,7 @@ function createTimelineHarness(initialSession, options = {}) {
       sessionId: input.sessionId,
       triggeredIds: input.triggeredIds,
       firedAlertIds: input.firedAlertIds,
-      firedSlackIds: input.firedSlackIds,
+      firedChatIds: input.firedChatIds,
     }),
     broadcastSse: (event, data) => {
       calls.broadcasts.push({event, data});
@@ -193,7 +193,7 @@ function testSession(overrides = {}) {
     gameSpeed: 1,
     triggeredIds: [],
     firedAlertIds: [],
-    firedSlackIds: [],
+    firedChatIds: [],
     eventSeq: 0,
     bufferedEvents: [],
     ...overrides,
@@ -214,7 +214,7 @@ function testScenario(overrides = {}) {
     alerts: [],
     successConditions: [],
     runbooks: [],
-    slackMessages: [],
+    chatMessages: [],
     ...overrides,
   };
 }

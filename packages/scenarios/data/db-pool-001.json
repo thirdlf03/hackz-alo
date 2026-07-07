@@ -5,7 +5,7 @@
   "difficulty": "intermediate",
   "timeLimitMinutes": 10,
   "service": {
-    "name": "うん用 API",
+    "name": "やまびこ API",
     "healthUrl": "http://localhost:8080/health"
   },
   "briefing": [
@@ -15,7 +15,7 @@
   "startup": [
     {
       "id": "api",
-      "command": "PORT=8080 node /workspace/services/unyoh-api/server.mjs",
+      "command": "PORT=8080 node /workspace/services/yamabiko-api/server.mjs",
       "waitForPort": 8080
     },
     {
@@ -62,10 +62,10 @@
     {
       "id": "runbook.db-pool",
       "title": "DB pool 枯渇",
-      "body": "1. メトリクスの DB Conn を確認\\n2. cat /workspace/run/fake-db-stats.json\\n3. rm /workspace/run/db.pool.exhausted\\n4. unctl restart api"
+      "body": "1. メトリクスの DB Conn を確認\\n2. cat /workspace/run/fake-db-stats.json\\n3. rm /workspace/run/db.pool.exhausted\\n4. yamactl restart api"
     }
   ],
-  "slackMessages": [
+  "chatMessages": [
     {
       "id": "dba",
       "atMs": 100000,

@@ -26,7 +26,7 @@ test('buildCanvasViewModel exposes visible runbooks from scenario timeline', () 
   assert.equal(viewModel.visibleRunbooks[1]?.id, 'late');
 });
 
-test('buildCanvasViewModel merges slack and counts unread notifications', () => {
+test('buildCanvasViewModel merges chat and counts unread notifications', () => {
   const initial = createPlayState();
   const state = {
     ...initial,
@@ -45,13 +45,13 @@ test('buildCanvasViewModel merges slack and counts unread notifications', () => 
       },
       right: {
         ...initial.monitors.right,
-        slackMessages: [{id: 'srv-1', from: 'bot', body: 'help', atMs: 2_000}],
+        chatMessages: [{id: 'srv-1', from: 'bot', body: 'help', atMs: 2_000}],
       },
     },
-    playerSlackMessages: [
+    playerChatMessages: [
       {id: 'ply-1', from: 'あなた', body: 'checking', atMs: 3_000},
     ],
-    seenSlackIds: ['srv-1'],
+    seenChatIds: ['srv-1'],
     notifications: {
       ...initial.notifications,
       readAlertIds: [],
@@ -59,12 +59,12 @@ test('buildCanvasViewModel merges slack and counts unread notifications', () => 
   };
 
   const viewModel = buildCanvasViewModel(state, baseScenario());
-  assert.equal(viewModel.mergedSlackMessages.length, 2);
-  assert.equal(viewModel.mergedSlackMessages[0]?.id, 'srv-1');
-  assert.equal(viewModel.mergedSlackMessages[1]?.id, 'ply-1');
-  assert.equal(viewModel.unreadSlack, true);
+  assert.equal(viewModel.mergedChatMessages.length, 2);
+  assert.equal(viewModel.mergedChatMessages[0]?.id, 'srv-1');
+  assert.equal(viewModel.mergedChatMessages[1]?.id, 'ply-1');
+  assert.equal(viewModel.unreadChat, true);
   assert.equal(viewModel.unreadNotificationCount, 2);
-  assert.equal(viewModel.recentSlackMessages.length, 2);
+  assert.equal(viewModel.recentChatMessages.length, 2);
 });
 
 test('buildCanvasViewModel sorts notification panel items by recency', () => {
@@ -92,16 +92,14 @@ test('buildCanvasViewModel sorts notification panel items by recency', () => {
       },
       right: {
         ...initial.monitors.right,
-        slackMessages: [
-          {id: 'slack-mid', from: 'bot', body: 'mid', atMs: 3_000},
-        ],
+        chatMessages: [{id: 'chat-mid', from: 'bot', body: 'mid', atMs: 3_000}],
       },
     },
     notifications: {
       ...initial.notifications,
       readAlertIds: ['alert-old'],
     },
-    seenSlackIds: [],
+    seenChatIds: [],
   };
 
   const viewModel = buildCanvasViewModel(state, baseScenario());
@@ -113,7 +111,7 @@ test('buildCanvasViewModel sorts notification panel items by recency', () => {
       : '',
     'alert-new'
   );
-  assert.equal(viewModel.notificationPanelItems[1]?.kind, 'slack');
+  assert.equal(viewModel.notificationPanelItems[1]?.kind, 'chat');
   assert.equal(
     viewModel.notificationPanelItems[2]?.kind === 'alert'
       ? viewModel.notificationPanelItems[2].alert.id

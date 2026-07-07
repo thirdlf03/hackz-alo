@@ -11,8 +11,8 @@ const {
   navigationOverlayRect,
   notificationBellRegion,
   runbookTabRegion,
-  slackComposeRegion,
-  slackSendButtonRegion,
+  chatComposeRegion,
+  chatSendButtonRegion,
 } = await tsImport(
   '../../apps/web/src/game/render/canvasLayout.ts',
   import.meta.url
@@ -56,11 +56,11 @@ test('resolveCanvasAction opens editor files from normal and expanded terminal v
 
   assert.equal(
     editorFileAt(normalPoint.x, normalPoint.y, state),
-    '/workspace/services/batch/sales.un'
+    '/workspace/services/batch/sales.kdm'
   );
   assert.deepEqual(resolveCanvasAction(normalPoint, state, baseScenario()), {
     type: 'open_editor_file',
-    path: '/workspace/services/batch/sales.un',
+    path: '/workspace/services/batch/sales.kdm',
   });
 
   const expandedState = {
@@ -130,7 +130,7 @@ test('resolveCanvasAction absorbs expanded monitor interior and closes from outs
   });
 });
 
-test('resolveCanvasAction maps monitor magnify and slack compose targets', () => {
+test('resolveCanvasAction maps monitor magnify and chat compose targets', () => {
   const terminal = monitorLayout('terminal');
   const state = createPlayState();
 
@@ -143,68 +143,68 @@ test('resolveCanvasAction maps monitor magnify and slack compose targets', () =>
     {type: 'toggle_expanded_monitor', monitor: 'terminal'}
   );
 
-  const slackState = {
+  const chatState = {
     ...state,
     monitors: {
       ...state.monitors,
-      right: {...state.monitors.right, activePanelTab: 'slack'},
+      right: {...state.monitors.right, activePanelTab: 'chat'},
     },
   };
   assert.deepEqual(
     resolveCanvasAction(
-      pointIn(slackComposeRegion()),
-      slackState,
+      pointIn(chatComposeRegion()),
+      chatState,
       baseScenario()
     ),
-    {type: 'slack_compose'}
+    {type: 'chat_compose'}
   );
   assert.deepEqual(
     resolveCanvasAction(
-      pointIn(slackSendButtonRegion()),
-      slackState,
+      pointIn(chatSendButtonRegion()),
+      chatState,
       baseScenario()
     ),
-    {type: 'slack_send'}
+    {type: 'chat_send'}
   );
 });
 
-test('resolveCanvasAction keeps slack compose interactive in expanded runbook view', () => {
+test('resolveCanvasAction keeps chat compose interactive in expanded runbook view', () => {
   const initial = createPlayState();
   const state = {
     ...initial,
     monitors: {
       ...initial.monitors,
-      right: {...initial.monitors.right, activePanelTab: 'slack'},
+      right: {...initial.monitors.right, activePanelTab: 'chat'},
     },
     world: {...initial.world, expandedMonitor: 'runbook'},
   };
 
   assert.deepEqual(
     resolveCanvasAction(
-      pointIn(slackComposeRegion('slack', 'runbook')),
+      pointIn(chatComposeRegion('chat', 'runbook')),
       state,
       baseScenario()
     ),
-    {type: 'slack_compose'}
+    {type: 'chat_compose'}
   );
   assert.deepEqual(
     resolveCanvasAction(
-      pointIn(slackSendButtonRegion('slack', 'runbook')),
+      pointIn(chatSendButtonRegion('chat', 'runbook')),
       state,
       baseScenario()
     ),
-    {type: 'slack_send'}
+    {type: 'chat_send'}
   );
 });
 
-test('resolveCanvasAction deactivates slack compose on outside clicks', () => {
+test('resolveCanvasAction deactivates chat compose on outside clicks', () => {
   const state = {
     ...createPlayState(),
-    slackCompose: {active: true, draft: 'hello'},
+    chatCompose: {active: true, draft: 'hello'},
   };
 
   assert.deepEqual(resolveCanvasAction({x: 10, y: 10}, state, baseScenario()), {
-    type: 'deactivate_slack_compose',
+    type: 'deactivate_chat_compose',
   });
 });
 

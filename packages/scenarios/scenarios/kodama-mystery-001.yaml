@@ -1,29 +1,29 @@
-id: unlang-mystery-001
+id: kodama-mystery-001
 version: 1
 title: '????'
 difficulty: advanced
 timeLimitMinutes: 15
 service:
-  name: うん用 batch
+  name: やまびこ batch
   healthUrl: http://localhost:8080/health
 briefing:
   - 突如現れた謎の人物から、このサービスを運用してくれと頼まれた。
   - 手元に Runbook はない。何が起きても自分で対処するしかない。
-  - 深夜バッチはうん言語で書かれているらしい。
+  - 深夜バッチはこだまで書かれているらしい。
 startup:
   - id: api
-    command: PORT=8080 node /workspace/services/unyoh-api/server.mjs
+    command: PORT=8080 node /workspace/services/yamabiko-api/server.mjs
     waitForPort: 8080
   - id: fake-db
     command: node /workspace/services/fake-db/server.mjs
     waitForPort: 15432
 triggers:
-  - id: unlang
+  - id: kodama
     atMs: 90000
-    type: unlang_batch_failure
+    type: kodama_batch_failure
     params:
       jobId: sales-nightly
-      path: /workspace/services/batch/sales.un
+      path: /workspace/services/batch/sales.kdm
 alerts:
   - id: batch-failed
     atMs: 100000
@@ -31,11 +31,11 @@ alerts:
     message: sales-nightly batch failed
     source: scenario
 successConditions:
-  - type: unlang_batch_ok
+  - type: kodama_batch_ok
     jobId: sales-nightly
   - type: log_absent
     path: /workspace/logs/batch.log
-    pattern: うんともすんとも
+    pattern: こだまが返ってきません
 runbooks:
   - id: runbook.ar.page1
     title: صفحة 1 – السجل
@@ -45,24 +45,24 @@ runbooks:
 
       1. فحص السجل
       tail -n 50 /workspace/logs/batch.log
-      → إذا ظهر «うんともすんとも»: خطأ وقت التشغيل في لغة أون
+      → إذا ظهر «こだまが返ってきません»: خطأ وقت التشغيل في لغة こだま
 
       2. عرض الشيفرة المصدرية
-      cat /workspace/services/batch/sales.un
+      cat /workspace/services/batch/sales.kdm
   - id: runbook.ar.page2
     title: صفحة 2 – الشيفرة المصدرية
     availableAtMs: 93000
     body: |-
-      إرشادات لغة أون
+      إرشادات لغة こだま
 
-      «うんわり» = قسمة
-      «うんなし» = 0
-      «うんあり» = 1
+      «わる» = قسمة
+      «しずか» = 0
+      «こだま» = 1
 
-      إذا كان الطرف الأيمن من «うんわり» هو «うんなし» (0) → قسمة على صفر → «うんともすんとも»
+      إذا كان الطرف الأيمن من «わる» هو «しずか» (0) → قسمة على صفر → «こだまが返ってきません»
 
-      مثال في sales.un:
-      うん y = うんなし  يبقى كما هو → x うんわり y يفشل
+      مثال في sales.kdm:
+      よぶ y = しずか  يبقى كما هو → x わる y يفشل
   - id: runbook.ar.page3
     title: صفحة 3 – الإصلاح
     availableAtMs: 96000
@@ -70,18 +70,18 @@ runbooks:
       الإصلاح والاختبار
 
       1. تصحيح الملف
-      sed -i 's/うん y = うんなし/うん y = うんあり/' /workspace/services/batch/sales.un
+      sed -i 's/よぶ y = しずか/よぶ y = こだま/' /workspace/services/batch/sales.kdm
 
       أو
-      vim /workspace/services/batch/sales.un
+      vim /workspace/services/batch/sales.kdm
 
       2. اختبار
-      unlang run /workspace/services/batch/sales.un
-      → رقم = OK. «うんともすんとも» = ما زال معطلاً
+      kodama run /workspace/services/batch/sales.kdm
+      → رقم = OK. «こだまが返ってきません» = ما زال معطلاً
 
       3. إفراغ السجل
       : > /workspace/logs/batch.log
-slackMessages:
+chatMessages:
   - id: arabic-docs
     atMs: 92000
     from: 運用
@@ -89,4 +89,4 @@ slackMessages:
   - id: keiri
     atMs: 110000
     from: 経理
-    body: またうんともすんともです
+    body: またこだまが返ってきません

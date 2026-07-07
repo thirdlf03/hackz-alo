@@ -11,16 +11,16 @@ export const faultCommandBuilders: Record<string, FaultCommandBuilder> = {
   disk_full: (params) =>
     `${FAULT_INJECTOR} disk_full ${shellArg(coerceString(params.path, '/workspace/logs/debug.log'))} ${String(coerceNumber(params.bytes, 67108864))}`,
 
-  unlang_batch_failure: (params) => {
+  kodama_batch_failure: (params) => {
     const batchPath = coerceString(
       params.path,
-      '/workspace/services/batch/sales.un'
+      '/workspace/services/batch/sales.kdm'
     );
     const jobId = coerceString(params.jobId, 'sales-nightly');
     const specFlag = coerceBoolean(params.specInComments)
       ? ' spec-in-comments'
       : '';
-    return `${FAULT_INJECTOR} unlang_batch_failure ${shellArg(batchPath)} ${shellArg(jobId)}${specFlag}`;
+    return `${FAULT_INJECTOR} kodama_batch_failure ${shellArg(batchPath)} ${shellArg(jobId)}${specFlag}`;
   },
 
   queue_backlog: (params) =>

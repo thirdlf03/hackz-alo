@@ -1,5 +1,5 @@
 import type {GameRenderState} from '@incident/shared';
-import {mergedSlackMessages, visibleRunbooks} from './gameSelectors.js';
+import {mergedChatMessages, visibleRunbooks} from './gameSelectors.js';
 import type {GameStateAction} from './gameStateActions.js';
 
 export function reduceGameState(
@@ -20,15 +20,15 @@ export function reduceGameState(
     case 'set_right_panel_tab': {
       const tab = action.tab;
       if (state.monitors.right.activePanelTab === tab) return state;
-      const seenSlackIds =
-        tab === 'slack'
+      const seenChatIds =
+        tab === 'chat'
           ? [
               ...new Set([
-                ...state.seenSlackIds,
-                ...mergedSlackMessages(state).map((message) => message.id),
+                ...state.seenChatIds,
+                ...mergedChatMessages(state).map((message) => message.id),
               ]),
             ]
-          : state.seenSlackIds;
+          : state.seenChatIds;
       return {
         ...state,
         monitors: {
@@ -38,11 +38,11 @@ export function reduceGameState(
             activePanelTab: tab,
           },
         },
-        seenSlackIds,
-        slackCompose:
-          tab === 'slack'
-            ? state.slackCompose
-            : {...state.slackCompose, active: false},
+        seenChatIds,
+        chatCompose:
+          tab === 'chat'
+            ? state.chatCompose
+            : {...state.chatCompose, active: false},
       };
     }
     case 'set_active_runbook': {
@@ -106,14 +106,14 @@ export function reduceGameState(
             ]),
           ]
         : state.notifications.readAlertIds;
-      const seenSlackIds = panelOpen
+      const seenChatIds = panelOpen
         ? [
             ...new Set([
-              ...state.seenSlackIds,
-              ...mergedSlackMessages(state).map((message) => message.id),
+              ...state.seenChatIds,
+              ...mergedChatMessages(state).map((message) => message.id),
             ]),
           ]
-        : state.seenSlackIds;
+        : state.seenChatIds;
       return {
         ...state,
         notifications: {
@@ -122,17 +122,17 @@ export function reduceGameState(
           readAlertIds,
           pulseMs: panelOpen ? 0 : state.notifications.pulseMs,
         },
-        seenSlackIds,
-        slackCompose: panelOpen
-          ? state.slackCompose
-          : {...state.slackCompose, active: false},
+        seenChatIds,
+        chatCompose: panelOpen
+          ? state.chatCompose
+          : {...state.chatCompose, active: false},
       };
     }
-    case 'activate_slack_compose':
+    case 'activate_chat_compose':
       return {
         ...state,
         commandInputFocused: false,
-        slackCompose: {...state.slackCompose, active: true},
+        chatCompose: {...state.chatCompose, active: true},
       };
     case 'focus_command_input':
       if (state.commandInputFocused) return state;
@@ -140,20 +140,20 @@ export function reduceGameState(
     case 'blur_command_input':
       if (!state.commandInputFocused) return state;
       return {...state, commandInputFocused: false};
-    case 'deactivate_slack_compose':
-      if (!state.slackCompose.active && state.slackCompose.draft === '') {
+    case 'deactivate_chat_compose':
+      if (!state.chatCompose.active && state.chatCompose.draft === '') {
         return state;
       }
       return {
         ...state,
-        slackCompose: {active: false, draft: ''},
+        chatCompose: {active: false, draft: ''},
       };
-    case 'set_slack_draft':
+    case 'set_chat_draft':
       return {
         ...state,
-        slackCompose: {...state.slackCompose, draft: action.draft},
+        chatCompose: {...state.chatCompose, draft: action.draft},
       };
-    case 'submit_player_slack_message': {
+    case 'submit_player_chat_message': {
       const trimmed = action.body.trim();
       if (!trimmed) return state;
       const message = {
@@ -164,8 +164,8 @@ export function reduceGameState(
       };
       return {
         ...state,
-        playerSlackMessages: [...state.playerSlackMessages, message],
-        slackCompose: {active: false, draft: ''},
+        playerChatMessages: [...state.playerChatMessages, message],
+        chatCompose: {active: false, draft: ''},
       };
     }
     case 'toggle_expanded_monitor': {

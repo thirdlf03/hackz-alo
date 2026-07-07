@@ -69,20 +69,20 @@ export function drawRightPanel(
 
   surface.ctx.fillStyle = palette.textPrimary;
   surface.ctx.font = uiFont(20);
-  surface.ctx.fillText('Slack', 0, layout.slackMessagesTop);
+  surface.ctx.fillText('チャット', 0, layout.chatMessagesTop);
   surface.ctx.font = uiFont(16);
   const messageLineHeight = 22;
-  const maxSlackLines = Math.max(
+  const maxChatLines = Math.max(
     4,
     Math.floor(
-      (layout.slackMessagesBottom - layout.slackMessagesTop - 24) /
+      (layout.chatMessagesBottom - layout.chatMessagesTop - 24) /
         messageLineHeight
     )
   );
-  let y = layout.slackMessagesTop + 30;
+  let y = layout.chatMessagesTop + 30;
   let drawnLines = 0;
-  for (const message of viewModel.recentSlackMessages) {
-    if (drawnLines >= maxSlackLines) break;
+  for (const message of viewModel.recentChatMessages) {
+    if (drawnLines >= maxChatLines) break;
     const prefix = message.from === 'あなた' ? '▸ ' : '';
     const color =
       message.from === 'あなた' ? palette.textLink : palette.textPrimary;
@@ -100,7 +100,7 @@ export function drawRightPanel(
     y = nextY + 8;
   }
 
-  drawSlackCompose(surface, state, layout.composeTop);
+  drawChatCompose(surface, state, layout.composeTop);
 }
 
 export function drawPrimaryPanelTabs(
@@ -110,7 +110,7 @@ export function drawPrimaryPanelTabs(
   viewModel: CanvasViewModel
 ) {
   const activePanelTab = state.monitors.right.activePanelTab;
-  const unreadSlack = viewModel.unreadSlack;
+  const unreadChat = viewModel.unreadChat;
   surface.ctx.font = uiFont(16);
   let tabX = 0;
   for (const tab of RIGHT_PANEL_PRIMARY_TABS) {
@@ -127,7 +127,7 @@ export function drawPrimaryPanelTabs(
     surface.ctx.fill();
     surface.ctx.fillStyle = active ? palette.textPrimary : palette.textMuted;
     surface.ctx.fillText(tab.label, tabX + RUNBOOK_TAB_PAD_X, top + 26);
-    if (tab.id === 'slack' && unreadSlack && !active) {
+    if (tab.id === 'chat' && unreadChat && !active) {
       surface.ctx.fillStyle = palette.statusCritical;
       surface.ctx.beginPath();
       surface.ctx.arc(tabX + tab.width - 12, top + 12, 5, 0, Math.PI * 2);
@@ -169,12 +169,12 @@ export function drawRunbookDocumentTabs(
   }
 }
 
-export function drawSlackCompose(
+export function drawChatCompose(
   surface: CanvasRenderSurface,
   state: GameRenderState,
   boxY = 484
 ) {
-  const active = state.slackCompose.active;
+  const active = state.chatCompose.active;
   surface.ctx.fillStyle = active
     ? palette.bgDevtoolsActive
     : palette.bgDevtoolsIdle;
@@ -186,7 +186,7 @@ export function drawSlackCompose(
 
   surface.ctx.fillStyle = active ? palette.textLink : palette.textMuted;
   surface.ctx.font = uiFont(16);
-  const draft = state.slackCompose.draft;
+  const draft = state.chatCompose.draft;
   const placeholder = '状況を報告... (クリックして入力)';
   const text = draft.length > 0 ? draft : placeholder;
   surface.ctx.fillText(text.slice(0, 42), 12, boxY + 28);

@@ -40,7 +40,7 @@ export function useSessionClockSync(bindings: SessionRuntimeBindings) {
         gameSpeed,
         0,
         previous.monitors.left.alerts,
-        previous.monitors.right.slackMessages
+        previous.monitors.right.chatMessages
       );
       refs.gameStateRef.current = next;
       setGameState(next);

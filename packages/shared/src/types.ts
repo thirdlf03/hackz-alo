@@ -54,10 +54,10 @@ export interface DiskFullTrigger {
   params: {path: string; bytes: number};
 }
 
-export interface UnlangBatchFailureTrigger {
+export interface KodamaBatchFailureTrigger {
   id: string;
   atMs: number;
-  type: 'unlang_batch_failure';
+  type: 'kodama_batch_failure';
   params: {jobId: string; path: string; specInComments?: boolean};
 }
 
@@ -148,7 +148,7 @@ export interface RunbookGaslightTrigger {
 export type ScenarioTrigger =
   | ProcessStopTrigger
   | DiskFullTrigger
-  | UnlangBatchFailureTrigger
+  | KodamaBatchFailureTrigger
   | QueueBacklogTrigger
   | BadDeployTrigger
   | DbPoolExhaustTrigger
@@ -167,7 +167,7 @@ export type NavigationPanel =
   | 'terminal'
   | 'editor'
   | 'runbook'
-  | 'slack';
+  | 'chat';
 
 export interface NavigationStep {
   id: string;
@@ -321,7 +321,7 @@ export type SuccessCondition =
   | {type: 'process_running'; processId: string}
   | {type: 'marker_absent'; path: string}
   | {type: 'log_absent'; path: string; pattern: string}
-  | {type: 'unlang_batch_ok'; jobId: string};
+  | {type: 'kodama_batch_ok'; jobId: string};
 
 export interface RunbookDefinition {
   id: string;
@@ -330,7 +330,7 @@ export interface RunbookDefinition {
   availableAtMs?: number;
 }
 
-export interface SlackMessageDefinition {
+export interface ChatMessageDefinition {
   id: string;
   atMs: number;
   from: string;
@@ -357,7 +357,7 @@ export interface ScenarioDefinition {
   alerts: AlertDefinition[];
   successConditions: SuccessCondition[];
   runbooks: RunbookDefinition[];
-  slackMessages: SlackMessageDefinition[];
+  chatMessages: ChatMessageDefinition[];
   navigationSteps?: NavigationStep[];
   exercise?: ScenarioExerciseDefinition;
 }
@@ -416,17 +416,17 @@ export interface GameRenderState {
       editor: EditorPanelState;
     };
     right: {
-      activePanelTab: 'runbook' | 'slack';
+      activePanelTab: 'runbook' | 'chat';
       activeRunbook?: RunbookDefinition | undefined;
       activeRunbookIndex: number;
-      slackMessages: SlackMessageDefinition[];
+      chatMessages: ChatMessageDefinition[];
     };
   };
   navigation: GameNavigationState;
   notifications: NotificationState;
-  seenSlackIds: string[];
-  playerSlackMessages: SlackMessageDefinition[];
-  slackCompose: {
+  seenChatIds: string[];
+  playerChatMessages: ChatMessageDefinition[];
+  chatCompose: {
     active: boolean;
     draft: string;
   };

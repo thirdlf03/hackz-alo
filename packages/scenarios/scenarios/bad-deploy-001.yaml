@@ -4,14 +4,14 @@ title: 壊れたデプロイの夜
 difficulty: intermediate
 timeLimitMinutes: 10
 service:
-  name: うん用 API
+  name: やまびこ API
   healthUrl: http://localhost:8080/health
 briefing:
   - デプロイ直後の 5xx は設定ミスを疑う。
   - deploy.json と app.log を見る。
 startup:
   - id: api
-    command: PORT=8080 node /workspace/services/unyoh-api/server.mjs
+    command: PORT=8080 node /workspace/services/yamabiko-api/server.mjs
     waitForPort: 8080
   - id: fake-db
     command: node /workspace/services/fake-db/server.mjs
@@ -39,8 +39,8 @@ successConditions:
 runbooks:
   - id: runbook.deploy
     title: Bad deploy
-    body: 1. cat /workspace/run/deploy.json\n2. rm /workspace/run/deploy.json\n3. curl localhost:8080/health\n4. 再発する場合のみ unctl restart api
-slackMessages: []
+    body: 1. cat /workspace/run/deploy.json\n2. rm /workspace/run/deploy.json\n3. curl localhost:8080/health\n4. 再発する場合のみ yamactl restart api
+chatMessages: []
 navigationSteps:
   - id: nav-5xx
     atMs: 0

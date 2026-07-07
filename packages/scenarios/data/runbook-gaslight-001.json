@@ -5,7 +5,7 @@
   "difficulty": "intermediate",
   "timeLimitMinutes": 10,
   "service": {
-    "name": "うん用 API",
+    "name": "やまびこ API",
     "healthUrl": "http://localhost:8080/health"
   },
   "briefing": [
@@ -16,7 +16,7 @@
   "startup": [
     {
       "id": "api",
-      "command": "PORT=8080 node /workspace/services/unyoh-api/server.mjs",
+      "command": "PORT=8080 node /workspace/services/yamabiko-api/server.mjs",
       "waitForPort": 8080
     },
     {
@@ -62,7 +62,7 @@
       "body": "1. Runbook の文言がおかしければ信用しない\\n2. ls /workspace/run で runbook.gaslight.json を探す\\n3. rm /workspace/run/runbook.gaslight.json\\n4. curl localhost:8080/health で実際の状態を確認\\n5. 正しい手順はメトリクスとログから再構築する"
     }
   ],
-  "slackMessages": [
+  "chatMessages": [
     {
       "id": "wiki-broken",
       "atMs": 65000,

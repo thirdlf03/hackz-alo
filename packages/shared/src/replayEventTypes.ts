@@ -10,7 +10,7 @@ export const REPLAY_EVENT_TYPES = [
   'ui_click',
   'ui_panel_open',
   'runbook_open',
-  'slack_message_read',
+  'chat_message_read',
   'file_opened',
   'file_saved',
   'service_restart',

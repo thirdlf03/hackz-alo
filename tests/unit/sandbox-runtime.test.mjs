@@ -9,22 +9,22 @@ import path from 'node:path';
 import test from 'node:test';
 import {promisify} from 'node:util';
 
-import {runUnlang} from '../../sandbox/bin/unlang.mjs';
+import {runKodama} from '../../sandbox/bin/kodama.mjs';
 import {
   injectFault,
   normalizeWorkspacePath,
 } from '../../sandbox/bin/fault-injector.mjs';
-import {runUnctl} from '../../sandbox/bin/unctl.mjs';
+import {runYamactl} from '../../sandbox/bin/yamactl.mjs';
 import {
   createFakeDbServer,
   handleCommand,
 } from '../../sandbox/services/fake-db/server.mjs';
 import {
-  createUnyohApiServer,
+  createYamabikoApiServer,
   getHealth,
   getMetrics,
   prepareWorkspace,
-} from '../../sandbox/services/unyoh-api/server.mjs';
+} from '../../sandbox/services/yamabiko-api/server.mjs';
 import {
   appendTrafficSample,
   RequestMetricsTracker,
@@ -33,21 +33,19 @@ import {
 
 const execFileAsync = promisify(execFile);
 
-test('unlang evaluates valid programs and reports structured runtime errors', () => {
+test('kodama evaluates valid programs and reports structured runtime errors', () => {
   assert.equal(
-    runUnlang(
-      'うんちく sample\nうん x = 8\nうん y = 3\nうん！ ( x うんたす y ) うんかけ 2\n'
+    runKodama(
+      'やまびこ帳 sample\nよぶ x = 8\nよぶ y = 3\nかえす ( x たす y ) かける 2\n'
     ),
     22
   );
 
   assert.throws(
     () =>
-      runUnlang(
-        'うん x = 100\nうん y = うんなし\nうん z = x うんわり y\nうん！ z\n'
-      ),
+      runKodama('よぶ x = 100\nよぶ y = しずか\nよぶ z = x わる y\nかえす z\n'),
     (error) => {
-      assert.equal(error.message, 'うんともすんとも');
+      assert.equal(error.message, 'こだまが返ってきません');
       assert.equal(error.code, 'DIVISION_BY_ZERO');
       assert.equal(error.line, 3);
       assert.equal(error.column, 1);
@@ -119,22 +117,22 @@ test('fault injector writes silly phase-2 markers', async (t) => {
   assert.equal(gaslight.replacement, '気合い');
 });
 
-test('unlang batch failure can embed spec in うんちく comments', async (t) => {
+test('kodama batch failure can embed spec in やまびこ帳 comments', async (t) => {
   const workspace = await tempWorkspace();
   t.after(() => rm(workspace, {recursive: true, force: true}));
 
-  const target = path.join(workspace, 'services', 'batch', 'sales.un');
+  const target = path.join(workspace, 'services', 'batch', 'sales.kdm');
   await injectFault(
-    'unlang_batch_failure',
+    'kodama_batch_failure',
     [target, 'sales-nightly', 'spec-in-comments'],
     {workspace}
   );
   const source = await readFile(target, 'utf8');
-  assert.match(source, /うんちく うんわり=割り算/);
-  assert.match(source, /うん y = うんなし/);
+  assert.match(source, /やまびこ帳 わる=割り算/);
+  assert.match(source, /よぶ y = しずか/);
   assert.match(
     await readFile(path.join(workspace, 'logs', 'batch.log'), 'utf8'),
-    /sales-nightly: うんともすんとも/
+    /sales-nightly: こだまが返ってきません/
   );
 });
 
@@ -168,42 +166,48 @@ test('fault injector keeps targets inside the workspace and writes exact byte co
   );
 });
 
-test('unctl creates run state and reports api status transitions', async (t) => {
+test('yamactl creates run state and reports api status transitions', async (t) => {
   const workspace = await tempWorkspace();
   t.after(() => rm(workspace, {recursive: true, force: true}));
 
-  assert.equal(await runUnctl('status', 'api', {workspace}), 'api running');
-  assert.equal(await runUnctl('stop', 'api', {workspace}), 'api stopped');
+  assert.equal(await runYamactl('status', 'api', {workspace}), 'api running');
+  assert.equal(await runYamactl('stop', 'api', {workspace}), 'api stopped');
   assert.match(
     await readFile(path.join(workspace, 'run', 'api.down'), 'utf8'),
     /^\d{4}-\d{2}-\d{2}T/
   );
   assert.match(
     await readFile(path.join(workspace, 'logs', 'app.log'), 'utf8'),
-    /api stopped by unctl/
+    /api stopped by yamactl/
   );
-  assert.equal(await runUnctl('status', 'api', {workspace}), 'api stopped');
-  assert.equal(await runUnctl('restart', 'api', {workspace}), 'api restarted');
-  assert.equal(await runUnctl('status', 'api', {workspace}), 'api running');
+  assert.equal(await runYamactl('status', 'api', {workspace}), 'api stopped');
+  assert.equal(
+    await runYamactl('restart', 'api', {workspace}),
+    'api restarted'
+  );
+  assert.equal(await runYamactl('status', 'api', {workspace}), 'api running');
   assert.match(
     await readFile(path.join(workspace, 'logs', 'app.log'), 'utf8'),
-    /api restarted by unctl/
+    /api restarted by yamactl/
   );
 
   await assert.rejects(
-    () => runUnctl('status', 'db', {workspace}),
-    /usage: unctl/
+    () => runYamactl('status', 'db', {workspace}),
+    /usage: yamactl/
   );
 });
 
-test('unctl restart clears api.down but scenario markers still degrade health', async (t) => {
+test('yamactl restart clears api.down but scenario markers still degrade health', async (t) => {
   const workspace = await tempWorkspace();
   t.after(() => rm(workspace, {recursive: true, force: true}));
 
   await injectFault('janitor_power_pull', [], {workspace});
-  assert.equal(await runUnctl('restart', 'api', {workspace}), 'api restarted');
+  assert.equal(
+    await runYamactl('restart', 'api', {workspace}),
+    'api restarted'
+  );
   assert.match(
-    await runUnctl('status', 'api', {workspace}),
+    await runYamactl('status', 'api', {workspace}),
     /api degraded \(janitor power pull marker active\)/
   );
   assert.equal((await getHealth(workspace)).ok, false);
@@ -220,12 +224,12 @@ test('bad deploy fails health until deploy.json is removed', async (t) => {
   assert.equal((await getHealth(workspace)).ok, true);
 });
 
-test('unctl CLI writes command results to stdout', async (t) => {
+test('yamactl CLI writes command results to stdout', async (t) => {
   const workspace = await tempWorkspace();
   t.after(() => rm(workspace, {recursive: true, force: true}));
 
   const script = fileURLToPath(
-    new URL('../../sandbox/bin/unctl.mjs', import.meta.url)
+    new URL('../../sandbox/bin/yamactl.mjs', import.meta.url)
   );
   const result = await execFileAsync('node', [script, 'status', 'api'], {
     env: {...process.env, WORKSPACE_DIR: workspace},
@@ -235,12 +239,12 @@ test('unctl CLI writes command results to stdout', async (t) => {
   assert.equal(result.stderr, '');
 });
 
-test('unyoh-api reflects marker health, metrics, and access log statuses', async (t) => {
+test('yamabiko-api reflects marker health, metrics, and access log statuses', async (t) => {
   const workspace = await tempWorkspace();
   t.after(() => rm(workspace, {recursive: true, force: true}));
   await prepareWorkspace(workspace);
 
-  const server = createUnyohApiServer({workspace});
+  const server = createYamabikoApiServer({workspace});
   const baseUrl = await listenHttp(server);
   t.after(() => closeServer(server));
 
@@ -286,7 +290,7 @@ test('readTrafficMetrics reports 5xx when upstream api process is stopped', asyn
   t.after(() => rm(workspace, {recursive: true, force: true}));
   await prepareWorkspace(workspace);
 
-  const server = createUnyohApiServer({workspace});
+  const server = createYamabikoApiServer({workspace});
   const baseUrl = await listenHttp(server);
 
   const healthy = await fetch(`${baseUrl}/health`);

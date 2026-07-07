@@ -3,20 +3,20 @@ import {test} from 'node:test';
 import {
   advanceGameState,
   applyLiveMetrics,
-  activateSlackCompose,
+  activateChatCompose,
   blurCommandInput,
   computeNarrativeHour,
   createPlayState,
   baseScenario,
   decayWorldOverlays,
-  deactivateSlackCompose,
+  deactivateChatCompose,
   dismissNavigationStep,
   focusCommandInput,
   setActiveRunbook,
   setCenterTool,
   setRightPanelTab,
-  setSlackDraft,
-  submitPlayerSlackMessage,
+  setChatDraft,
+  submitPlayerChatMessage,
   toggleExpandedMonitor,
   toggleNotificationPanel,
   unreadAlertCount,
@@ -85,7 +85,7 @@ test('applyLiveMetrics stores session edge RTT history', () => {
   assert.deepEqual(state.monitors.left.edgeRttHistory, [42, 55]);
 });
 
-test('right panel tab switches mark slack seen and deactivate compose on runbook', () => {
+test('right panel tab switches mark chat seen and deactivate compose on runbook', () => {
   const initial = createPlayState();
   const state = {
     ...initial,
@@ -93,25 +93,25 @@ test('right panel tab switches mark slack seen and deactivate compose on runbook
       ...initial.monitors,
       right: {
         ...initial.monitors.right,
-        slackMessages: [{id: 'server-1', atMs: 10, from: 'SRE', body: 'ping'}],
+        chatMessages: [{id: 'server-1', atMs: 10, from: 'SRE', body: 'ping'}],
       },
     },
-    playerSlackMessages: [
+    playerChatMessages: [
       {id: 'player-1', atMs: 20, from: 'あなた', body: 'pong'},
     ],
-    slackCompose: {active: true, draft: 'draft'},
+    chatCompose: {active: true, draft: 'draft'},
   };
 
-  const slackState = setRightPanelTab(state, 'slack');
-  assert.equal(slackState.monitors.right.activePanelTab, 'slack');
-  assert.deepEqual(slackState.seenSlackIds.sort(), ['player-1', 'server-1']);
-  assert.equal(slackState.slackCompose.active, true);
+  const chatState = setRightPanelTab(state, 'chat');
+  assert.equal(chatState.monitors.right.activePanelTab, 'chat');
+  assert.deepEqual(chatState.seenChatIds.sort(), ['player-1', 'server-1']);
+  assert.equal(chatState.chatCompose.active, true);
 
-  const runbookState = setRightPanelTab(slackState, 'runbook');
+  const runbookState = setRightPanelTab(chatState, 'runbook');
   assert.equal(runbookState.monitors.right.activePanelTab, 'runbook');
-  assert.deepEqual(runbookState.seenSlackIds.sort(), ['player-1', 'server-1']);
-  assert.equal(runbookState.slackCompose.active, false);
-  assert.equal(runbookState.slackCompose.draft, 'draft');
+  assert.deepEqual(runbookState.seenChatIds.sort(), ['player-1', 'server-1']);
+  assert.equal(runbookState.chatCompose.active, false);
+  assert.equal(runbookState.chatCompose.draft, 'draft');
 });
 
 test('toggleNotificationPanel marks visible notifications as read on open', () => {
@@ -134,28 +134,28 @@ test('toggleNotificationPanel marks visible notifications as read on open', () =
       },
       right: {
         ...initial.monitors.right,
-        slackMessages: [{id: 'slack-1', atMs: 200, from: 'SRE', body: 'look'}],
+        chatMessages: [{id: 'chat-1', atMs: 200, from: 'SRE', body: 'look'}],
       },
     },
     notifications: {...initial.notifications, pulseMs: 1200},
-    playerSlackMessages: [
+    playerChatMessages: [
       {id: 'player-1', atMs: 300, from: 'あなた', body: 'checking'},
     ],
-    slackCompose: {active: true, draft: 'draft'},
+    chatCompose: {active: true, draft: 'draft'},
   };
 
   const open = toggleNotificationPanel(state);
   assert.equal(open.notifications.panelOpen, true);
   assert.equal(open.notifications.pulseMs, 0);
   assert.deepEqual(open.notifications.readAlertIds, ['alert-1']);
-  assert.deepEqual(open.seenSlackIds.sort(), ['player-1', 'slack-1']);
+  assert.deepEqual(open.seenChatIds.sort(), ['chat-1', 'player-1']);
   assert.equal(unreadNotificationCount(open), 0);
-  assert.equal(open.slackCompose.active, true);
+  assert.equal(open.chatCompose.active, true);
 
   const closed = toggleNotificationPanel(open);
   assert.equal(closed.notifications.panelOpen, false);
-  assert.equal(closed.slackCompose.active, false);
-  assert.equal(closed.slackCompose.draft, 'draft');
+  assert.equal(closed.chatCompose.active, false);
+  assert.equal(closed.chatCompose.draft, 'draft');
 });
 
 test('editor and focus reducers keep unrelated state intact', () => {
@@ -180,7 +180,7 @@ test('editor and focus reducers keep unrelated state intact', () => {
   assert.deepEqual(updated.monitors.center.editor.cursor, {line: 3, column: 7});
 });
 
-test('navigation, expansion, and slack compose reducers are idempotent where expected', () => {
+test('navigation, expansion, and chat compose reducers are idempotent where expected', () => {
   const state = createPlayState();
 
   const dismissed = dismissNavigationStep(state, 'nav-1');
@@ -194,14 +194,14 @@ test('navigation, expansion, and slack compose reducers are idempotent where exp
     null
   );
 
-  const inactive = deactivateSlackCompose(state);
+  const inactive = deactivateChatCompose(state);
   assert.equal(inactive, state);
-  const active = setSlackDraft(
-    {...state, slackCompose: {active: true, draft: 'draft'}},
+  const active = setChatDraft(
+    {...state, chatCompose: {active: true, draft: 'draft'}},
     'changed'
   );
-  const deactivated = deactivateSlackCompose(active);
-  assert.deepEqual(deactivated.slackCompose, {active: false, draft: ''});
+  const deactivated = deactivateChatCompose(active);
+  assert.deepEqual(deactivated.chatCompose, {active: false, draft: ''});
 });
 
 test('setActiveRunbook tracks opened runbooks and ignores unavailable indexes', () => {
@@ -227,19 +227,19 @@ test('setActiveRunbook tracks opened runbooks and ignores unavailable indexes', 
   assert.equal(setActiveRunbook(selected, scenario, 10), selected);
 });
 
-test('submitPlayerSlackMessage trims body and ignores blank messages', () => {
+test('submitPlayerChatMessage trims body and ignores blank messages', () => {
   const state = {
     ...createPlayState(),
-    slackCompose: {active: true, draft: '  hello  '},
+    chatCompose: {active: true, draft: '  hello  '},
   };
 
-  assert.equal(submitPlayerSlackMessage(state, '   ', 100), state);
-  const submitted = submitPlayerSlackMessage(state, '  hello  ', 120);
-  assert.equal(submitted.playerSlackMessages.length, 1);
-  assert.equal(submitted.playerSlackMessages[0].from, 'あなた');
-  assert.equal(submitted.playerSlackMessages[0].body, 'hello');
-  assert.equal(submitted.playerSlackMessages[0].atMs, 120);
-  assert.deepEqual(submitted.slackCompose, {active: false, draft: ''});
+  assert.equal(submitPlayerChatMessage(state, '   ', 100), state);
+  const submitted = submitPlayerChatMessage(state, '  hello  ', 120);
+  assert.equal(submitted.playerChatMessages.length, 1);
+  assert.equal(submitted.playerChatMessages[0].from, 'あなた');
+  assert.equal(submitted.playerChatMessages[0].body, 'hello');
+  assert.equal(submitted.playerChatMessages[0].atMs, 120);
+  assert.deepEqual(submitted.chatCompose, {active: false, draft: ''});
 });
 
 test('focus, warning decay, and unread counters cover remaining reducers', () => {
@@ -252,9 +252,9 @@ test('focus, warning decay, and unread counters cover remaining reducers', () =>
   assert.equal(blurred.commandInputFocused, false);
   assert.equal(blurCommandInput(blurred), blurred);
 
-  const compose = activateSlackCompose(base);
+  const compose = activateChatCompose(base);
   assert.equal(compose.commandInputFocused, false);
-  assert.equal(compose.slackCompose.active, true);
+  assert.equal(compose.chatCompose.active, true);
 
   const warned = {
     ...base,
@@ -300,11 +300,11 @@ test('focus, warning decay, and unread counters cover remaining reducers', () =>
   assert.equal(withNav.navigation.activeStepId, 'nav-1');
 });
 
-test('advanceGameState pulses when new slack messages arrive from the server', () => {
+test('advanceGameState pulses when new chat messages arrive from the server', () => {
   const scenario = baseScenario();
   const initial = createPlayState(scenario, 1_000);
-  const serverSlack = [
-    {id: 'slack-new', atMs: 2_000, from: 'SRE', body: 'check queue'},
+  const serverChat = [
+    {id: 'chat-new', atMs: 2_000, from: 'SRE', body: 'check queue'},
   ];
   const next = advanceGameState(
     initial,
@@ -313,9 +313,9 @@ test('advanceGameState pulses when new slack messages arrive from the server', (
     1,
     1_000,
     initial.monitors.left.alerts,
-    serverSlack
+    serverChat
   );
-  assert.equal(next.monitors.right.slackMessages.length, 1);
+  assert.equal(next.monitors.right.chatMessages.length, 1);
   assert.equal(next.notifications.pulseMs, 2400);
 });
 

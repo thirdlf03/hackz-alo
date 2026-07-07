@@ -24,9 +24,9 @@ const {
   rightPanelPrimaryTabAt,
   runbookTabRegion,
   runbookTabAt,
-  slackComposeAt,
-  slackComposeRegion,
-  slackSendButtonRegion,
+  chatComposeAt,
+  chatComposeRegion,
+  chatSendButtonRegion,
 } = await tsImport(
   '../../apps/web/src/game/render/canvasLayout.ts',
   import.meta.url
@@ -55,11 +55,11 @@ test('rightPanelLayout returns stable vertical regions', () => {
     secondaryTop: 48,
     contentTop: 116,
     composeTop: 480,
-    slackMessagesTop: 68,
-    slackMessagesBottom: 468,
+    chatMessagesTop: 68,
+    chatMessagesBottom: 468,
   });
   assert.equal(rightPanelLayout('runbook', false).contentTop, 68);
-  assert.equal(rightPanelLayout('slack', true).contentTop, 68);
+  assert.equal(rightPanelLayout('chat', true).contentTop, 68);
 });
 
 test('monitor layout helpers derive content and overlay regions', () => {
@@ -115,13 +115,13 @@ test('static canvas regions stay bounded and hidden regions stay offscreen', () 
     );
   }
   assert.equal(containsCanvasPoint(notificationBellRegion, 0, 0), false);
-  assert.deepEqual(slackComposeRegion('runbook'), {
+  assert.deepEqual(chatComposeRegion('runbook'), {
     x: 0,
     y: -1000,
     width: 0,
     height: 0,
   });
-  assert.deepEqual(slackSendButtonRegion('runbook'), {
+  assert.deepEqual(chatSendButtonRegion('runbook'), {
     x: 0,
     y: -1000,
     width: 0,
@@ -147,7 +147,7 @@ test('centerToolAt resolves terminal and editor tabs by canvas coordinates', () 
 
 test('rightPanelPrimaryTabAt respects normal and expanded monitor coordinates', () => {
   assert.equal(rightPanelPrimaryTabAt(1340, 224, null), 'runbook');
-  assert.equal(rightPanelPrimaryTabAt(1450, 224, null), 'slack');
+  assert.equal(rightPanelPrimaryTabAt(1450, 224, null), 'chat');
   assert.equal(rightPanelPrimaryTabAt(1340, 224, 'terminal'), null);
   assert.equal(rightPanelPrimaryTabAt(310, 120, 'runbook'), 'runbook');
 });
@@ -156,26 +156,23 @@ test('runbookTabAt resolves document tabs and ignores non-runbook panels', () =>
   const y = 204 + 48 + 20;
   assert.equal(runbookTabAt(1340, y, 2, ['First', 'Second']), 0);
   assert.equal(runbookTabAt(1485, y, 2, ['First', 'Second']), 1);
-  assert.equal(
-    runbookTabAt(1340, y, 2, ['First', 'Second'], null, 'slack'),
-    -1
-  );
+  assert.equal(runbookTabAt(1340, y, 2, ['First', 'Second'], null, 'chat'), -1);
   assert.equal(runbookTabAt(1340, y, 0, []), -1);
 });
 
-test('slackComposeAt distinguishes compose box from send button', () => {
-  const compose = slackComposeRegion('slack');
+test('chatComposeAt distinguishes compose box from send button', () => {
+  const compose = chatComposeRegion('chat');
   assert.equal(
-    slackComposeAt(compose.x + 20, compose.y + compose.height / 2, 'slack'),
+    chatComposeAt(compose.x + 20, compose.y + compose.height / 2, 'chat'),
     'compose'
   );
 
-  const send = slackSendButtonRegion('slack');
+  const send = chatSendButtonRegion('chat');
   assert.equal(
-    slackComposeAt(send.x + send.width / 2, send.y + send.height / 2, 'slack'),
+    chatComposeAt(send.x + send.width / 2, send.y + send.height / 2, 'chat'),
     'send'
   );
-  assert.equal(slackComposeAt(compose.x + 20, compose.y + 20, 'runbook'), null);
+  assert.equal(chatComposeAt(compose.x + 20, compose.y + 20, 'runbook'), null);
 });
 
 test('monitorMagnifyAt resolves monitor magnify affordances', () => {
@@ -191,23 +188,23 @@ test('monitorMagnifyAt resolves monitor magnify affordances', () => {
   assert.equal(monitorMagnifyAt(0, 0), null);
 });
 
-test('centerToolTabRegions and slackComposeAt cover expanded hit targets', () => {
+test('centerToolTabRegions and chatComposeAt cover expanded hit targets', () => {
   const tabs = centerToolTabRegions();
   assert.equal(tabs.length, 2);
   assert.equal(tabs[0]?.id, 'terminal');
 
-  const composePoint = slackComposeRegion('slack');
+  const composePoint = chatComposeRegion('chat');
   assert.equal(
-    slackComposeAt(composePoint.x + 10, composePoint.y + 10, 'slack'),
+    chatComposeAt(composePoint.x + 10, composePoint.y + 10, 'chat'),
     'compose'
   );
 
-  const expandedCompose = slackComposeRegion('slack', 'runbook');
+  const expandedCompose = chatComposeRegion('chat', 'runbook');
   assert.equal(
-    slackComposeAt(
+    chatComposeAt(
       expandedCompose.x + 10,
       expandedCompose.y + 10,
-      'slack',
+      'chat',
       'runbook'
     ),
     'compose'
@@ -222,9 +219,9 @@ test('expanded monitor helpers scale metrics and runbook regions', () => {
   const expandedEditor = centerEditorOverlayRegion(true);
   assert.equal(expandedEditor.x, 282 + 156 * (700 / 540));
 
-  const expandedCompose = slackComposeRegion('slack', 'runbook');
+  const expandedCompose = chatComposeRegion('chat', 'runbook');
   assert.equal(expandedCompose.width > 0, true);
-  const expandedSend = slackSendButtonRegion('slack', 'runbook');
+  const expandedSend = chatSendButtonRegion('chat', 'runbook');
   assert.equal(expandedSend.width > 0, true);
 
   assert.equal(

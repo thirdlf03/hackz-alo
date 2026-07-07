@@ -30,7 +30,7 @@ const scenario = {
     {type: 'http_status', url: 'http://localhost:8080/health', status: 200},
   ],
   runbooks: [{id: 'rb', title: 'RB', body: 'body'}],
-  slackMessages: [],
+  chatMessages: [],
   exercise: {
     injects: [{id: 'inject-1', title: 'Customer', body: 'ETA?'}],
   },

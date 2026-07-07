@@ -61,7 +61,7 @@ export function replayEventSummary(event: ReplayEvent): string {
     return `command: ${event.payload.command}`;
   }
   if (event.type === 'player_note' && typeof event.payload.body === 'string') {
-    return `Slack報告: ${event.payload.body}`;
+    return `チャット報告: ${event.payload.body}`;
   }
   if (
     event.type === 'recovery_check' &&
@@ -102,6 +102,8 @@ export function replayEventSummary(event: ReplayEvent): string {
 function panelOpenSummary(panel: string) {
   if (panel === 'editor') return 'Editor を開いた';
   if (panel === 'notifications') return '通知パネルを開いた';
-  if (panel === 'slack_compose') return 'Slack 返信を開始';
+  if (panel === 'chat_compose' || panel === 'slack_compose') {
+    return 'チャット返信を開始';
+  }
   return `パネル: ${panel}`;
 }

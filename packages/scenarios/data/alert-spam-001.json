@@ -5,7 +5,7 @@
   "difficulty": "intermediate",
   "timeLimitMinutes": 12,
   "service": {
-    "name": "うん用 API",
+    "name": "やまびこ API",
     "healthUrl": "http://localhost:8080/health"
   },
   "briefing": [
@@ -16,7 +16,7 @@
   "startup": [
     {
       "id": "api",
-      "command": "PORT=8080 node /workspace/services/unyoh-api/server.mjs",
+      "command": "PORT=8080 node /workspace/services/yamabiko-api/server.mjs",
       "waitForPort": 8080
     },
     {
@@ -55,7 +55,7 @@
       "id": "noise-2",
       "atMs": 52000,
       "severity": "critical",
-      "message": "Red Bull level below wing threshold",
+      "message": "Energy drink stock critically low",
       "source": "monitor"
     },
     {
@@ -113,10 +113,10 @@
     {
       "id": "runbook.alert-spam",
       "title": "アラートスパム対応",
-      "body": "1. 左の監視で HTTP 5xx を優先\\n2. cat /workspace/run/alert.spam.json\\n3. rm /workspace/run/alert.spam.json\\n4. tail /workspace/logs/app.log で本物の障害を探す\\n5. 必要なら unctl restart api"
+      "body": "1. 左の監視で HTTP 5xx を優先\\n2. cat /workspace/run/alert.spam.json\\n3. rm /workspace/run/alert.spam.json\\n4. tail /workspace/logs/app.log で本物の障害を探す\\n5. 必要なら yamactl restart api"
     }
   ],
-  "slackMessages": [
+  "chatMessages": [
     {
       "id": "pager-duty",
       "atMs": 70000,

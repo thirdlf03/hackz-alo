@@ -1,9 +1,9 @@
 import {useEffect, useRef} from 'preact/hooks';
 import type {GameRenderState, ScenarioDefinition} from '@incident/shared';
 import {
-  deactivateSlackCompose,
+  deactivateChatCompose,
   focusCommandInput,
-  setSlackDraft,
+  setChatDraft,
 } from '../game/state/gameState.js';
 import {
   defaultTerminalDimensions,
@@ -44,7 +44,7 @@ export function useTerminalBridge(options: {
   eventEmitterRef: MutableRef<ReplayEventEmitter | null>;
   patchGameStateRef: PatchGameState;
   currentGameTimeMs: () => number;
-  submitSlackMessage: () => void;
+  submitChatMessage: () => void;
 }) {
   const terminalRef = useRef<TerminalSession | null>(null);
 
@@ -172,21 +172,21 @@ export function useTerminalBridge(options: {
     if (options.gameStateRef.current?.monitors.center.activeTool === 'editor') {
       return;
     }
-    if (options.gameStateRef.current?.slackCompose.active) {
+    if (options.gameStateRef.current?.chatCompose.active) {
       if (event.key === 'Escape') {
         event.preventDefault();
-        options.patchGameStateRef((current) => deactivateSlackCompose(current));
+        options.patchGameStateRef((current) => deactivateChatCompose(current));
         return;
       }
       if (event.key === 'Enter') {
         event.preventDefault();
-        options.submitSlackMessage();
+        options.submitChatMessage();
         return;
       }
       if (event.key === 'Backspace') {
         event.preventDefault();
         options.patchGameStateRef((current) =>
-          setSlackDraft(current, current.slackCompose.draft.slice(0, -1))
+          setChatDraft(current, current.chatCompose.draft.slice(0, -1))
         );
         return;
       }
@@ -198,7 +198,7 @@ export function useTerminalBridge(options: {
       ) {
         event.preventDefault();
         options.patchGameStateRef((current) =>
-          setSlackDraft(current, `${current.slackCompose.draft}${event.key}`)
+          setChatDraft(current, `${current.chatCompose.draft}${event.key}`)
         );
       }
       return;

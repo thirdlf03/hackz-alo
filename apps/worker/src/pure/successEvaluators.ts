@@ -45,8 +45,8 @@ export const successConditionBuilders: Record<
     return `node -e ${shellArg(script)}`;
   },
 
-  unlang_batch_ok: () =>
-    'node /workspace/bin/unlang.mjs run /workspace/services/batch/sales.un',
+  kodama_batch_ok: () =>
+    'node /workspace/bin/kodama.mjs run /workspace/services/batch/sales.kdm',
 };
 
 export function buildSuccessCheckCommand(condition: SuccessCondition) {

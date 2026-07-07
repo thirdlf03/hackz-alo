@@ -5,18 +5,18 @@
   "difficulty": "beginner",
   "timeLimitMinutes": 5,
   "service": {
-    "name": "うん用 API",
+    "name": "やまびこ API",
     "healthUrl": "http://localhost:8080/health"
   },
   "briefing": [
-    "うん用 API はログを /workspace/logs に出す。",
+    "やまびこ API はログを /workspace/logs に出す。",
     "ディスク使用率が高いと API は 500 を返し始める。",
     "不要な debug.log を退避または削除してから復旧確認する。"
   ],
   "startup": [
     {
       "id": "api",
-      "command": "PORT=8080 node /workspace/services/unyoh-api/server.mjs",
+      "command": "PORT=8080 node /workspace/services/yamabiko-api/server.mjs",
       "waitForPort": 8080
     },
     {
@@ -75,7 +75,7 @@
       "body": "1. df -h で全体の使用率を見る\\n2. du -sh /workspace/logs/* で肥大化したファイルを特定する\\n3. tail で消してよいログか確認する\\n4. 不要ログを削除または圧縮する\\n5. curl localhost:8080/health で復旧確認する"
     }
   ],
-  "slackMessages": [
+  "chatMessages": [
     {
       "id": "runbook-old",
       "atMs": 105000,

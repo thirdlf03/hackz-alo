@@ -12,7 +12,7 @@ import {
 import {
   advanceGameState,
   createInitialGameState,
-  submitPlayerSlackMessage,
+  submitPlayerChatMessage,
 } from '../game/state/gameState.js';
 import type {ReplayEventEmitter} from '../game/events/emitReplayEvent.js';
 import {createEmptyTerminalMirror} from '../game/terminal/mirror.js';
@@ -268,7 +268,7 @@ export function useSessionRuntime(options: {
       clock.gameSpeed,
       delta,
       clock.alerts,
-      clock.slackMessages
+      clock.chatMessages
     );
     const prevAlertCount = previous.monitors.left.alerts.length;
     if (next.monitors.left.alerts.length > prevAlertCount) {
@@ -441,20 +441,20 @@ export function useSessionRuntime(options: {
     }
   }
 
-  function submitSlackMessage() {
+  function submitChatMessage() {
     const state = gameStateRef.current;
     const replayId = sessionRef.current?.replayId;
     const emitter = eventEmitterRef.current;
     if (!state || !replayId || !emitter) return;
-    const body = state.slackCompose.draft.trim();
+    const body = state.chatCompose.draft.trim();
     if (!body) return;
     const at = currentGameTimeMs();
-    patchGameStateRef((current) => submitPlayerSlackMessage(current, body, at));
+    patchGameStateRef((current) => submitPlayerChatMessage(current, body, at));
     void emitter.emit({
       replayId,
       type: 'player_note',
       at,
-      payload: {body, channel: 'slack'},
+      payload: {body, channel: 'chat'},
     });
   }
 
@@ -496,7 +496,7 @@ export function useSessionRuntime(options: {
     createSessionForScenario,
     startPlay,
     endSession,
-    submitSlackMessage,
+    submitChatMessage,
   };
 }
 

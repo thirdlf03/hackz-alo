@@ -2,7 +2,7 @@ import type {
   AlertDefinition,
   GameRenderState,
   ScenarioDefinition,
-  SlackMessageDefinition,
+  ChatMessageDefinition,
 } from '@incident/shared';
 import type {ReplayEventEmitter} from './emitReplayEvent.js';
 
@@ -30,19 +30,19 @@ export async function emitNewAlerts(
   }
 }
 
-export async function emitNewSlackMessages(
+export async function emitNewChatMessages(
   emitter: ReplayEventEmitter,
   replayId: string,
   elapsedMs: number,
-  previous: SlackMessageDefinition[],
-  next: SlackMessageDefinition[]
+  previous: ChatMessageDefinition[],
+  next: ChatMessageDefinition[]
 ) {
   const previousIds = new Set(previous.map((message) => message.id));
   for (const message of next) {
     if (previousIds.has(message.id)) continue;
-    await emitter.emitOnce(`slack:${message.id}`, {
+    await emitter.emitOnce(`chat:${message.id}`, {
       replayId,
-      type: 'slack_message_read',
+      type: 'chat_message_read',
       at: elapsedMs,
       actor: 'system',
       payload: {messageId: message.id, from: message.from},
@@ -59,11 +59,11 @@ export function collectStateTransitions(
   replayId: string
 ) {
   if (!previous || !scenario) return;
-  void emitNewSlackMessages(
+  void emitNewChatMessages(
     emitter,
     replayId,
     elapsedMs,
-    previous.monitors.right.slackMessages,
-    next.monitors.right.slackMessages
+    previous.monitors.right.chatMessages,
+    next.monitors.right.chatMessages
   );
 }

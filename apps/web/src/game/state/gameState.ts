@@ -23,7 +23,7 @@ interface InitialGameStateOptions {
 }
 
 const DEFAULT_EDITOR_FILES: EditorPanelState['files'] = [
-  {path: '/workspace/services/batch/sales.un'},
+  {path: '/workspace/services/batch/sales.kdm'},
   {path: '/workspace/run/deploy.json'},
   {path: '/workspace/run/hosts.override'},
   {path: '/workspace/run/job-queue.jsonl'},
@@ -44,7 +44,7 @@ function defaultEditor(): EditorPanelState {
 
 export {
   computeNarrativeHour,
-  mergedSlackMessages,
+  mergedChatMessages,
   unreadAlertCount,
   unreadNotificationCount,
   visibleRunbooks,
@@ -93,14 +93,14 @@ export function createInitialGameState(
         ...(activeRunbook
           ? {activeRunbook, activeRunbookIndex: 0}
           : {activeRunbookIndex: 0}),
-        slackMessages: [],
+        chatMessages: [],
       },
     },
     navigation: {dismissedStepIds: []},
     notifications: {panelOpen: false, readAlertIds: [], pulseMs: 0},
-    seenSlackIds: [],
-    playerSlackMessages: [],
-    slackCompose: {active: false, draft: ''},
+    seenChatIds: [],
+    playerChatMessages: [],
+    chatCompose: {active: false, draft: ''},
     openedRunbookIds: activeRunbook ? [activeRunbook.id] : [],
     alertFlashMs: 0,
     world: {narrativeHour: 0, expandedMonitor: null},
@@ -128,18 +128,18 @@ export function advanceGameState(
   speed = state.clock.speed,
   deltaMs = 0,
   serverAlerts?: GameRenderState['monitors']['left']['alerts'],
-  serverSlack?: GameRenderState['monitors']['right']['slackMessages']
+  serverChat?: GameRenderState['monitors']['right']['chatMessages']
 ): GameRenderState {
   const alerts =
     serverAlerts ??
     (scenario
       ? scenario.alerts.filter((alert) => alert.atMs <= elapsedMs)
       : state.monitors.left.alerts);
-  const slackMessages =
-    serverSlack ??
+  const chatMessages =
+    serverChat ??
     (scenario
-      ? scenario.slackMessages.filter((message) => message.atMs <= elapsedMs)
-      : state.monitors.right.slackMessages);
+      ? scenario.chatMessages.filter((message) => message.atMs <= elapsedMs)
+      : state.monitors.right.chatMessages);
 
   const prevVisibleRunbooks = scenario
     ? visibleRunbooks(scenario, state.clock.elapsedMs)
@@ -156,15 +156,15 @@ export function advanceGameState(
     state.navigation.dismissedStepIds
   );
   const newAlertArrived = alerts.length > state.monitors.left.alerts.length;
-  const previousSlackIds = new Set([
-    ...state.monitors.right.slackMessages.map((message) => message.id),
-    ...state.playerSlackMessages.map((message) => message.id),
+  const previousChatIds = new Set([
+    ...state.monitors.right.chatMessages.map((message) => message.id),
+    ...state.playerChatMessages.map((message) => message.id),
   ]);
-  const newSlackArrived = slackMessages.some(
-    (message) => !previousSlackIds.has(message.id)
+  const newChatArrived = chatMessages.some(
+    (message) => !previousChatIds.has(message.id)
   );
   const notificationPulseMs =
-    newAlertArrived || newSlackArrived || newRunbookArrived
+    newAlertArrived || newChatArrived || newRunbookArrived
       ? 2400
       : Math.max(0, state.notifications.pulseMs - deltaMs);
 
@@ -204,7 +204,7 @@ export function advanceGameState(
       },
       right: {
         activePanelTab: state.monitors.right.activePanelTab,
-        slackMessages,
+        chatMessages,
         activeRunbookIndex: nextActiveRunbook ? nextActiveRunbookIndex : 0,
         ...(nextActiveRunbook ? {activeRunbook: nextActiveRunbook} : {}),
       },
@@ -296,7 +296,7 @@ export function dismissNavigationStep(
 
 export function setRightPanelTab(
   state: GameRenderState,
-  tab: 'runbook' | 'slack'
+  tab: 'runbook' | 'chat'
 ): GameRenderState {
   return reduceGameState(state, {type: 'set_right_panel_tab', tab});
 }
@@ -333,8 +333,8 @@ export function toggleNotificationPanel(
   return reduceGameState(state, {type: 'toggle_notification_panel'});
 }
 
-export function activateSlackCompose(state: GameRenderState): GameRenderState {
-  return reduceGameState(state, {type: 'activate_slack_compose'});
+export function activateChatCompose(state: GameRenderState): GameRenderState {
+  return reduceGameState(state, {type: 'activate_chat_compose'});
 }
 
 export function focusCommandInput(state: GameRenderState): GameRenderState {
@@ -345,26 +345,24 @@ export function blurCommandInput(state: GameRenderState): GameRenderState {
   return reduceGameState(state, {type: 'blur_command_input'});
 }
 
-export function deactivateSlackCompose(
-  state: GameRenderState
-): GameRenderState {
-  return reduceGameState(state, {type: 'deactivate_slack_compose'});
+export function deactivateChatCompose(state: GameRenderState): GameRenderState {
+  return reduceGameState(state, {type: 'deactivate_chat_compose'});
 }
 
-export function setSlackDraft(
+export function setChatDraft(
   state: GameRenderState,
   draft: string
 ): GameRenderState {
-  return reduceGameState(state, {type: 'set_slack_draft', draft});
+  return reduceGameState(state, {type: 'set_chat_draft', draft});
 }
 
-export function submitPlayerSlackMessage(
+export function submitPlayerChatMessage(
   state: GameRenderState,
   body: string,
   atMs: number
 ): GameRenderState {
   return reduceGameState(state, {
-    type: 'submit_player_slack_message',
+    type: 'submit_player_chat_message',
     body,
     atMs,
   });

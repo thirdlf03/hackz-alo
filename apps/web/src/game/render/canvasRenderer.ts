@@ -48,9 +48,9 @@ export {
   rightPanelPrimaryTabAt,
   runbookTabAt,
   runbookTabRegion,
-  slackComposeAt,
-  slackComposeRegion,
-  slackSendButtonRegion,
+  chatComposeAt,
+  chatComposeRegion,
+  chatSendButtonRegion,
   type MonitorId,
   type RightPanelTab,
 } from './canvasLayout.js';

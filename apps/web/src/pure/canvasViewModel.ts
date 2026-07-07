@@ -3,10 +3,10 @@ import type {
   GameRenderState,
   RunbookDefinition,
   ScenarioDefinition,
-  SlackMessageDefinition,
+  ChatMessageDefinition,
 } from '@incident/shared';
 import {
-  mergedSlackMessages,
+  mergedChatMessages,
   unreadNotificationCount,
   visibleRunbooks,
 } from '../game/state/gameSelectors.js';
@@ -19,18 +19,18 @@ export type NotificationPanelItem =
       unread: boolean;
     }
   | {
-      kind: 'slack';
+      kind: 'chat';
       atMs: number;
-      message: SlackMessageDefinition;
+      message: ChatMessageDefinition;
       unread: boolean;
     };
 
 export interface CanvasViewModel {
   unreadNotificationCount: number;
-  mergedSlackMessages: SlackMessageDefinition[];
+  mergedChatMessages: ChatMessageDefinition[];
   visibleRunbooks: RunbookDefinition[];
-  unreadSlack: boolean;
-  recentSlackMessages: SlackMessageDefinition[];
+  unreadChat: boolean;
+  recentChatMessages: ChatMessageDefinition[];
   notificationPanelItems: NotificationPanelItem[];
 }
 
@@ -38,7 +38,7 @@ export function buildCanvasViewModel(
   state: GameRenderState,
   scenario?: ScenarioDefinition
 ): CanvasViewModel {
-  const slackMessages = mergedSlackMessages(state);
+  const chatMessages = mergedChatMessages(state);
   const runbooks = scenario
     ? visibleRunbooks(scenario, state.clock.elapsedMs)
     : state.monitors.right.activeRunbook
@@ -52,22 +52,22 @@ export function buildCanvasViewModel(
       alert,
       unread: !state.notifications.readAlertIds.includes(alert.id),
     })),
-    ...slackMessages.map((message) => ({
-      kind: 'slack' as const,
+    ...chatMessages.map((message) => ({
+      kind: 'chat' as const,
       atMs: message.atMs,
       message,
-      unread: !state.seenSlackIds.includes(message.id),
+      unread: !state.seenChatIds.includes(message.id),
     })),
   ].toSorted((left, right) => right.atMs - left.atMs);
 
   return {
     unreadNotificationCount: unreadNotificationCount(state),
-    mergedSlackMessages: slackMessages,
+    mergedChatMessages: chatMessages,
     visibleRunbooks: runbooks,
-    unreadSlack: slackMessages.some(
-      (message) => !state.seenSlackIds.includes(message.id)
+    unreadChat: chatMessages.some(
+      (message) => !state.seenChatIds.includes(message.id)
     ),
-    recentSlackMessages: slackMessages.slice(-12),
+    recentChatMessages: chatMessages.slice(-12),
     notificationPanelItems,
   };
 }

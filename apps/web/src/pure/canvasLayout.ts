@@ -16,7 +16,7 @@ const RUNBOOK_CONTENT_GAP = 28;
 
 export const RIGHT_PANEL_PRIMARY_TABS = [
   {id: 'runbook' as const, label: 'Runbook', width: 108},
-  {id: 'slack' as const, label: 'Slack', width: 88},
+  {id: 'chat' as const, label: 'チャット', width: 88},
 ];
 export const RIGHT_PANEL_PRIMARY_TAB_HEIGHT = 40;
 export const RIGHT_PANEL_SECONDARY_TAB_HEIGHT = 40;
@@ -28,7 +28,7 @@ const CENTER_TOOL_TAB_HEIGHT = 34;
 const CENTER_TOOL_TAB_GAP = 8;
 export const METRICS_SCROLL_TOP = 56;
 
-export type RightPanelTab = 'runbook' | 'slack';
+export type RightPanelTab = 'runbook' | 'chat';
 export type MonitorId = 'metrics' | 'terminal' | 'runbook';
 
 export function rightPanelLayout(
@@ -41,7 +41,7 @@ export function rightPanelLayout(
   const runbookContentTop = hasRunbooks
     ? secondaryTop + RIGHT_PANEL_SECONDARY_TAB_HEIGHT + RUNBOOK_CONTENT_GAP
     : primaryTop + RIGHT_PANEL_PRIMARY_TAB_HEIGHT + RUNBOOK_CONTENT_GAP;
-  const slackMessagesTop =
+  const chatMessagesTop =
     primaryTop + RIGHT_PANEL_PRIMARY_TAB_HEIGHT + RUNBOOK_CONTENT_GAP;
   const composeTop =
     monitorContentHeight -
@@ -51,10 +51,10 @@ export function rightPanelLayout(
   return {
     primaryTop,
     secondaryTop,
-    contentTop: activeTab === 'runbook' ? runbookContentTop : slackMessagesTop,
+    contentTop: activeTab === 'runbook' ? runbookContentTop : chatMessagesTop,
     composeTop,
-    slackMessagesTop,
-    slackMessagesBottom: composeTop - 12,
+    chatMessagesTop,
+    chatMessagesBottom: composeTop - 12,
   };
 }
 
@@ -96,7 +96,7 @@ export const monitorLayouts = [
     y: 140,
     width: 540,
     height: 620,
-    title: 'RUNBOOK / SLACK',
+    title: 'RUNBOOK / チャット',
   },
 ] as const;
 
@@ -265,12 +265,12 @@ export const runbookTabRegion = () => {
   };
 };
 
-function slackComposeScreenRegion(
+function chatComposeScreenRegion(
   activePanelTab: RightPanelTab,
   expandedMonitor: MonitorId | null | undefined
 ) {
-  if (activePanelTab !== 'slack') return null;
-  const layout = rightPanelLayout('slack', false);
+  if (activePanelTab !== 'chat') return null;
+  const layout = rightPanelLayout('chat', false);
   const content = runbookContentTransform(expandedMonitor === 'runbook');
   return {
     x: content.x,
@@ -280,22 +280,22 @@ function slackComposeScreenRegion(
   };
 }
 
-export const slackComposeRegion = (
-  activePanelTab: RightPanelTab = 'slack',
+export const chatComposeRegion = (
+  activePanelTab: RightPanelTab = 'chat',
   expandedMonitor: MonitorId | null = null
 ) =>
-  slackComposeScreenRegion(activePanelTab, expandedMonitor) ?? {
+  chatComposeScreenRegion(activePanelTab, expandedMonitor) ?? {
     x: 0,
     y: -1000,
     width: 0,
     height: 0,
   };
 
-export const slackSendButtonRegion = (
-  activePanelTab: RightPanelTab = 'slack',
+export const chatSendButtonRegion = (
+  activePanelTab: RightPanelTab = 'chat',
   expandedMonitor: MonitorId | null = null
 ) => {
-  const compose = slackComposeScreenRegion(activePanelTab, expandedMonitor);
+  const compose = chatComposeScreenRegion(activePanelTab, expandedMonitor);
   if (!compose) return {x: 0, y: -1000, width: 0, height: 0};
   return {
     x: compose.x + (404 * compose.width) / 470,
@@ -312,18 +312,18 @@ export function monitorMagnifyAt(x: number, y: number): MonitorId | null {
   return null;
 }
 
-export function slackComposeAt(
+export function chatComposeAt(
   x: number,
   y: number,
-  activePanelTab: RightPanelTab = 'slack',
+  activePanelTab: RightPanelTab = 'chat',
   expandedMonitor: MonitorId | null = null
 ) {
-  const composeRegion = slackComposeScreenRegion(
+  const composeRegion = chatComposeScreenRegion(
     activePanelTab,
     expandedMonitor
   );
   if (!composeRegion || !containsCanvasPoint(composeRegion, x, y)) return null;
-  const sendRegion = slackSendButtonRegion(activePanelTab, expandedMonitor);
+  const sendRegion = chatSendButtonRegion(activePanelTab, expandedMonitor);
   if (containsCanvasPoint(sendRegion, x, y)) return 'send' as const;
   return 'compose' as const;
 }

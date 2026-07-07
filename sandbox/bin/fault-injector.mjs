@@ -9,7 +9,7 @@ const execFileAsync = promisify(execFile);
 
 const DEFAULT_WORKSPACE = process.env.WORKSPACE_DIR ?? '/workspace';
 const USAGE =
-  'usage: fault-injector.mjs process_stop|process_restore|disk_full|queue_backlog|unlang_batch_failure|janitor_power_pull|cable_jumprope|keyboard_spill|alert_spam|runbook_gaslight';
+  'usage: fault-injector.mjs process_stop|process_restore|disk_full|queue_backlog|kodama_batch_failure|janitor_power_pull|cable_jumprope|keyboard_spill|alert_spam|runbook_gaslight';
 
 export async function injectFault(fault, args = [], options = {}) {
   const workspace = options.workspace ?? DEFAULT_WORKSPACE;
@@ -68,27 +68,27 @@ export async function injectFault(fault, args = [], options = {}) {
     return `queue_backlog injected (${count})`;
   }
 
-  if (fault === 'unlang_batch_failure') {
+  if (fault === 'kodama_batch_failure') {
     const target = normalizeWorkspacePath(
-      args[0] ?? path.join(workspace, 'services', 'batch', 'sales.un'),
+      args[0] ?? path.join(workspace, 'services', 'batch', 'sales.kdm'),
       workspace
     );
     const jobId = args[1] ?? 'sales-nightly';
     const specInComments = args[2] === 'spec-in-comments';
     await mkdir(path.dirname(target), {recursive: true});
     const brokenSource = specInComments
-      ? 'うんちく 売上集計バッチ\nうんちく うんわり=割り算。右辺がうんなし(0)だとエラー\nうんちく うんなし=0 / うんあり=1。エラーは「うんともすんとも」のみ\nうん x = 100\nうん y = うんなし\nうん z = x うんわり y\nうん！ z\n'
-      : 'うんちく 売上集計バッチ\nうん x = 100\nうん y = うんなし\nうん z = x うんわり y\nうん！ z\n';
+      ? 'やまびこ帳 売上集計バッチ\nやまびこ帳 わる=割り算。右辺がしずか(0)だとエラー\nやまびこ帳 しずか=0 / こだま=1。エラーは「こだまが返ってきません」のみ\nよぶ x = 100\nよぶ y = しずか\nよぶ z = x わる y\nかえす z\n'
+      : 'やまびこ帳 売上集計バッチ\nよぶ x = 100\nよぶ y = しずか\nよぶ z = x わる y\nかえす z\n';
     await writeFile(target, brokenSource);
     await appendFile(
       path.join(workspace, 'logs', 'batch.log'),
-      `${jobId}: うんともすんとも\n`
+      `${jobId}: こだまが返ってきません\n`
     );
     await appendFile(
       path.join(workspace, 'run', 'job-queue.jsonl'),
       `${JSON.stringify({id: jobId, status: 'failed'})}\n`
     );
-    return 'unlang_batch_failure injected';
+    return 'kodama_batch_failure injected';
   }
 
   if (fault === 'bad_deploy') {
@@ -240,7 +240,7 @@ export async function injectFault(fault, args = [], options = {}) {
       message:
         index % 2 === 0
           ? 'CPU fan is dancing'
-          : 'Red Bull level below wing threshold',
+          : 'Energy drink stock critically low',
     }));
     await writeFile(
       path.join(workspace, 'run', 'alert.spam.json'),
@@ -277,7 +277,7 @@ export async function injectFault(fault, args = [], options = {}) {
 
 async function stopApiProcess() {
   try {
-    await execFileAsync('pkill', ['-f', 'unyoh-api/server.mjs']);
+    await execFileAsync('pkill', ['-f', 'yamabiko-api/server.mjs']);
   } catch (error) {
     if (
       error &&

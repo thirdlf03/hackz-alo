@@ -8,7 +8,7 @@ const difficulties = new Set(['beginner', 'intermediate', 'advanced']);
 const triggerTypes = new Set([
   'process_stop',
   'disk_full',
-  'unlang_batch_failure',
+  'kodama_batch_failure',
   'queue_backlog',
   'bad_deploy',
   'db_pool_exhaust',
@@ -27,7 +27,7 @@ const navigationPanels = new Set([
   'terminal',
   'editor',
   'runbook',
-  'slack',
+  'chat',
 ]);
 const alertSeverities = new Set(['info', 'warning', 'critical']);
 const alertSources = new Set(['scenario', 'monitor']);
@@ -45,7 +45,7 @@ const successTypes = new Set([
   'process_running',
   'marker_absent',
   'log_absent',
-  'unlang_batch_ok',
+  'kodama_batch_ok',
 ]);
 const idPattern = /^[a-zA-Z0-9._-]+$/;
 
@@ -162,14 +162,14 @@ export function validateScenarioDefinition(
   });
   requireNonEmptyArray(value, 'runbooks', errors);
 
-  const slackMessageIds = new Set<string>();
-  validateArray(value, 'slackMessages', errors, (item, path) => {
+  const chatMessageIds = new Set<string>();
+  validateArray(value, 'chatMessages', errors, (item, path) => {
     if (!isObject(item)) {
       errors.push(`${path} must be an object`);
       return;
     }
     requireId(item, 'id', errors, path);
-    rememberUnique(slackMessageIds, item.id, `${path}.id`, errors);
+    rememberUnique(chatMessageIds, item.id, `${path}.id`, errors);
     requireNonNegativeInteger(item, 'atMs', errors, path);
     requireString(item, 'from', errors, path);
     requireString(item, 'body', errors, path);
@@ -191,7 +191,7 @@ export function validateScenarioDefinition(
         (typeof item.panel !== 'string' || !navigationPanels.has(item.panel))
       ) {
         errors.push(
-          `${path}.panel must be metrics, terminal, editor, runbook, or slack`
+          `${path}.panel must be metrics, terminal, editor, runbook, or chat`
         );
       }
       if (
@@ -459,7 +459,7 @@ function validateTriggerParams(
   } else if (trigger.type === 'disk_full') {
     requireAbsolutePath(trigger.params, 'path', errors, `${path}.params`);
     requirePositiveInteger(trigger.params, 'bytes', errors, `${path}.params`);
-  } else if (trigger.type === 'unlang_batch_failure') {
+  } else if (trigger.type === 'kodama_batch_failure') {
     requireString(trigger.params, 'jobId', errors, `${path}.params`);
     requireAbsolutePath(trigger.params, 'path', errors, `${path}.params`);
     if (
@@ -540,7 +540,7 @@ function validateSuccessCondition(
   } else if (condition.type === 'log_absent') {
     requireAbsolutePath(condition, 'path', errors, path);
     requireString(condition, 'pattern', errors, path);
-  } else if (condition.type === 'unlang_batch_ok') {
+  } else if (condition.type === 'kodama_batch_ok') {
     requireString(condition, 'jobId', errors, path);
   }
 }
@@ -576,7 +576,7 @@ function validateTimelineBounds(
   for (const [key, label] of [
     ['triggers', 'triggers'],
     ['alerts', 'alerts'],
-    ['slackMessages', 'slackMessages'],
+    ['chatMessages', 'chatMessages'],
     ['navigationSteps', 'navigationSteps'],
   ] as const) {
     const items = value[key];
