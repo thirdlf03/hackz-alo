@@ -611,7 +611,7 @@ service:
   health_url: 'http://localhost:3000/health'
 
 sandbox:
-  image: 'unyoh-mvp:2026-06-20'  # やまびこ MVP イメージ（現行実装の識別子は unyoh-mvp のまま。移行予定）
+  image: 'unyoh-mvp:2026-06-20' # やまびこ MVP イメージ（現行実装の識別子は unyoh-mvp のまま。移行予定）
   startup:
     - id: api
       command: 'node /workspace/services/unyoh-api/server.js'
