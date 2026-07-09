@@ -50,6 +50,9 @@ export interface SessionRuntimeBindings {
   scenario: ScenarioDefinition | undefined;
   gameState: GameRenderState | undefined;
   gameSpeed: number;
+  exerciseSnapshot: ExerciseSnapshot | undefined;
+  isStarting: boolean;
+  participantId: string;
   refs: SessionRuntimeRefs;
   recordingRef: {current: SessionRecordingBridge | undefined};
   terminalBridgeRef: {current: TerminalBridgeRef | undefined};
@@ -59,6 +62,7 @@ export interface SessionRuntimeBindings {
       | undefined
       | ((current: GameRenderState | undefined) => GameRenderState | undefined)
   ) => void;
+  setScreen: (screen: Screen) => void;
   setTimeline: (
     value:
       | Array<{at: number; label: string}>

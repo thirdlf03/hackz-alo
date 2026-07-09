@@ -11,7 +11,7 @@ import {
 import {getGameTimeMs, type StoredSession} from './sessionState.js';
 
 export interface PendingTimer {
-  kind: 'trigger' | 'alert' | 'chat';
+  kind: 'trigger' | 'alert' | 'chat' | 'inject';
   id: string;
   handle: ReturnType<typeof setTimeout>;
 }
@@ -38,6 +38,7 @@ export interface SessionTimelineDependencies {
   snapshotFor(session: StoredSession): unknown;
   broadcastSse(event: string, data: unknown): void;
   onPagerEvent?(session: StoredSession, event: PagerTimelineEvent): void;
+  fireScheduledInject?(injectId: string): Promise<void>;
 }
 
 export class SessionTimeline {
@@ -50,13 +51,21 @@ export class SessionTimeline {
     this.pendingTimers = [];
   }
 
-  reschedule(session: StoredSession, scenario: ScenarioDefinition) {
+  reschedule(
+    session: StoredSession,
+    scenario: ScenarioDefinition,
+    firedInjectIds: readonly string[] = []
+  ) {
     this.clear();
     if (session.status !== 'running') return;
-    this.schedule(session, scenario);
+    this.schedule(session, scenario, firedInjectIds);
   }
 
-  schedule(session: StoredSession, scenario: ScenarioDefinition) {
+  schedule(
+    session: StoredSession,
+    scenario: ScenarioDefinition,
+    firedInjectIds: readonly string[] = []
+  ) {
     for (const trigger of scenario.triggers) {
       if (session.triggeredIds.includes(trigger.id)) continue;
       this.scheduleAtGameTime(
@@ -208,6 +217,16 @@ export class SessionTimeline {
           this.dependencies.onPagerEvent?.(next, {kind: 'chat', chat: message});
         }
       );
+    }
+
+    for (const inject of scenario.exercise?.injects ?? []) {
+      if (typeof inject.atMs !== 'number') continue;
+      if (firedInjectIds.includes(inject.id)) continue;
+      this.scheduleAtGameTime(session, inject.atMs, 'inject', inject.id, async () => {
+        const latest = await this.dependencies.loadSession();
+        if (latest.status !== 'running') return;
+        await this.dependencies.fireScheduledInject?.(inject.id);
+      });
     }
   }
 

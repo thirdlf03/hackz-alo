@@ -80,6 +80,7 @@ export interface ApiClientSurface
       SessionApi,
       | 'prepareSession'
       | 'startSession'
+      | 'getSession'
       | 'deleteSession'
       | 'getSessionClock'
       | 'updateSessionClock'
@@ -100,6 +101,7 @@ export interface ApiClientSurface
       | 'updateParticipantCursor'
       | 'updateParticipantRole'
       | 'setParticipantReady'
+      | 'advanceExercisePhase'
       | 'createTask'
       | 'updateTask'
       | 'fireInject'
@@ -118,6 +120,7 @@ export interface ApiClientSurface
   createSession(input: {
     difficulty?: Difficulty;
     scenarioId?: string;
+    participantId?: string;
   }): Promise<{
     sessionId: string;
     replayId: string;
@@ -131,6 +134,7 @@ export interface ApiClientSurface
   notifySessionTimeout(sessionId: string): void;
   resetEventSequence(replayId?: string): void;
   sessionAccessToken(): string | undefined;
+  setSessionAccessToken(token: string | undefined): void;
   getExerciseState(sessionId: string): Promise<ExerciseSnapshot>;
   joinParticipant(
     sessionId: string,
@@ -158,6 +162,10 @@ export interface ApiClientSurface
     sessionId: string,
     input: {participantId: string; ready: boolean}
   ): Promise<{exercise: ExerciseSnapshot}>;
+  advanceExercisePhase(
+    sessionId: string,
+    input: {participantId: string; phase: 'briefing'}
+  ): Promise<{exercise: ExerciseSnapshot}>;
   createTask(
     sessionId: string,
     input: {
@@ -179,7 +187,12 @@ export interface ApiClientSurface
   fireInject(
     sessionId: string,
     injectId: string,
-    input?: {title?: string; body?: string; actorParticipantId?: string}
+    input?: {
+      title?: string;
+      body?: string;
+      actorParticipantId?: string;
+      participantId?: string;
+    }
   ): Promise<{exercise: ExerciseSnapshot}>;
   appendIncidentLog(
     sessionId: string,
@@ -230,6 +243,7 @@ export class ApiClient {
     bindApiMethods(this, this.sessions, [
       'prepareSession',
       'startSession',
+      'getSession',
       'deleteSession',
       'getSessionClock',
       'updateSessionClock',
@@ -250,6 +264,7 @@ export class ApiClient {
       'updateParticipantCursor',
       'updateParticipantRole',
       'setParticipantReady',
+      'advanceExercisePhase',
       'createTask',
       'updateTask',
       'fireInject',
@@ -266,7 +281,11 @@ export class ApiClient {
     ]);
   }
 
-  async createSession(input: {difficulty?: Difficulty; scenarioId?: string}) {
+  async createSession(input: {
+    difficulty?: Difficulty;
+    scenarioId?: string;
+    participantId?: string;
+  }) {
     const postSession = async (turnstileToken?: string) =>
       this.sessions.createSession({
         ...input,
@@ -319,6 +338,10 @@ export class ApiClient {
 
   sessionAccessToken() {
     return this.http.getWriteToken();
+  }
+
+  setSessionAccessToken(token: string | undefined) {
+    this.http.setWriteToken(token);
   }
 }
 

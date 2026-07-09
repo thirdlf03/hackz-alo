@@ -1,3 +1,4 @@
+import {useState} from 'preact/hooks';
 import type {
   AfterActionReport,
   Difficulty,
@@ -8,6 +9,8 @@ import type {
 } from '@incident/shared';
 import {setCenterTool, updateEditorPanel} from '../game/state/gameState.js';
 import {centerEditorOverlayRegion} from '../game/render/canvasLayout.js';
+import {formatTime} from '../pure/canvasFormat.js';
+import {areParticipantsReadyToStart} from '../pure/participantsReady.js';
 import {ReplayPage} from '../pages/ReplayPage.js';
 import {ResultPage} from '../pages/ResultPage.js';
 import {
@@ -236,6 +239,7 @@ export function ScenarioListScreen(props: {
 export function BriefingScreen(props: {
   scenario: ScenarioDefinition;
   isStarting: boolean;
+  isHost: boolean;
   sandboxReady: boolean;
   recordingConsent: boolean;
   saveRecording: boolean;
@@ -307,20 +311,24 @@ export function BriefingScreen(props: {
           </button>
         </div>
       )}
-      <button
-        type='button'
-        onClick={props.onStartPlay}
-        disabled={
-          props.isStarting || !props.sandboxReady || !props.recordingConsent
-        }
-        aria-describedby='briefing-consent-note'
-      >
-        {props.isStarting
-          ? '開始中…'
-          : props.sandboxReady
-            ? '開始'
-            : '環境準備中…'}
-      </button>
+      {props.isHost ? (
+        <button
+          type='button'
+          onClick={props.onStartPlay}
+          disabled={
+            props.isStarting || !props.sandboxReady || !props.recordingConsent
+          }
+          aria-describedby='briefing-consent-note'
+        >
+          {props.isStarting
+            ? '開始中…'
+            : props.sandboxReady
+              ? '開始'
+              : '環境準備中…'}
+        </button>
+      ) : (
+        <p role='status'>ホストの開始を待っています…</p>
+      )}
     </section>
   );
 }
@@ -345,19 +353,52 @@ export function LobbyScreen(props: {
   participantRole: ParticipantRole;
   exercise: ExerciseSnapshot | undefined;
   sandboxReady: boolean;
+  isHost: boolean;
+  inviteUrl: string | undefined;
   onSetParticipantName: (name: string) => void;
   onSetParticipantRole: (role: ParticipantRole) => void;
   onReady: () => void;
   onContinue: () => void;
 }) {
+  const [inviteCopied, setInviteCopied] = useState(false);
   const participants = props.exercise?.participants ?? [];
   const ready = participants.find(
     (participant) => participant.participantId === props.participantId
   )?.ready;
+  const readyGateSatisfied = areParticipantsReadyToStart(participants);
+  const continueDisabled = !props.sandboxReady || !readyGateSatisfied;
+  const continueLabel = !props.sandboxReady
+    ? '環境準備中…'
+    : !readyGateSatisfied
+      ? '全員の準備完了を待っています'
+      : 'ブリーフィングへ';
+
+  async function copyInviteLink() {
+    if (!props.inviteUrl) return;
+    try {
+      await navigator.clipboard.writeText(props.inviteUrl);
+      setInviteCopied(true);
+    } catch {
+      setInviteCopied(false);
+    }
+  }
+
   return (
     <section class='panel lobby-panel' aria-labelledby='lobby-heading'>
       <p class='eyebrow'>Exercise Room</p>
       <h1 id='lobby-heading'>{props.scenario.title}</h1>
+      <div class='lobby-invite'>
+        <button
+          type='button'
+          onClick={() => {
+            void copyInviteLink();
+          }}
+          disabled={!props.inviteUrl}
+        >
+          招待リンクをコピー
+        </button>
+        {inviteCopied && <span role='status'>コピーしました</span>}
+      </div>
       <div class='lobby-controls'>
         <label>
           表示名
@@ -404,13 +445,17 @@ export function LobbyScreen(props: {
         <button type='button' onClick={props.onReady} disabled={ready}>
           {ready ? 'Ready' : 'Ready'}
         </button>
-        <button
-          type='button'
-          onClick={props.onContinue}
-          disabled={!props.sandboxReady}
-        >
-          {props.sandboxReady ? 'ブリーフィングへ' : '環境準備中…'}
-        </button>
+        {props.isHost ? (
+          <button
+            type='button'
+            onClick={props.onContinue}
+            disabled={continueDisabled}
+          >
+            {continueLabel}
+          </button>
+        ) : (
+          <p role='status'>ホストの開始を待っています</p>
+        )}
       </div>
     </section>
   );
@@ -578,6 +623,21 @@ function TeamExercisePanel(props: {
           {(props.exercise?.injects ?? []).map((inject) => (
             <li key={inject.id}>
               <strong>{inject.title}</strong>
+              {(Boolean(inject.roleHint) ||
+                (inject.atMs !== undefined && !inject.fired)) && (
+                <span class='inject-badges'>
+                  {inject.roleHint && (
+                    <span class='inject-role-badge'>
+                      {participantRoleLabels[inject.roleHint]}
+                    </span>
+                  )}
+                  {inject.atMs !== undefined && !inject.fired && (
+                    <span class='inject-auto-badge'>
+                      {formatTime(inject.atMs)} に自動発火予定
+                    </span>
+                  )}
+                </span>
+              )}
               <span>{inject.fired ? 'fired' : inject.body}</span>
               {!inject.fired && (
                 <button

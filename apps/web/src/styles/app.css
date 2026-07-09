@@ -1084,6 +1084,19 @@ canvas:focus-visible {
   width: min(100% - 32px, 920px);
 }
 
+.lobby-invite {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: 14px 0;
+}
+
+.lobby-invite span[role='status'] {
+  color: var(--text-accent);
+  font-size: var(--font-caption);
+}
+
 .lobby-controls,
 .lobby-actions {
   display: flex;
@@ -1190,6 +1203,32 @@ canvas:focus-visible {
 .team-list strong {
   color: var(--text-primary);
   font-size: 14px;
+}
+
+.inject-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.inject-role-badge,
+.inject-auto-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.inject-role-badge {
+  background: var(--surface-tutorial-badge);
+  color: var(--text-tutorial-badge);
+}
+
+.inject-auto-badge {
+  background: var(--surface-success-badge);
+  color: var(--text-success-badge);
 }
 
 .hotwash-form {

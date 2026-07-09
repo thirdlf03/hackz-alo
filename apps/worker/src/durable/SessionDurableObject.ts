@@ -13,9 +13,11 @@ import {readJsonObjectBody, RequestBodyError} from '../http/body.js';
 import {
   errorResponse,
   HttpError,
+  hostRequiredResponse,
   jsonErr,
   jsonOk,
   messageFrom,
+  participantsNotReadyResponse,
 } from '../http/response.js';
 import {logStructured} from '../http/requestLog.js';
 import type {Bindings} from '../types.js';
@@ -50,7 +52,11 @@ import {
   writeSessionFileContent,
   type MetricsCache,
 } from './sessionResourceHandlers.js';
-import {setExercisePhase} from '../pure/exerciseRoom.js';
+import {
+  areParticipantsReadyToStart,
+  canPerformRoleGatedAction,
+  setExercisePhase,
+} from '../pure/exerciseRoom.js';
 import {
   requireScenario,
   SessionExerciseHub,
@@ -137,6 +143,10 @@ export class SessionDurableObject implements DurableObject {
       onPagerEvent: (session, event) => {
         this.handlePagerEvent(session, event);
       },
+      fireScheduledInject: async (injectId) => {
+        const session = await this.requireSession();
+        await this.exercise.fireScheduledInject(session, injectId);
+      },
     });
   }
 
@@ -203,6 +213,7 @@ export class SessionDurableObject implements DurableObject {
             taskCreate: (req) => this.exercise.taskCreate(req),
             taskUpdate: (req) => this.exercise.taskUpdate(req),
             injectFire: (req) => this.exercise.injectFire(req),
+            exercisePhase: (req) => this.exercise.phaseAdvance(req),
             incidentLog: (req) => this.exercise.incidentLog(req),
             hotwash: (req) => this.exercise.hotwash(req),
             aar: () => this.exercise.aar(),
@@ -225,13 +236,19 @@ export class SessionDurableObject implements DurableObject {
   }
 
   private async bootstrap(request: Request) {
-    const session = await this.loadOrCreate(await readBootstrap(request));
+    const body = (await readBootstrap(request)) as Partial<SessionBootstrap> & {
+      participantId?: string;
+    };
+    const session = await this.loadOrCreate(body);
     await this.state.storage.put('session', session);
     await persistSession(this.env, session);
     if (session.status === 'briefing') {
       await this.state.storage.setAlarm(Date.now() + BRIEFING_TIMEOUT_MS);
     }
-    await this.exercise.loadOrCreate(session);
+    await this.exercise.loadOrCreate(
+      session,
+      typeof body.participantId === 'string' ? body.participantId : undefined
+    );
     return jsonOk({session: this.snapshotFor(session)});
   }
 
@@ -255,6 +272,7 @@ export class SessionDurableObject implements DurableObject {
   private async start(request: Request) {
     const body = (await readBootstrap(request)) as Partial<SessionBootstrap> & {
       originUrl?: string;
+      participantId?: string;
     };
     const session = await this.loadOrCreate(body);
     if (session.status === 'running') {
@@ -266,6 +284,17 @@ export class SessionDurableObject implements DurableObject {
         'invalid_state',
         `session is already ${session.status}`
       );
+    }
+
+    const room = await this.exercise.loadOrCreate(session);
+    const participantId =
+      typeof body.participantId === 'string' ? body.participantId : undefined;
+    const hostDecision = canPerformRoleGatedAction(room, participantId);
+    if (!hostDecision.allowed) {
+      return hostRequiredResponse();
+    }
+    if (!areParticipantsReadyToStart(room)) {
+      return participantsNotReadyResponse();
     }
 
     const scenario = requireScenario(session.scenarioId);
@@ -304,12 +333,16 @@ export class SessionDurableObject implements DurableObject {
       scenarioId: scenario.id,
       startup,
     });
-    await this.exercise.save(
+    const runningExerciseSnapshot = await this.exercise.save(
       running,
-      setExercisePhase(await this.exercise.loadOrCreate(running), 'running')
+      setExercisePhase(room, 'running')
     );
+    this.sseHub.broadcast('exercise_state', runningExerciseSnapshot);
     await this.touchClientActivity();
-    this.timeline.schedule(running, scenario);
+    const firedInjectIds = room.injects
+      .filter((inject) => inject.fired)
+      .map((inject) => inject.id);
+    this.timeline.schedule(running, scenario, firedInjectIds);
     return jsonOk({session: this.snapshotFor(running), startup});
   }
 
@@ -432,7 +465,11 @@ export class SessionDurableObject implements DurableObject {
     };
     await this.state.storage.put('session', synced);
     const scenario = requireScenario(synced.scenarioId);
-    this.timeline.reschedule(synced, scenario);
+    const room = await this.exercise.loadOrCreate(synced);
+    const firedInjectIds = room.injects
+      .filter((inject) => inject.fired)
+      .map((inject) => inject.id);
+    this.timeline.reschedule(synced, scenario, firedInjectIds);
     await this.touchClientActivity();
     return jsonOk(this.clockPayload(synced));
   }

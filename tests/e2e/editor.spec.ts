@@ -42,7 +42,7 @@ test('editor file open edit save updates sandbox file and replay timeline', asyn
   ).toBe(true);
 
   await clickCenterTool(page, 'editor');
-  const editor = page.getByRole('textbox');
+  const editor = page.getByRole('textbox', {name: /を編集$/});
   await expect(editor).toBeVisible({timeout: 30_000});
 
   let openedPath: string | undefined;

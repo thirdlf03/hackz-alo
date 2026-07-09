@@ -27,9 +27,11 @@ import type {
 import type {FinishMode, Screen, ScenarioSummary} from './AppScreens.js';
 import {
   computeLiveGameTimeMs,
+  describeSessionActionError,
   readReplayIdFromSearch,
   toErrorMessage,
 } from './appUtils.js';
+import {useExercisePhaseSync} from './useExercisePhaseSync.js';
 import {useSessionBootstrap} from './useSessionBootstrap.js';
 import {useSessionClockSync} from './useSessionClockSync.js';
 import {useSessionGameLoop} from './useSessionGameLoop.js';
@@ -53,6 +55,7 @@ export function useSessionRuntime(options: {
   scenario: ScenarioDefinition | undefined;
   gameState: GameRenderState | undefined;
   gameSpeed: number;
+  exerciseSnapshot: ExerciseSnapshot | undefined;
   saveRecording: boolean;
   recordingConsent: boolean;
   isStarting: boolean;
@@ -122,6 +125,7 @@ export function useSessionRuntime(options: {
     scenario,
     gameState,
     gameSpeed,
+    exerciseSnapshot,
     saveRecording,
     recordingConsent,
     isStarting,
@@ -321,10 +325,12 @@ export function useSessionRuntime(options: {
   const applyParticipantCursor = (event: ParticipantCursorEvent) => {
     const current = gameStateRef.current;
     if (!current) return;
-    let found = false;
+    const found = current.room.participants.some(
+      (participant) => participant.participantId === event.participantId
+    );
+    if (!found) return;
     const participants = current.room.participants.map((participant) => {
       if (participant.participantId !== event.participantId) return participant;
-      found = true;
       return {
         ...participant,
         online: true,
@@ -336,7 +342,6 @@ export function useSessionRuntime(options: {
         },
       };
     });
-    if (!found) return;
     const next = {
       ...current,
       room: {
@@ -355,10 +360,14 @@ export function useSessionRuntime(options: {
     scenario,
     gameState,
     gameSpeed,
+    exerciseSnapshot,
+    isStarting,
+    participantId,
     refs,
     recordingRef,
     terminalBridgeRef,
     setGameState,
+    setScreen,
     setTimeline,
     patchGameStateRef,
     currentGameTimeMs,
@@ -378,7 +387,7 @@ export function useSessionRuntime(options: {
     setSandboxReady(false);
     try {
       terminalBridgeRef.current?.destroyTerminal();
-      const created = await api.createSession({scenarioId});
+      const created = await api.createSession({scenarioId, participantId});
       markJourney(INCIDENT_SPAN_NAMES.journeySessionCreated, {
         [INCIDENT_ATTRS.sessionId]: created.sessionId,
         [INCIDENT_ATTRS.replayId]: created.replayId,
@@ -446,7 +455,7 @@ export function useSessionRuntime(options: {
     setHasRecordingConsent(true);
     setIsStarting(true);
     try {
-      await api.startSession(session.sessionId);
+      await api.startSession(session.sessionId, {participantId});
       await terminalBridgeRef.current?.attachTerminalSession(session);
       markJourney(INCIDENT_SPAN_NAMES.journeyTerminalReady, {
         [INCIDENT_ATTRS.sessionId]: session.sessionId,
@@ -476,8 +485,84 @@ export function useSessionRuntime(options: {
         [INCIDENT_ATTRS.scenarioId]: scenario.id,
       });
     } catch (error) {
-      setAppError(toErrorMessage(error));
+      setAppError(describeSessionActionError(error, 'start'));
     } finally {
+      setIsStarting(false);
+    }
+  }
+
+  function advanceToBriefing() {
+    if (!session) return;
+    setScreen('briefing');
+    void api
+      .advanceExercisePhase(session.sessionId, {participantId, phase: 'briefing'})
+      .catch((error: unknown) => {
+        setAppError(describeSessionActionError(error, 'phase'));
+      });
+  }
+
+  async function joinSessionFromInvite(
+    inviteSessionId: string,
+    writeToken: string
+  ) {
+    if (creatingSessionRef.current) return;
+    creatingSessionRef.current = true;
+    setAppError(undefined);
+    setDeepLinkReplayId(undefined);
+    setDeepLinkValidated(true);
+    setIsStarting(true);
+    setSandboxReady(false);
+    try {
+      terminalBridgeRef.current?.destroyTerminal();
+      api.setSessionAccessToken(writeToken);
+      const snapshot = await api.getSession(inviteSessionId);
+      api.resetEventSequence();
+      eventEmitterRef.current?.reset();
+      liveReplayEventIdsRef.current.clear();
+      recordingRef.current?.resetRecordingClock();
+      elapsedMsRef.current = 0;
+      lastTickAtRef.current = 0;
+      finishingRef.current = false;
+      tabBeaconSentRef.current = false;
+      setScenario(snapshot.scenario);
+      setSession({sessionId: snapshot.sessionId, replayId: snapshot.replayId});
+      setTimeline([]);
+      setGameState(
+        createInitialGameState(
+          snapshot.scenario,
+          snapshot.sessionId,
+          snapshot.replayId,
+          createEmptyTerminalMirror(),
+          {
+            sessionStatus: snapshot.status,
+            speed: gameSpeed,
+            localParticipantId: participantId,
+          }
+        )
+      );
+      setScreen('lobby');
+      sandboxPrepareSessionIdRef.current = snapshot.sessionId;
+      void api
+        .prepareSession(snapshot.sessionId)
+        .then(() => {
+          if (sandboxPrepareSessionIdRef.current === snapshot.sessionId) {
+            setSandboxReady(true);
+          }
+        })
+        .catch((error: unknown) => {
+          if (sandboxPrepareSessionIdRef.current !== snapshot.sessionId) return;
+          setSandboxReady(false);
+          setAppError(toErrorMessage(error));
+        });
+    } catch {
+      sandboxPrepareSessionIdRef.current = undefined;
+      api.setSessionAccessToken(undefined);
+      setAppError(
+        '招待リンクからの参加に失敗しました。セッションが見つからないか、リンクが無効です。'
+      );
+      setScreen('select');
+    } finally {
+      creatingSessionRef.current = false;
       setIsStarting(false);
     }
   }
@@ -526,6 +611,7 @@ export function useSessionRuntime(options: {
   useSessionLifecycleGuards(bindings);
   useSessionSse(bindings);
   useSessionGameLoop(bindings);
+  useExercisePhaseSync(bindings);
 
   return {
     gameStateRef,
@@ -535,7 +621,9 @@ export function useSessionRuntime(options: {
     patchGameStateRef,
     currentGameTimeMs,
     createSessionForScenario,
+    joinSessionFromInvite,
     startPlay,
+    advanceToBriefing,
     endSession,
     submitChatMessage,
   };

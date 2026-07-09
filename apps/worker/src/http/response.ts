@@ -45,3 +45,17 @@ function json<T>(payload: ApiResult<T>, init: ResponseInit = {}) {
     headers,
   });
 }
+
+export function jsonResponse(payload: unknown, status: number) {
+  const headers = new Headers();
+  headers.set('content-type', 'application/json');
+  return new Response(JSON.stringify(payload), {status, headers});
+}
+
+export function hostRequiredResponse() {
+  return jsonResponse({error: 'host_required'}, 403);
+}
+
+export function participantsNotReadyResponse() {
+  return jsonResponse({error: 'participants_not_ready'}, 409);
+}

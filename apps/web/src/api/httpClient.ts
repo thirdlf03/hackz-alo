@@ -1,4 +1,4 @@
-import type {ApiResult} from '@incident/shared';
+import type {ApiResult, ParticipantRole} from '@incident/shared';
 import {
   getBrowserPerf,
   INCIDENT_ATTRS,
@@ -8,6 +8,32 @@ import {
 
 const WRITE_TOKEN_STORAGE_KEY = 'incident-write-token';
 const READ_TOKEN_QUERY_PARAM = 'readToken';
+
+/**
+ * Thrown when the server rejects a session control action (start / inject
+ * fire) with a flat `{error, requiredRole?}` response instead of the
+ * standard `ApiResult` wrapper. Lets callers show a specific Japanese
+ * message instead of a generic failure.
+ */
+export class SessionActionError extends Error {
+  constructor(
+    readonly code: string,
+    readonly status: number,
+    readonly requiredRole?: ParticipantRole
+  ) {
+    super(code);
+  }
+}
+
+function isFlatErrorPayload(
+  payload: unknown
+): payload is {error: string; requiredRole?: ParticipantRole} {
+  return (
+    typeof payload === 'object' &&
+    payload !== null &&
+    typeof (payload as {error?: unknown}).error === 'string'
+  );
+}
 
 export class HttpClient {
   private writeToken: string | undefined;
@@ -76,19 +102,31 @@ export class HttpClient {
       );
       span?.setAttribute(INCIDENT_ATTRS.httpStatusCode, response.status);
       if (init.method === 'DELETE' && response.status === 200) {
-        const payload: ApiResult<T> = await response.json();
-        if (!payload.ok) throw new Error(payload.error.message);
+        const payload = await this.parseResult<T>(response);
         span?.end();
-        return payload.data;
+        return payload;
       }
-      const payload: ApiResult<T> = await response.json();
-      if (!payload.ok) throw new Error(payload.error.message);
+      const payload = await this.parseResult<T>(response);
       span?.end();
-      return payload.data;
+      return payload;
     } catch (error) {
       span?.end({status: 'error', error});
       throw error;
     }
+  }
+
+  private async parseResult<T>(response: Response): Promise<T> {
+    const payload: unknown = await response.json();
+    if (!response.ok && isFlatErrorPayload(payload)) {
+      throw new SessionActionError(
+        payload.error,
+        response.status,
+        payload.requiredRole
+      );
+    }
+    const result = payload as ApiResult<T>;
+    if (!result.ok) throw new Error(result.error.message);
+    return result.data;
   }
 
   private withAuth(init: RequestInit = {}, path = '') {

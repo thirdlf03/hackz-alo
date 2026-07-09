@@ -28,6 +28,7 @@ export type SessionRouteName =
   | 'taskCreate'
   | 'taskUpdate'
   | 'injectFire'
+  | 'exercisePhase'
   | 'incidentLog'
   | 'hotwash'
   | 'aar'
@@ -53,6 +54,7 @@ const routeTable: Record<string, Partial<Record<string, SessionRouteName>>> = {
     'task-create': 'taskCreate',
     'task-update': 'taskUpdate',
     'inject-fire': 'injectFire',
+    phase: 'exercisePhase',
     'incident-log': 'incidentLog',
     hotwash: 'hotwash',
   },

@@ -40,6 +40,7 @@ const logKinds = new Set<IncidentLogEntryKind>([
 
 export interface StoredExerciseRoom {
   phase: ExercisePhase;
+  hostParticipantId: string | null;
   participants: ParticipantPresence[];
   tasks: ExerciseTask[];
   injects: ExerciseInject[];
@@ -48,10 +49,12 @@ export interface StoredExerciseRoom {
 }
 
 export function createExerciseRoom(
-  scenario: ScenarioDefinition
+  scenario: ScenarioDefinition,
+  hostParticipantId: string | null = null
 ): StoredExerciseRoom {
   return {
     phase: 'lobby',
+    hostParticipantId,
     participants: [],
     tasks: [],
     injects: (scenario.exercise?.injects ?? []).map((inject) => ({
@@ -59,6 +62,8 @@ export function createExerciseRoom(
       title: inject.title,
       body: inject.body,
       fired: false,
+      ...(inject.atMs !== undefined ? {atMs: inject.atMs} : {}),
+      ...(inject.roleHint !== undefined ? {roleHint: inject.roleHint} : {}),
     })),
     incidentLog: [],
     hotwashNotes: [],
@@ -73,6 +78,7 @@ export function buildExerciseSnapshot(
   return {
     sessionId,
     phase: room.phase,
+    hostParticipantId: room.hostParticipantId,
     participants: room.participants.map((participant) =>
       markOnline(participant, nowIso)
     ),
@@ -105,7 +111,12 @@ export function joinParticipant(
       : {}),
     ...(existing?.cursor ? {cursor: existing.cursor} : {}),
   };
-  return upsertParticipant(room, next);
+  const isFirstParticipant = room.participants.length === 0;
+  const updated = upsertParticipant(room, next);
+  if (updated.hostParticipantId === null && isFirstParticipant) {
+    return {...updated, hostParticipantId: participantId};
+  }
+  return updated;
 }
 
 export function heartbeatParticipant(
@@ -340,6 +351,37 @@ export function setExercisePhase(
   return {...room, phase};
 }
 
+export type HostGateDecision = {allowed: true} | {allowed: false};
+
+/**
+ * Gates host-only actions (start, injectFire, phase transitions). When a
+ * host is recorded for the room, only that participant may act; the
+ * `facilitator` role itself carries no authority here, it is display-only.
+ * When no host is recorded (legacy rooms bootstrapped before host tracking
+ * existed) everyone is allowed, matching prior behavior.
+ */
+export function canPerformRoleGatedAction(
+  room: StoredExerciseRoom,
+  participantId: string | undefined
+): HostGateDecision {
+  if (room.hostParticipantId === null) return {allowed: true};
+  return participantId === room.hostParticipantId
+    ? {allowed: true}
+    : {allowed: false};
+}
+
+export function areParticipantsReadyToStart(
+  room: StoredExerciseRoom,
+  nowIso = new Date().toISOString()
+): boolean {
+  const onlineNonObservers = room.participants.filter(
+    (participant) =>
+      participant.role !== 'observer' && isParticipantOnline(participant, nowIso)
+  );
+  if (onlineNonObservers.length <= 1) return true;
+  return onlineNonObservers.every((participant) => participant.ready);
+}
+
 function upsertParticipant(
   room: StoredExerciseRoom,
   participant: ParticipantPresence
@@ -371,10 +413,17 @@ function updateParticipant(
   return upsertParticipant(room, updater(existing));
 }
 
+export function isParticipantOnline(
+  participant: ParticipantPresence,
+  nowIso = new Date().toISOString()
+): boolean {
+  return Date.parse(nowIso) - Date.parse(participant.lastSeenAt) < 30_000;
+}
+
 function markOnline(participant: ParticipantPresence, nowIso: string) {
   return {
     ...participant,
-    online: Date.parse(nowIso) - Date.parse(participant.lastSeenAt) < 30_000,
+    online: isParticipantOnline(participant, nowIso),
   };
 }
 

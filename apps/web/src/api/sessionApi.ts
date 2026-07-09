@@ -61,6 +61,7 @@ export class SessionApi {
     difficulty?: Difficulty;
     scenarioId?: string;
     turnstileToken?: string;
+    participantId?: string;
   }) {
     return this.http.post<{
       sessionId: string;
@@ -70,10 +71,16 @@ export class SessionApi {
     }>('/api/sessions', input);
   }
 
-  startSession(sessionId: string) {
+  startSession(sessionId: string, input: {participantId?: string} = {}) {
     return this.http.post(
       `/api/sessions/${encodeURIComponent(sessionId)}/start`,
-      {}
+      input
+    );
+  }
+
+  getSession(sessionId: string) {
+    return this.http.get<SessionSnapshotResponse>(
+      `/api/sessions/${encodeURIComponent(sessionId)}`
     );
   }
 
@@ -136,6 +143,7 @@ export class SessionApi {
       'presence',
       'task',
       'inject',
+      'phase',
       'incident_log',
       'hotwash',
     ]) {
@@ -211,6 +219,16 @@ export class SessionApi {
     );
   }
 
+  advanceExercisePhase(
+    sessionId: string,
+    input: {participantId: string; phase: 'briefing'}
+  ) {
+    return this.http.post<{exercise: ExerciseSnapshot}>(
+      `/api/sessions/${encodeURIComponent(sessionId)}/exercise/phase`,
+      input
+    );
+  }
+
   createTask(
     sessionId: string,
     input: {
@@ -244,7 +262,12 @@ export class SessionApi {
   fireInject(
     sessionId: string,
     injectId: string,
-    input: {title?: string; body?: string; actorParticipantId?: string} = {}
+    input: {
+      title?: string;
+      body?: string;
+      actorParticipantId?: string;
+      participantId?: string;
+    } = {}
   ) {
     return this.http.post<{exercise: ExerciseSnapshot}>(
       `/api/sessions/${encodeURIComponent(sessionId)}/injects/${encodeURIComponent(injectId)}/fire`,

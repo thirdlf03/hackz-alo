@@ -34,6 +34,7 @@ const SESSION_CREATE_BODY_MAX_BYTES = 8 * 1024;
 const SESSION_CONTROL_BODY_MAX_BYTES = 8 * 1024;
 const SESSION_FILE_BODY_MAX_BYTES = 1024 * 1024;
 const SESSION_PAGER_BODY_MAX_BYTES = 4096;
+const SESSION_READ_TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
 
 export function registerSessionRoutes(app: WorkerApp) {
   app.post('/api/sessions', async (c) => {
@@ -67,6 +68,7 @@ export function registerSessionRoutes(app: WorkerApp) {
       scenarioId?: string;
       difficulty?: string;
       turnstileToken?: string;
+      participantId?: string;
     };
     if (!(await verifyTurnstileToken(c.env, body.turnstileToken, clientIp))) {
       return c.json(err('forbidden', 'turnstile verification failed'), 403);
@@ -125,6 +127,9 @@ export function registerSessionRoutes(app: WorkerApp) {
         sessionId,
         replayId,
         scenarioId: scenario.id,
+        ...(typeof body.participantId === 'string'
+          ? {participantId: body.participantId}
+          : {}),
       }
     );
     if (!bootstrapResponse.ok) return bootstrapResponse;
@@ -163,16 +168,52 @@ export function registerSessionRoutes(app: WorkerApp) {
     const sessionId = c.req.param('sessionId');
     const record = await getSession(c.env, sessionId);
     if (!record) return c.json(err('not_found', 'session not found'), 404);
+    const parsedBody = await readRouteJsonObject(
+      c,
+      SESSION_CONTROL_BODY_MAX_BYTES,
+      {emptyValue: {}}
+    );
+    if (parsedBody instanceof Response) return parsedBody;
+    const body = parsedBody as {participantId?: string};
     const response = await proxySession(c, 'start', {
       sessionId,
       replayId: record.replay_id,
       scenarioId: record.scenario_id,
       originUrl: new URL(c.req.url).origin,
+      ...(typeof body.participantId === 'string'
+        ? {participantId: body.participantId}
+        : {}),
     });
     if (response.ok) {
       scheduleSessionPagerAlerts(c, sessionId, record.scenario_id);
     }
     return response;
+  });
+  app.post('/api/sessions/:sessionId/read-tokens', async (c) => {
+    const sessionId = c.req.param('sessionId');
+    const denied = await requireSessionWriteAccess(c, sessionId);
+    if (denied) return denied;
+    const record = await getSession(c.env, sessionId);
+    if (!record) return c.json(err('not_found', 'session not found'), 404);
+    const readToken = createWriteToken();
+    const tokenHash = await hashWriteToken(readToken);
+    const now = new Date().toISOString();
+    const expiresAt = new Date(
+      Date.now() + SESSION_READ_TOKEN_TTL_MS
+    ).toISOString();
+    await c.env.DB.prepare(
+      `insert into session_read_tokens (id, session_id, token_hash, scope, expires_at, created_at)
+       values (?, ?, ?, 'read', ?, ?)`
+    )
+      .bind(
+        `rtok_${crypto.randomUUID().replaceAll('-', '')}`,
+        sessionId,
+        tokenHash,
+        expiresAt,
+        now
+      )
+      .run();
+    return c.json(ok({readToken}));
   });
   app.post('/api/sessions/:sessionId/pager', async (c) => {
     const denied = await requireSessionWriteAccess(c, c.req.param('sessionId'));
@@ -376,6 +417,15 @@ export function registerSessionRoutes(app: WorkerApp) {
       ...body,
       injectId: c.req.param('injectId'),
     });
+  });
+  app.post('/api/sessions/:sessionId/exercise/phase', async (c) => {
+    const denied = await requireSessionWriteAccess(c, c.req.param('sessionId'));
+    if (denied) return denied;
+    const body = await readRouteJsonObject(c, SESSION_CONTROL_BODY_MAX_BYTES, {
+      emptyValue: {},
+    });
+    if (body instanceof Response) return body;
+    return proxySession(c, 'phase', body);
   });
   app.post('/api/sessions/:sessionId/incident-log', async (c) => {
     const denied = await requireSessionWriteAccess(c, c.req.param('sessionId'));

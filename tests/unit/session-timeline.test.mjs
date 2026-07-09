@@ -122,6 +122,43 @@ test('SessionTimeline reschedule clears pending timers', async () => {
   assert.deepEqual(harness.session.firedAlertIds, []);
 });
 
+test('SessionTimeline fires a due timed inject exactly once', async () => {
+  const harness = createTimelineHarness(testSession({gameTimeMs: 0}));
+  const scenario = testScenario({
+    exercise: {injects: [{id: 'inject-1', atMs: 0, title: 'x', body: 'y'}]},
+  });
+
+  harness.timeline.schedule(harness.session, scenario, []);
+  await waitForTimers();
+
+  assert.deepEqual(harness.calls.firedInjects, ['inject-1']);
+});
+
+test('SessionTimeline does not fire an inject before its atMs', async () => {
+  const harness = createTimelineHarness(testSession({gameTimeMs: 0}));
+  const scenario = testScenario({
+    exercise: {injects: [{id: 'inject-1', atMs: 60_000, title: 'x', body: 'y'}]},
+  });
+
+  harness.timeline.schedule(harness.session, scenario, []);
+  await waitForTimers();
+
+  assert.deepEqual(harness.calls.firedInjects, []);
+  harness.timeline.clear();
+});
+
+test('SessionTimeline does not reschedule an already-fired inject', async () => {
+  const harness = createTimelineHarness(testSession({gameTimeMs: 0}));
+  const scenario = testScenario({
+    exercise: {injects: [{id: 'inject-1', atMs: 0, title: 'x', body: 'y'}]},
+  });
+
+  harness.timeline.schedule(harness.session, scenario, ['inject-1']);
+  await waitForTimers();
+
+  assert.deepEqual(harness.calls.firedInjects, []);
+});
+
 function createTimelineHarness(initialSession, options = {}) {
   let session = initialSession;
   const calls = {
@@ -129,6 +166,7 @@ function createTimelineHarness(initialSession, options = {}) {
     emitted: [],
     injected: [],
     saved: [],
+    firedInjects: [],
   };
   const timeline = new SessionTimeline({
     loadSession: async () => session,
@@ -139,6 +177,9 @@ function createTimelineHarness(initialSession, options = {}) {
     injectFault: async (sessionId, type, params) => {
       calls.injected.push([sessionId, type, params]);
       if (options.injectError) throw options.injectError;
+    },
+    fireScheduledInject: async (injectId) => {
+      calls.firedInjects.push(injectId);
     },
     emit: async (input, type, at, actor, payload) => {
       calls.emitted.push({type, at, actor, payload});

@@ -51,6 +51,11 @@ export async function openScenarioBriefing(
   const response = await sessionResponse;
   const payload = await response.json();
   expect(payload.ok).toBe(true);
+  const continueToBriefingButton = page.getByRole('button', {
+    name: 'ブリーフィングへ',
+  });
+  await expect(continueToBriefingButton).toBeEnabled({timeout: 90_000});
+  await continueToBriefingButton.click();
   await expect(page.getByRole('button', {name: '開始'})).toBeVisible({
     timeout: 90_000,
   });

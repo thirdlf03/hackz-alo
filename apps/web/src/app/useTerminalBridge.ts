@@ -47,13 +47,23 @@ export function useTerminalBridge(options: {
   submitChatMessage: () => void;
 }) {
   const terminalRef = useRef<TerminalSession | null>(null);
+  const attachedSessionIdRef = useRef<string | undefined>(undefined);
 
   function destroyTerminal() {
     terminalRef.current?.destroy();
     terminalRef.current = null;
+    attachedSessionIdRef.current = undefined;
   }
 
   async function attachTerminalSession(activeSession: SessionIdentity) {
+    if (
+      terminalRef.current &&
+      attachedSessionIdRef.current === activeSession.sessionId
+    ) {
+      // Already connected for this session (e.g. the host attached via
+      // startPlay and the guest phase-sync effect also fired) — no-op.
+      return;
+    }
     destroyTerminal();
     const {cols, rows} = defaultTerminalDimensions();
     await options.api.resizeTerminal(activeSession.sessionId, cols, rows);
@@ -131,6 +141,7 @@ export function useTerminalBridge(options: {
       },
     });
     terminalRef.current = terminal;
+    attachedSessionIdRef.current = activeSession.sessionId;
     terminal.connect();
   }
 

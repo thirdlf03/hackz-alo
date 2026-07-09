@@ -40,6 +40,11 @@ import {
   type SessionRecordingBridge,
   type TerminalBridgeRef,
 } from './useSessionRuntime.js';
+import {
+  buildInviteUrl,
+  describeSessionActionError,
+  readInviteFromSearch,
+} from './appUtils.js';
 import '@xterm/xterm/css/xterm.css';
 
 const CONSENT_KEY = 'incident-recording-consent';
@@ -50,6 +55,7 @@ const PARTICIPANT_ROLE_KEY = 'incident-participant-role';
 
 export function App() {
   const initialReplayId = readReplayIdFromSearch();
+  const initialInvite = readInviteFromSearch();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rendererRef = useRef<{scrollMetricsPanel(deltaY: number): void} | null>(
     null
@@ -114,6 +120,7 @@ export function App() {
     scenario,
     gameState,
     gameSpeed,
+    exerciseSnapshot,
     saveRecording,
     recordingConsent,
     isStarting,
@@ -148,6 +155,22 @@ export function App() {
 
   useEffect(() => {
     void fetchPushPublicKey().then(setPagerPublicKey);
+  }, []);
+
+  useEffect(() => {
+    if (!initialInvite) return;
+    const url = new URL(window.location.href);
+    url.searchParams.delete('join');
+    url.searchParams.delete('wt');
+    window.history.replaceState(
+      null,
+      '',
+      `${url.pathname}${url.search}${url.hash}`
+    );
+    void sessionRuntime.joinSessionFromInvite(
+      initialInvite.sessionId,
+      initialInvite.writeToken
+    );
   }, []);
 
   useEffect(() => {
@@ -204,9 +227,15 @@ export function App() {
     currentGameTimeMs,
     createSessionForScenario,
     startPlay,
+    advanceToBriefing,
     endSession,
     submitChatMessage,
   } = sessionRuntime;
+
+  const isHost =
+    !exerciseSnapshot ||
+    exerciseSnapshot.hostParticipantId === null ||
+    exerciseSnapshot.hostParticipantId === participantId;
 
   const registerPager = async () => {
     if (!pagerPublicKey || !session) return;
@@ -363,6 +392,11 @@ export function App() {
   );
   const canNavigateToReplay = hasReplayContent && screen === 'result';
   const activeReplayId = session?.replayId ?? deepLinkReplayId;
+  const sessionAccessToken = api.sessionAccessToken();
+  const inviteUrl =
+    session && sessionAccessToken
+      ? buildInviteUrl(session.sessionId, sessionAccessToken)
+      : undefined;
 
   function openReplay() {
     if (!canNavigateToReplay) return;
@@ -418,6 +452,7 @@ export function App() {
         <BriefingScreen
           scenario={scenario}
           isStarting={isStarting}
+          isHost={isHost}
           sandboxReady={sandboxReady}
           recordingConsent={recordingConsent}
           saveRecording={saveRecording}
@@ -442,6 +477,8 @@ export function App() {
           participantRole={participantRole}
           exercise={exerciseSnapshot}
           sandboxReady={sandboxReady}
+          isHost={isHost}
+          inviteUrl={inviteUrl}
           onSetParticipantName={setParticipantName}
           onSetParticipantRole={(role) => {
             setParticipantRole(role);
@@ -461,7 +498,7 @@ export function App() {
               });
           }}
           onContinue={() => {
-            setScreen('briefing');
+            advanceToBriefing();
           }}
         />
       )}
@@ -510,9 +547,13 @@ export function App() {
             void api
               .fireInject(session.sessionId, injectId, {
                 actorParticipantId: participantId,
+                participantId,
               })
               .then(({exercise}) => {
                 setExerciseSnapshot(exercise);
+              })
+              .catch((error: unknown) => {
+                setAppError(describeSessionActionError(error, 'fireInject'));
               });
           }}
         />

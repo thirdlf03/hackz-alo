@@ -44,7 +44,7 @@ export function useCanvasRenderer(options: {
         const drawStartedAt = performance.now();
         renderer.draw(latest, scenario);
         recordCanvasDraw(performance.now() - drawStartedAt, {
-          command_input_focused: Boolean(latest?.commandInputFocused),
+          command_input_focused: latest.commandInputFocused,
         });
         if (!animate) {
           lastState = latest;

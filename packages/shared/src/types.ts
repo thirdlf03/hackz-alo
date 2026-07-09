@@ -251,6 +251,8 @@ export interface ExerciseInject {
   fired: boolean;
   firedAt?: string | undefined;
   firedByParticipantId?: string | undefined;
+  atMs?: number | undefined;
+  roleHint?: ParticipantRole | undefined;
 }
 
 export type IncidentLogEntryKind =
@@ -291,6 +293,7 @@ export interface AfterActionReport {
 export interface ExerciseSnapshot {
   sessionId: string;
   phase: ExercisePhase;
+  hostParticipantId: string | null;
   participants: ParticipantPresence[];
   tasks: ExerciseTask[];
   injects: ExerciseInject[];
