@@ -42,6 +42,7 @@ export function useCanvasRecording(options: {
   canvasRef: {current: HTMLCanvasElement | null};
   screen: Screen;
   session: SessionIdentity | undefined;
+  isHost: boolean;
   hasRecordingConsent: boolean;
   saveRecording: boolean;
   gameSpeedRef: {current: number};
@@ -75,6 +76,7 @@ export function useCanvasRecording(options: {
       !options.session ||
       !options.canvasRef.current ||
       recorderRef.current ||
+      !options.isHost ||
       !options.hasRecordingConsent ||
       !options.saveRecording
     ) {
@@ -142,6 +144,7 @@ export function useCanvasRecording(options: {
   }, [
     options.screen,
     options.session?.replayId,
+    options.isHost,
     options.hasRecordingConsent,
     options.saveRecording,
   ]);

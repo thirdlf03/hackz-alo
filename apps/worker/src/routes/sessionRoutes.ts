@@ -29,6 +29,9 @@ const sessionActionsWithoutDbLookup = new Set([
   'logs',
   'storage',
   'exercise',
+  'participant-cursor',
+  'terminal',
+  'terminal-resize',
 ]);
 const SESSION_CREATE_BODY_MAX_BYTES = 8 * 1024;
 const SESSION_CONTROL_BODY_MAX_BYTES = 8 * 1024;

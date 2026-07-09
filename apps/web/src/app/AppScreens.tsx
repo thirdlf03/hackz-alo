@@ -269,33 +269,39 @@ export function BriefingScreen(props: {
           <li key={line}>{line}</li>
         ))}
       </ul>
-      <fieldset>
-        <legend>録画設定</legend>
-        <label class='consent-row'>
-          <input
-            type='checkbox'
-            checked={props.recordingConsent}
-            onChange={(event) => {
-              props.onSetRecordingConsent(event.currentTarget.checked);
-            }}
-          />
-          ゲーム画面（canvas 内のみ）を録画し、振り返りに使うことに同意する
-        </label>
-        <label class='consent-row'>
-          <input
-            type='checkbox'
-            checked={props.saveRecording}
-            disabled={!props.recordingConsent}
-            onChange={(event) => {
-              props.onSetSaveRecording(event.currentTarget.checked);
-            }}
-          />
-          録画データをサーバーに保存する（オフにするとイベントログのみ残ります）
-        </label>
-      </fieldset>
-      <p id='briefing-consent-note'>
-        ブラウザ全体や別タブは録画されません。公開するかどうかは後から選べます。
-      </p>
+      {props.isHost ? (
+        <>
+          <fieldset>
+            <legend>録画設定</legend>
+            <label class='consent-row'>
+              <input
+                type='checkbox'
+                checked={props.recordingConsent}
+                onChange={(event) => {
+                  props.onSetRecordingConsent(event.currentTarget.checked);
+                }}
+              />
+              ゲーム画面（canvas 内のみ）を録画し、振り返りに使うことに同意する
+            </label>
+            <label class='consent-row'>
+              <input
+                type='checkbox'
+                checked={props.saveRecording}
+                disabled={!props.recordingConsent}
+                onChange={(event) => {
+                  props.onSetSaveRecording(event.currentTarget.checked);
+                }}
+              />
+              録画データをサーバーに保存する（オフにするとイベントログのみ残ります）
+            </label>
+          </fieldset>
+          <p id='briefing-consent-note'>
+            ブラウザ全体や別タブは録画されません。公開するかどうかは後から選べます。
+          </p>
+        </>
+      ) : (
+        <p class='consent-row'>録画はホストが管理します。</p>
+      )}
       {props.pagerAvailable && (
         <div class='pager-row'>
           <button

@@ -25,6 +25,23 @@ export class SessionActionError extends Error {
   }
 }
 
+/**
+ * Thrown when the server rejects a request with the standard ApiResult
+ * `{ok:false, error:{code,message}}` envelope. Carries the error `code` and
+ * HTTP `status` so callers can distinguish specific failures (e.g. a replay
+ * chunk seq conflict) without pattern-matching on the message text, while
+ * `.message` keeps showing the server's human-readable text.
+ */
+export class ApiResultError extends Error {
+  constructor(
+    message: string,
+    readonly code: string,
+    readonly status: number
+  ) {
+    super(message);
+  }
+}
+
 function isFlatErrorPayload(
   payload: unknown
 ): payload is {error: string; requiredRole?: ParticipantRole} {
@@ -125,7 +142,13 @@ export class HttpClient {
       );
     }
     const result = payload as ApiResult<T>;
-    if (!result.ok) throw new Error(result.error.message);
+    if (!result.ok) {
+      throw new ApiResultError(
+        result.error.message,
+        result.error.code,
+        response.status
+      );
+    }
     return result.data;
   }
 

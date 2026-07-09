@@ -376,7 +376,8 @@ export function areParticipantsReadyToStart(
 ): boolean {
   const onlineNonObservers = room.participants.filter(
     (participant) =>
-      participant.role !== 'observer' && isParticipantOnline(participant, nowIso)
+      participant.role !== 'observer' &&
+      isParticipantOnline(participant, nowIso)
   );
   if (onlineNonObservers.length <= 1) return true;
   return onlineNonObservers.every((participant) => participant.ready);

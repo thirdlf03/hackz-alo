@@ -56,93 +56,103 @@ export function useTerminalBridge(options: {
   }
 
   async function attachTerminalSession(activeSession: SessionIdentity) {
-    if (
-      terminalRef.current &&
-      attachedSessionIdRef.current === activeSession.sessionId
-    ) {
-      // Already connected for this session (e.g. the host attached via
-      // startPlay and the guest phase-sync effect also fired) — no-op.
+    if (attachedSessionIdRef.current === activeSession.sessionId) {
+      // Already connected for this session, or an attach for this session
+      // is already in flight (e.g. the host attached via startPlay and the
+      // guest phase-sync effect also fired). attachedSessionIdRef is set
+      // synchronously below — before any await — so this guard also
+      // covers re-entrant calls that land while the earlier attach is
+      // still awaiting resizeTerminal/connect. No-op either way.
       return;
     }
     destroyTerminal();
-    const {cols, rows} = defaultTerminalDimensions();
-    await options.api.resizeTerminal(activeSession.sessionId, cols, rows);
-    const terminal = new TerminalSession({
-      sessionId: activeSession.sessionId,
-      accessToken: options.api.sessionAccessToken(),
-      cols,
-      rows,
-      onResize: (nextCols, nextRows) => {
-        void options.api
-          .resizeTerminal(activeSession.sessionId, nextCols, nextRows)
-          .catch(console.error);
-      },
-      onSnapshot: (snapshot) => {
-        options.patchGameStateRef((current) => ({
-          ...current,
-          monitors: {
-            ...current.monitors,
-            center: {...current.monitors.center, terminal: snapshot},
-          },
-        }));
-      },
-      onOutput: (summary) => {
-        const replayId = options.sessionRef.current?.replayId;
-        const emitter = options.eventEmitterRef.current;
-        if (!replayId || !emitter || !summary.trim()) return;
-        void emitter.emit({
-          replayId,
-          type: 'terminal_output',
-          at: options.currentGameTimeMs(),
-          actor: 'sandbox',
-          payload: {data: summary},
-        });
-      },
-      onCommand: (command) => {
-        const replayId = options.sessionRef.current?.replayId;
-        const emitter = options.eventEmitterRef.current;
-        if (!replayId || !emitter) return;
-        const at = options.currentGameTimeMs();
-        if (
-          DANGEROUS_COMMAND.test(command) &&
-          options.scenarioRef.current?.difficulty === 'beginner'
-        ) {
+    // Mark this session as in-flight immediately (before the first await)
+    // so a re-entrant call for the same session hits the guard above
+    // instead of racing to attach twice. Reset to undefined on failure so
+    // a later retry isn't permanently blocked.
+    attachedSessionIdRef.current = activeSession.sessionId;
+    try {
+      const {cols, rows} = defaultTerminalDimensions();
+      await options.api.resizeTerminal(activeSession.sessionId, cols, rows);
+      const terminal = new TerminalSession({
+        sessionId: activeSession.sessionId,
+        accessToken: options.api.sessionAccessToken(),
+        cols,
+        rows,
+        onResize: (nextCols, nextRows) => {
+          void options.api
+            .resizeTerminal(activeSession.sessionId, nextCols, nextRows)
+            .catch(console.error);
+        },
+        onSnapshot: (snapshot) => {
           options.patchGameStateRef((current) => ({
             ...current,
-            warning: {
-              message:
-                '危険: rm -rf は本番では慎重に。Runbook を確認してください。',
-              flashMs: 4000,
+            monitors: {
+              ...current.monitors,
+              center: {...current.monitors.center, terminal: snapshot},
             },
           }));
-        }
-        void emitter.emit({
-          replayId,
-          type: 'terminal_input',
-          at,
-          payload: {data: `${command}\n`},
-          visibility: 'sensitive',
-        });
-        void emitter.emit({
-          replayId,
-          type: 'command_detected',
-          at,
-          payload: {command},
-        });
-        const special = classifyCommandEvent(command);
-        if (special) {
+        },
+        onOutput: (summary) => {
+          const replayId = options.sessionRef.current?.replayId;
+          const emitter = options.eventEmitterRef.current;
+          if (!replayId || !emitter || !summary.trim()) return;
           void emitter.emit({
             replayId,
-            type: special,
-            at,
-            payload: commandEventPayload(command, special),
+            type: 'terminal_output',
+            at: options.currentGameTimeMs(),
+            actor: 'sandbox',
+            payload: {data: summary},
           });
-        }
-      },
-    });
-    terminalRef.current = terminal;
-    attachedSessionIdRef.current = activeSession.sessionId;
-    terminal.connect();
+        },
+        onCommand: (command) => {
+          const replayId = options.sessionRef.current?.replayId;
+          const emitter = options.eventEmitterRef.current;
+          if (!replayId || !emitter) return;
+          const at = options.currentGameTimeMs();
+          if (
+            DANGEROUS_COMMAND.test(command) &&
+            options.scenarioRef.current?.difficulty === 'beginner'
+          ) {
+            options.patchGameStateRef((current) => ({
+              ...current,
+              warning: {
+                message:
+                  '危険: rm -rf は本番では慎重に。Runbook を確認してください。',
+                flashMs: 4000,
+              },
+            }));
+          }
+          void emitter.emit({
+            replayId,
+            type: 'terminal_input',
+            at,
+            payload: {data: `${command}\n`},
+            visibility: 'sensitive',
+          });
+          void emitter.emit({
+            replayId,
+            type: 'command_detected',
+            at,
+            payload: {command},
+          });
+          const special = classifyCommandEvent(command);
+          if (special) {
+            void emitter.emit({
+              replayId,
+              type: special,
+              at,
+              payload: commandEventPayload(command, special),
+            });
+          }
+        },
+      });
+      terminalRef.current = terminal;
+      terminal.connect();
+    } catch (error) {
+      attachedSessionIdRef.current = undefined;
+      throw error;
+    }
   }
 
   function syncTerminalViewport() {

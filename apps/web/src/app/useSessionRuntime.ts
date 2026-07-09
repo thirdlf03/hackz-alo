@@ -325,10 +325,15 @@ export function useSessionRuntime(options: {
   const applyParticipantCursor = (event: ParticipantCursorEvent) => {
     const current = gameStateRef.current;
     if (!current) return;
-    const found = current.room.participants.some(
+    const existing = current.room.participants.find(
       (participant) => participant.participantId === event.participantId
     );
-    if (!found) return;
+    if (!existing) return;
+    if (existing.cursor && event.updatedAt <= existing.cursor.updatedAt) {
+      // Stale event arrived out of order; a newer cursor position is
+      // already applied, so ignore this one to avoid snapping backwards.
+      return;
+    }
     const participants = current.room.participants.map((participant) => {
       if (participant.participantId !== event.participantId) return participant;
       return {
@@ -495,7 +500,10 @@ export function useSessionRuntime(options: {
     if (!session) return;
     setScreen('briefing');
     void api
-      .advanceExercisePhase(session.sessionId, {participantId, phase: 'briefing'})
+      .advanceExercisePhase(session.sessionId, {
+        participantId,
+        phase: 'briefing',
+      })
       .catch((error: unknown) => {
         setAppError(describeSessionActionError(error, 'phase'));
       });

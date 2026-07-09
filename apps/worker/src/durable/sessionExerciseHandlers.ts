@@ -116,7 +116,9 @@ export class SessionExerciseHub {
       await this.loadOrCreate(session),
       body
     );
-    await this.deps.storage.put('exercise', room);
+    // Cursor position is ephemeral; skip waiting for the write to be
+    // confirmed durable to keep the round-trip fast.
+    await this.deps.storage.put('exercise', room, {allowUnconfirmed: true});
 
     const requestedId =
       typeof body.participantId === 'string' ? body.participantId.trim() : '';

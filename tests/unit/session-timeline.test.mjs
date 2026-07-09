@@ -137,7 +137,9 @@ test('SessionTimeline fires a due timed inject exactly once', async () => {
 test('SessionTimeline does not fire an inject before its atMs', async () => {
   const harness = createTimelineHarness(testSession({gameTimeMs: 0}));
   const scenario = testScenario({
-    exercise: {injects: [{id: 'inject-1', atMs: 60_000, title: 'x', body: 'y'}]},
+    exercise: {
+      injects: [{id: 'inject-1', atMs: 60_000, title: 'x', body: 'y'}],
+    },
   });
 
   harness.timeline.schedule(harness.session, scenario, []);

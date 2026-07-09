@@ -42,7 +42,8 @@ export function describeSessionActionError(
 ): string {
   if (error instanceof SessionActionError) {
     if (error.code === 'host_required') {
-      if (context === 'fireInject') return 'インジェクトの投入はホストのみ行えます。';
+      if (context === 'fireInject')
+        return 'インジェクトの投入はホストのみ行えます。';
       if (context === 'phase') return 'フェーズの進行はホストのみ行えます。';
       return 'セッションの開始はホストのみ行えます。';
     }

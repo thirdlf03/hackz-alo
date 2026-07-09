@@ -118,16 +118,32 @@ test('buildExerciseSnapshot exposes hostParticipantId', () => {
 
 test('areParticipantsReadyToStart allows solo play regardless of ready flag', () => {
   let room = createExerciseRoom(scenario);
-  room = joinParticipant(room, {participantId: 'solo_1', role: 'ops', ready: false});
+  room = joinParticipant(room, {
+    participantId: 'solo_1',
+    role: 'ops',
+    ready: false,
+  });
   assert.equal(areParticipantsReadyToStart(room), true);
 });
 
 test('areParticipantsReadyToStart requires all online non-observer participants ready', () => {
   let room = createExerciseRoom(scenario);
-  room = joinParticipant(room, {participantId: 'p_1', role: 'ops', ready: true});
-  room = joinParticipant(room, {participantId: 'p_2', role: 'incident_commander', ready: false});
+  room = joinParticipant(room, {
+    participantId: 'p_1',
+    role: 'ops',
+    ready: true,
+  });
+  room = joinParticipant(room, {
+    participantId: 'p_2',
+    role: 'incident_commander',
+    ready: false,
+  });
   assert.equal(areParticipantsReadyToStart(room), false);
-  room = joinParticipant(room, {participantId: 'p_2', role: 'incident_commander', ready: true});
+  room = joinParticipant(room, {
+    participantId: 'p_2',
+    role: 'incident_commander',
+    ready: true,
+  });
   assert.equal(areParticipantsReadyToStart(room), true);
 });
 
@@ -136,9 +152,25 @@ test('areParticipantsReadyToStart ignores observers and stale participants', () 
   const freshAt = '2024-01-01T00:00:40.000Z';
   const checkAt = '2024-01-01T00:00:41.000Z';
   let room = createExerciseRoom(scenario);
-  room = joinParticipant(room, {participantId: 'p_1', role: 'ops', ready: true}, freshAt);
-  room = joinParticipant(room, {participantId: 'p_2', role: 'incident_commander', ready: true}, freshAt);
-  room = joinParticipant(room, {participantId: 'obs_1', role: 'observer', ready: false}, freshAt);
-  room = joinParticipant(room, {participantId: 'stale_1', role: 'ops', ready: false}, staleAt);
+  room = joinParticipant(
+    room,
+    {participantId: 'p_1', role: 'ops', ready: true},
+    freshAt
+  );
+  room = joinParticipant(
+    room,
+    {participantId: 'p_2', role: 'incident_commander', ready: true},
+    freshAt
+  );
+  room = joinParticipant(
+    room,
+    {participantId: 'obs_1', role: 'observer', ready: false},
+    freshAt
+  );
+  room = joinParticipant(
+    room,
+    {participantId: 'stale_1', role: 'ops', ready: false},
+    staleAt
+  );
   assert.equal(areParticipantsReadyToStart(room, checkAt), true);
 });

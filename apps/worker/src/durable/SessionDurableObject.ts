@@ -93,6 +93,12 @@ import {
 const SESSION_BOOTSTRAP_BODY_MAX_BYTES = 8 * 1024;
 const SESSION_CONTROL_BODY_MAX_BYTES = 8 * 1024;
 const SESSION_FILE_BODY_MAX_BYTES = 1024 * 1024;
+// Short TTL: only meant to absorb near-simultaneous double-fires of
+// prepareSandbox (server-scheduled prepare + client-triggered prepare),
+// not to serve as a long-lived cache — the sandbox container itself can
+// sleep after ~16 minutes of inactivity, so a longer TTL risks the DO's
+// in-memory cache drifting from the container's actual state.
+const SANDBOX_PREPARE_CACHE_TTL_MS = 60 * 1000;
 
 export class SessionDurableObject implements DurableObject {
   private metricsCache: MetricsCache = {cachedAt: 0};
@@ -100,6 +106,10 @@ export class SessionDurableObject implements DurableObject {
   private sseHub: SessionSseHub;
   private exercise: SessionExerciseHub;
   private sandboxPreparePromise?: Promise<SandboxPrepareResult>;
+  private sandboxPrepareCache?: {
+    result: SandboxPrepareResult;
+    expiresAt: number;
+  };
   private terminalDimensions: TerminalDimensions = {cols: 80, rows: 24};
   private lastAlertPagerSentAt = 0;
 
@@ -611,13 +621,27 @@ export class SessionDurableObject implements DurableObject {
     session: StoredSession,
     scenario: ScenarioDefinition
   ): Promise<SandboxPrepareResult> {
+    if (
+      this.sandboxPrepareCache &&
+      this.sandboxPrepareCache.expiresAt > Date.now()
+    ) {
+      return Promise.resolve(this.sandboxPrepareCache.result);
+    }
     this.sandboxPreparePromise ??= prepareScenarioSandbox(
       this.env,
       session.sessionId,
       scenario
-    ).finally(() => {
-      delete this.sandboxPreparePromise;
-    });
+    )
+      .then((result) => {
+        this.sandboxPrepareCache = {
+          result,
+          expiresAt: Date.now() + SANDBOX_PREPARE_CACHE_TTL_MS,
+        };
+        return result;
+      })
+      .finally(() => {
+        delete this.sandboxPreparePromise;
+      });
     return this.sandboxPreparePromise;
   }
 

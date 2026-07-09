@@ -222,11 +222,17 @@ export class SessionTimeline {
     for (const inject of scenario.exercise?.injects ?? []) {
       if (typeof inject.atMs !== 'number') continue;
       if (firedInjectIds.includes(inject.id)) continue;
-      this.scheduleAtGameTime(session, inject.atMs, 'inject', inject.id, async () => {
-        const latest = await this.dependencies.loadSession();
-        if (latest.status !== 'running') return;
-        await this.dependencies.fireScheduledInject?.(inject.id);
-      });
+      this.scheduleAtGameTime(
+        session,
+        inject.atMs,
+        'inject',
+        inject.id,
+        async () => {
+          const latest = await this.dependencies.loadSession();
+          if (latest.status !== 'running') return;
+          await this.dependencies.fireScheduledInject?.(inject.id);
+        }
+      );
     }
   }
 

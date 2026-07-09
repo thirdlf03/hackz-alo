@@ -46,17 +46,30 @@ export async function putReplayChunk(
     input.contentType ??
     contentTypeForBody(input.body) ??
     replayVideoContentType;
-  const object = await env.REPLAY_BUCKET.put(key, input.body, {
-    httpMetadata: {contentType},
-  });
+
   const existing = await env.DB.prepare(
     'select byte_size from replay_chunks where replay_id = ? and seq = ?'
   )
     .bind(input.replayId, input.seq)
     .first<{byte_size: number}>();
-  if (existing && existing.byte_size !== object.size) {
-    throw new ReplayChunkConflictError(input.replayId, input.seq);
+  if (existing) {
+    // A chunk for this seq is already stored (e.g. a different client's
+    // recorder collided on the same seq, or this is a client retry of its
+    // own already-committed upload). Determine the incoming payload's size
+    // *before* writing anything to R2 so a genuine conflict can never
+    // overwrite the chunk already committed.
+    const incomingSize = await bodyByteLength(input.body);
+    if (incomingSize !== existing.byte_size) {
+      throw new ReplayChunkConflictError(input.replayId, input.seq);
+    }
+    // Same size as what's already stored: treat this as an idempotent
+    // retry and skip re-uploading identical bytes.
+    return {key, size: existing.byte_size};
   }
+
+  const object = await env.REPLAY_BUCKET.put(key, input.body, {
+    httpMetadata: {contentType},
+  });
   await env.DB.prepare(
     `insert or replace into replay_chunks
      (replay_id, seq, object_key, byte_size, started_at_ms, ended_at_ms, sha256, uploaded_at)
@@ -289,6 +302,15 @@ export function replayThumbnailObjectKey(replayId: string) {
 
 function contentTypeForBody(body: ReadableStream | ArrayBuffer | Blob) {
   return body instanceof Blob && body.type ? body.type : undefined;
+}
+
+async function bodyByteLength(
+  body: ReadableStream | ArrayBuffer | Blob
+): Promise<number> {
+  if (body instanceof ArrayBuffer) return body.byteLength;
+  if (body instanceof Blob) return body.size;
+  const buffer = await new Response(body).arrayBuffer();
+  return buffer.byteLength;
 }
 
 function normalizeOptionalMs(value: number | undefined) {

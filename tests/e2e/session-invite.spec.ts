@@ -36,9 +36,9 @@ test('inviting a second participant joins the same session lobby', async ({
   await pageA.getByRole('button', {name: DEMO_SCENARIO}).click();
   await sessionResponse;
 
-  await expect(
-    pageA.getByRole('heading', {name: DEMO_SCENARIO})
-  ).toBeVisible({timeout: 30_000});
+  await expect(pageA.getByRole('heading', {name: DEMO_SCENARIO})).toBeVisible({
+    timeout: 30_000,
+  });
 
   const inviteButton = pageA.getByRole('button', {
     name: '招待リンクをコピー',
@@ -65,9 +65,9 @@ test('inviting a second participant joins the same session lobby', async ({
   const pageB = await contextB.newPage();
   await pageB.goto(inviteUrl ?? '/');
 
-  await expect(
-    pageB.getByRole('heading', {name: DEMO_SCENARIO})
-  ).toBeVisible({timeout: 30_000});
+  await expect(pageB.getByRole('heading', {name: DEMO_SCENARIO})).toBeVisible({
+    timeout: 30_000,
+  });
   // The invite tokens must not linger in the joiner's address bar.
   expect(new URL(pageB.url()).searchParams.get('join')).toBeNull();
   expect(new URL(pageB.url()).searchParams.get('wt')).toBeNull();
@@ -113,9 +113,9 @@ test('host advancing the exercise phase carries the guest along into briefing an
   await pageA.getByRole('button', {name: DEMO_SCENARIO}).click();
   await sessionResponse;
 
-  await expect(
-    pageA.getByRole('heading', {name: DEMO_SCENARIO})
-  ).toBeVisible({timeout: 30_000});
+  await expect(pageA.getByRole('heading', {name: DEMO_SCENARIO})).toBeVisible({
+    timeout: 30_000,
+  });
 
   const inviteButton = pageA.getByRole('button', {
     name: '招待リンクをコピー',
@@ -139,9 +139,9 @@ test('host advancing the exercise phase carries the guest along into briefing an
   const pageB = await contextB.newPage();
   await pageB.goto(inviteUrl ?? '/');
 
-  await expect(
-    pageB.getByRole('heading', {name: DEMO_SCENARIO})
-  ).toBeVisible({timeout: 30_000});
+  await expect(pageB.getByRole('heading', {name: DEMO_SCENARIO})).toBeVisible({
+    timeout: 30_000,
+  });
 
   await expect(pageA.locator('.participant-row')).toHaveCount(2, {
     timeout: 30_000,

@@ -45,6 +45,7 @@ import {
   describeSessionActionError,
   readInviteFromSearch,
 } from './appUtils.js';
+import {isHostParticipant} from '../pure/isHostParticipant.js';
 import '@xterm/xterm/css/xterm.css';
 
 const CONSENT_KEY = 'incident-recording-consent';
@@ -232,10 +233,7 @@ export function App() {
     submitChatMessage,
   } = sessionRuntime;
 
-  const isHost =
-    !exerciseSnapshot ||
-    exerciseSnapshot.hostParticipantId === null ||
-    exerciseSnapshot.hostParticipantId === participantId;
+  const isHost = isHostParticipant(exerciseSnapshot, participantId);
 
   const registerPager = async () => {
     if (!pagerPublicKey || !session) return;
@@ -301,6 +299,7 @@ export function App() {
     canvasRef,
     screen,
     session,
+    isHost,
     hasRecordingConsent,
     saveRecording,
     gameSpeedRef,
@@ -359,7 +358,7 @@ export function App() {
       onCursorMove: (point) => {
         if (!session) return;
         const now = performance.now();
-        if (now - lastCursorSentAtRef.current < 180) return;
+        if (now - lastCursorSentAtRef.current < 80) return;
         lastCursorSentAtRef.current = now;
         void api.updateParticipantCursor(session.sessionId, {
           participantId,

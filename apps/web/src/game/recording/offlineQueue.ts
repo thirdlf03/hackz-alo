@@ -1,5 +1,6 @@
 import type {ReplayEvent} from '@incident/shared';
 import type {ApiClientSurface} from '../../api/client.js';
+import {ApiResultError} from '../../api/httpClient.js';
 
 interface QueuedChunk {
   kind: 'chunk';
@@ -69,7 +70,15 @@ export class OfflineUploadQueue {
           }
           await this.delete(item.id);
           this.retryDelayMs = BASE_RETRY_MS;
-        } catch {
+        } catch (error) {
+          if (isReplayChunkConflict(error)) {
+            // The server already has a different chunk stored for this
+            // seq. Retrying the same bytes can never succeed, so drop it
+            // instead of jamming the queue with an infinite retry loop.
+            await this.delete(item.id);
+            this.degraded = true;
+            continue;
+          }
           this.retryDelayMs = Math.min(this.retryDelayMs * 2, MAX_RETRY_MS);
           await new Promise((resolve) =>
             setTimeout(resolve, this.retryDelayMs)
@@ -153,6 +162,10 @@ export class OfflineUploadQueue {
       };
     });
   }
+}
+
+function isReplayChunkConflict(error: unknown) {
+  return error instanceof ApiResultError && error.code === 'conflict';
 }
 
 function estimateItemBytes(item: QueueItem) {
