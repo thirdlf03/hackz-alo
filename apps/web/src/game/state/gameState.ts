@@ -132,7 +132,8 @@ export function advanceGameState(
   speed = state.clock.speed,
   deltaMs = 0,
   serverAlerts?: GameRenderState['monitors']['left']['alerts'],
-  serverChat?: GameRenderState['monitors']['right']['chatMessages']
+  serverChat?: GameRenderState['monitors']['right']['chatMessages'],
+  serverServiceHealth?: GameRenderState['monitors']['left']['serviceHealth']
 ): GameRenderState {
   const alerts =
     serverAlerts ??
@@ -205,6 +206,12 @@ export function advanceGameState(
       left: {
         ...state.monitors.left,
         alerts,
+        ...((serverServiceHealth ?? state.monitors.left.serviceHealth)
+          ? {
+              serviceHealth:
+                serverServiceHealth ?? state.monitors.left.serviceHealth,
+            }
+          : {}),
       },
       right: {
         activePanelTab: state.monitors.right.activePanelTab,

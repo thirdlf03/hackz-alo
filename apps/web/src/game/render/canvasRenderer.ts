@@ -26,10 +26,19 @@ import {
   drawRoom,
   withMonitorPose,
 } from './canvasRenderScene.js';
+import {drawTopologyMap} from './canvasRenderTopology.js';
 import type {AnsiSpan} from '../terminal/ansi.js';
-import type {CanvasRenderSurface} from './canvasRenderSurface.js';
+import type {
+  CanvasRenderSurface,
+  TopologyHealthCacheEntry,
+} from './canvasRenderSurface.js';
 import officeMonitorBackdropUrl from '../../assets/office-monitor-backdrop.avif';
-import {logicalHeight, logicalWidth, monitorLayouts} from './canvasLayout.js';
+import {
+  logicalHeight,
+  logicalWidth,
+  monitorLayouts,
+  TOPOLOGY_MAP_HEIGHT,
+} from './canvasLayout.js';
 
 export {
   centerEditorOverlayRegion,
@@ -69,6 +78,7 @@ export class CanvasRenderer {
     string,
     {spans: AnsiSpan[]; plain: string}
   >();
+  private topologyHealthCache = new Map<string, TopologyHealthCacheEntry>();
   private metricsScrollY = 0;
   private metricsScrollMax = 0;
 
@@ -104,6 +114,7 @@ export class CanvasRenderer {
       metricsScrollMax: this.metricsScrollMax,
       roomBackdrop: this.roomBackdrop,
       roomBackdropLoaded: this.roomBackdropLoaded,
+      topologyHealthCache: this.topologyHealthCache,
     };
   }
 
@@ -123,6 +134,7 @@ export class CanvasRenderer {
     const viewModel = buildCanvasViewModel(state, scenario);
     const surface = this.surface();
     const ctx = this.ctx;
+    const nowMs = performance.now();
     ctx.save();
     try {
       ctx.setTransform(
@@ -147,11 +159,30 @@ export class CanvasRenderer {
             monitor.title,
             (content) => {
               if (monitor.id === 'metrics') {
-                drawMetricsPanelOnSurface(
-                  surface,
-                  state.monitors.left,
-                  content.height
-                );
+                if (scenario?.topology) {
+                  drawTopologyMap(
+                    surface,
+                    scenario.topology,
+                    state.monitors.left.serviceHealth,
+                    nowMs,
+                    content.width,
+                    TOPOLOGY_MAP_HEIGHT
+                  );
+                  ctx.save();
+                  ctx.translate(0, TOPOLOGY_MAP_HEIGHT);
+                  drawMetricsPanelOnSurface(
+                    surface,
+                    state.monitors.left,
+                    content.height - TOPOLOGY_MAP_HEIGHT
+                  );
+                  ctx.restore();
+                } else {
+                  drawMetricsPanelOnSurface(
+                    surface,
+                    state.monitors.left,
+                    content.height
+                  );
+                }
               } else if (monitor.id === 'terminal') {
                 drawCenterPanel(surface, state, content.width);
               } else {

@@ -11,6 +11,7 @@ import {requestIdMiddleware} from './http/writeAuthMiddleware.js';
 import {ok} from './http/response.js';
 import {registerAdminRoutes} from './routes/adminRoutes.js';
 import {registerHealthRoutes} from './routes/healthRoutes.js';
+import {registerPushRoutes} from './routes/pushRoutes.js';
 import {registerReplayRoutes} from './routes/replayRoutes.js';
 import {registerScenarioRoutes} from './routes/scenarioRoutes.js';
 import {registerSessionRoutes} from './routes/sessionRoutes.js';
@@ -59,6 +60,7 @@ registerScenarioRoutes(app);
 registerSessionRoutes(app);
 registerReplayRoutes(app);
 registerAdminRoutes(app);
+registerPushRoutes(app);
 
 export default {
   async fetch(request: Request, env: Bindings, ctx: ExecutionContext) {

@@ -13,7 +13,7 @@ const {REPLAY_VISIBILITY_VALUES} = await import(
 
 const replayEventMigrationPath = path.join(
   root,
-  'migrations/0010_worldview_rename.sql'
+  'migrations/0011_service_health_changed_event.sql'
 );
 const replayVisibilityMigrationPath = path.join(
   root,

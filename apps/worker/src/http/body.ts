@@ -28,7 +28,8 @@ export async function readRequestBody(
   }
   if (!request.body) return new ArrayBuffer(0);
 
-  const reader = request.body.getReader();
+  const reader =
+    request.body.getReader() as ReadableStreamDefaultReader<Uint8Array>;
   const chunks: Uint8Array[] = [];
   let total = 0;
   let readResult = await reader.read();

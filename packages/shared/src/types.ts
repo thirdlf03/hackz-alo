@@ -346,6 +346,35 @@ export interface ChatMessageDefinition {
   body: string;
 }
 
+export type ScenarioTopologyNodeKind =
+  | 'external'
+  | 'service'
+  | 'datastore'
+  | 'batch';
+
+export interface ScenarioTopologyNode {
+  /** Unique within the graph. */
+  id: string;
+  /** Display name (Japanese allowed). */
+  label: string;
+  kind: ScenarioTopologyNodeKind;
+  /** Reference to scenario.startup[].id. Only set for nodes backed by a real process. */
+  processId?: string;
+}
+
+export interface ScenarioTopologyEdge {
+  /** Caller node id (from depends on to). */
+  from: string;
+  to: string;
+}
+
+export interface ScenarioTopology {
+  nodes: ScenarioTopologyNode[];
+  edges: ScenarioTopologyEdge[];
+}
+
+export type ServiceHealth = 'healthy' | 'degraded' | 'down';
+
 export interface ScenarioDefinition {
   id: string;
   version: number;
@@ -369,6 +398,7 @@ export interface ScenarioDefinition {
   chatMessages: ChatMessageDefinition[];
   navigationSteps?: NavigationStep[];
   exercise?: ScenarioExerciseDefinition;
+  topology?: ScenarioTopology;
 }
 
 export interface MetricsSnapshot {
@@ -418,6 +448,8 @@ export interface GameRenderState {
       edgeRttMs: number | null;
       edgeRttHistory: number[];
       alerts: AlertDefinition[];
+      /** Per scenario.topology node id. Wiring from worker state is a follow-up task. */
+      serviceHealth?: Record<string, ServiceHealth>;
     };
     center: {
       activeTool: 'terminal' | 'editor';

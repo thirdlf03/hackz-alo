@@ -19,6 +19,10 @@ import {
 } from '../http/response.js';
 import {logStructured} from '../http/requestLog.js';
 import type {Bindings} from '../types.js';
+import {
+  computeServiceHealthMap,
+  diffServiceHealth,
+} from '../pure/serviceHealthMap.js';
 import {emitSessionReplayEvent} from './sessionEventEmit.js';
 import {finishSessionTransaction} from './sessionFinish.js';
 import {
@@ -29,6 +33,14 @@ import {
   touchSessionClientActivity,
 } from './sessionLifecycle.js';
 import {persistReplayStart, persistSession} from './sessionPersistence.js';
+import {sendPagerNotification} from '../effect/pagerPush.js';
+import {
+  buildPagerAlertPayload,
+  buildPagerChatPayload,
+  PAGER_ALERT_MIN_INTERVAL_MS,
+  shouldThrottlePagerAlert,
+  type PagerNotificationPayload,
+} from '../pure/pagerNotification.js';
 import {
   readSessionFileContent,
   readSessionFiles,
@@ -56,7 +68,7 @@ import {
   type SuccessCheck,
 } from './sessionState.js';
 import {SessionSseHub} from './sessionSseHub.js';
-import {SessionTimeline} from './sessionTimeline.js';
+import {SessionTimeline, type PagerTimelineEvent} from './sessionTimeline.js';
 import {
   handleSessionTerminal,
   handleSessionTerminalInterrupt,
@@ -83,6 +95,7 @@ export class SessionDurableObject implements DurableObject {
   private exercise: SessionExerciseHub;
   private sandboxPreparePromise?: Promise<SandboxPrepareResult>;
   private terminalDimensions: TerminalDimensions = {cols: 80, rows: 24};
+  private lastAlertPagerSentAt = 0;
 
   constructor(
     private state: DurableObjectState,
@@ -120,6 +133,9 @@ export class SessionDurableObject implements DurableObject {
       snapshotFor: (session) => this.snapshotFor(session),
       broadcastSse: (event, data) => {
         this.sseHub.broadcast(event, data);
+      },
+      onPagerEvent: (session, event) => {
+        this.handlePagerEvent(session, event);
       },
     });
   }
@@ -237,7 +253,9 @@ export class SessionDurableObject implements DurableObject {
   }
 
   private async start(request: Request) {
-    const body = await readBootstrap(request);
+    const body = (await readBootstrap(request)) as Partial<SessionBootstrap> & {
+      originUrl?: string;
+    };
     const session = await this.loadOrCreate(body);
     if (session.status === 'running') {
       return jsonOk({session: this.snapshotFor(session), startup: []});
@@ -253,6 +271,9 @@ export class SessionDurableObject implements DurableObject {
     const scenario = requireScenario(session.scenarioId);
     const started = new Date().toISOString();
     let running = startStoredSession(session, started, Date.now());
+    if (typeof body.originUrl === 'string' && body.originUrl.length > 0) {
+      running = {...running, pagerOriginUrl: body.originUrl};
+    }
     await this.state.storage.put('session', running);
     await persistSession(this.env, running);
     await persistReplayStart(this.env, running);
@@ -307,18 +328,42 @@ export class SessionDurableObject implements DurableObject {
       }))
     );
     const resolved = incidentStarted && checks.every((check) => check.ok);
+    const beforeHealth = computeServiceHealthMap(
+      scenario.topology,
+      scenario.triggers.filter((t) => session.triggeredIds.includes(t.id)),
+      session.status === 'resolved'
+    );
     const finished = await this.finishSession(
       session,
       resolved ? 'resolved' : 'failed',
       resolved ? 'resolved' : 'false_resolve'
     );
-    const result = await this.emit(
+    let result = await this.emit(
       finished,
       resolved ? 'incident_resolved' : 'session_end',
       getGameTimeMs(finished),
       resolved ? 'system' : 'player',
       resolved ? {checks} : {result: 'false_resolve', checks}
     );
+    const afterHealth = computeServiceHealthMap(
+      scenario.topology,
+      scenario.triggers.filter((t) => result.triggeredIds.includes(t.id)),
+      result.status === 'resolved'
+    );
+    for (const change of diffServiceHealth(
+      beforeHealth,
+      afterHealth,
+      scenario.topology
+    )) {
+      result = await this.emit(
+        result,
+        'service_health_changed',
+        getGameTimeMs(finished),
+        'system',
+        {...change}
+      );
+    }
+    this.sseHub.broadcast('snapshot', this.snapshotFor(result));
     return jsonOk({
       ok: resolved,
       checks,
@@ -605,6 +650,61 @@ export class SessionDurableObject implements DurableObject {
     return finished;
   }
 
+  private handlePagerEvent(session: StoredSession, event: PagerTimelineEvent) {
+    try {
+      if (!session.pagerOriginUrl) return;
+      const sessionUrl = `${session.pagerOriginUrl}/`;
+      const scenario = requireScenario(session.scenarioId);
+      if (event.kind === 'alert') {
+        if (event.alert.severity !== 'critical') return;
+        const now = Date.now();
+        if (
+          shouldThrottlePagerAlert(
+            this.lastAlertPagerSentAt,
+            now,
+            PAGER_ALERT_MIN_INTERVAL_MS
+          )
+        ) {
+          return;
+        }
+        this.lastAlertPagerSentAt = now;
+        const payload = buildPagerAlertPayload(
+          scenario,
+          event.alert,
+          sessionUrl,
+          session.sessionId
+        );
+        this.sendPagerNotificationSafe(session.sessionId, payload);
+        return;
+      }
+      const payload = buildPagerChatPayload(
+        event.chat,
+        sessionUrl,
+        session.sessionId
+      );
+      this.sendPagerNotificationSafe(session.sessionId, payload);
+    } catch (error: unknown) {
+      logStructured('pager_event_failed', {
+        sessionId: session.sessionId,
+        message: messageFrom(error),
+      });
+    }
+  }
+
+  private sendPagerNotificationSafe(
+    sessionId: string,
+    payload: PagerNotificationPayload
+  ) {
+    sendPagerNotification(this.env, sessionId, payload).catch(
+      (error: unknown) => {
+        logStructured('pager_push_failed', {
+          sessionId,
+          message: messageFrom(error),
+        });
+      }
+    );
+  }
+
   private async emit(
     session: StoredSession,
     type: ReplayEvent['type'],
@@ -632,10 +732,10 @@ export class SessionDurableObject implements DurableObject {
 async function readBootstrap(
   request: Request
 ): Promise<Partial<SessionBootstrap>> {
-  return (await readInternalJsonObject(
+  return await readInternalJsonObject(
     request,
     SESSION_BOOTSTRAP_BODY_MAX_BYTES
-  )) as Partial<SessionBootstrap>;
+  );
 }
 
 async function readInternalJsonObject(request: Request, maxBytes: number) {

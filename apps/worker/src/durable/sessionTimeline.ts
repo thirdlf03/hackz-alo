@@ -1,4 +1,13 @@
-import type {ReplayEvent, ScenarioDefinition} from '@incident/shared';
+import type {
+  AlertDefinition,
+  ChatMessageDefinition,
+  ReplayEvent,
+  ScenarioDefinition,
+} from '@incident/shared';
+import {
+  computeServiceHealthMap,
+  diffServiceHealth,
+} from '../pure/serviceHealthMap.js';
 import {getGameTimeMs, type StoredSession} from './sessionState.js';
 
 export interface PendingTimer {
@@ -6,6 +15,10 @@ export interface PendingTimer {
   id: string;
   handle: ReturnType<typeof setTimeout>;
 }
+
+export type PagerTimelineEvent =
+  | {kind: 'alert'; alert: AlertDefinition}
+  | {kind: 'chat'; chat: ChatMessageDefinition};
 
 export interface SessionTimelineDependencies {
   loadSession(): Promise<StoredSession>;
@@ -24,6 +37,7 @@ export interface SessionTimelineDependencies {
   ): Promise<StoredSession>;
   snapshotFor(session: StoredSession): unknown;
   broadcastSse(event: string, data: unknown): void;
+  onPagerEvent?(session: StoredSession, event: PagerTimelineEvent): void;
 }
 
 export class SessionTimeline {
@@ -62,7 +76,14 @@ export class SessionTimeline {
             await this.dependencies.injectFault(
               latest.sessionId,
               trigger.type,
-              trigger.params as Record<string, unknown>
+              trigger.params
+            );
+            const beforeHealth = computeServiceHealthMap(
+              scenario.topology,
+              scenario.triggers.filter((t) =>
+                latest.triggeredIds.includes(t.id)
+              ),
+              false
             );
             let triggered: StoredSession = {
               ...latest,
@@ -76,6 +97,26 @@ export class SessionTimeline {
               'scenario',
               {trigger}
             );
+            const afterHealth = computeServiceHealthMap(
+              scenario.topology,
+              scenario.triggers.filter((t) =>
+                triggered.triggeredIds.includes(t.id)
+              ),
+              triggered.status === 'resolved'
+            );
+            for (const change of diffServiceHealth(
+              beforeHealth,
+              afterHealth,
+              scenario.topology
+            )) {
+              triggered = await this.dependencies.emit(
+                triggered,
+                'service_health_changed',
+                trigger.atMs,
+                'scenario',
+                {...change}
+              );
+            }
             this.dependencies.broadcastSse(
               'snapshot',
               this.dependencies.snapshotFor(triggered)
@@ -135,6 +176,7 @@ export class SessionTimeline {
             'snapshot',
             this.dependencies.snapshotFor(updated)
           );
+          this.dependencies.onPagerEvent?.(updated, {kind: 'alert', alert});
         }
       );
     }
@@ -163,6 +205,7 @@ export class SessionTimeline {
             'snapshot',
             this.dependencies.snapshotFor(next)
           );
+          this.dependencies.onPagerEvent?.(next, {kind: 'chat', chat: message});
         }
       );
     }

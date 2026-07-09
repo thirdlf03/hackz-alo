@@ -14,6 +14,7 @@ export const REPLAY_EVENT_TYPES = [
   'file_opened',
   'file_saved',
   'service_restart',
+  'service_health_changed',
   'recovery_check',
   'incident_resolved',
   'player_note',

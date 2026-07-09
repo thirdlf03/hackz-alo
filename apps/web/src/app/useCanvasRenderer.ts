@@ -34,7 +34,9 @@ export function useCanvasRenderer(options: {
         )
       );
       const animate =
-        Boolean(latest?.commandInputFocused) || hasRemoteCursors;
+        Boolean(latest?.commandInputFocused) ||
+        hasRemoteCursors ||
+        Boolean(scenario?.topology);
       if (
         latest &&
         (animate || latest !== lastState || scenario !== lastScenario)

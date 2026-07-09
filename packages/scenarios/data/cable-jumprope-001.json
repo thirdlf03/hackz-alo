@@ -25,6 +25,46 @@
       "waitForPort": 15432
     }
   ],
+  "topology": {
+    "nodes": [
+      {
+        "id": "user",
+        "label": "ユーザー",
+        "kind": "external"
+      },
+      {
+        "id": "network",
+        "label": "社内ネットワーク",
+        "kind": "service"
+      },
+      {
+        "id": "api",
+        "label": "やまびこ API",
+        "kind": "service",
+        "processId": "api"
+      },
+      {
+        "id": "fake-db",
+        "label": "疑似データベース",
+        "kind": "datastore",
+        "processId": "fake-db"
+      }
+    ],
+    "edges": [
+      {
+        "from": "user",
+        "to": "network"
+      },
+      {
+        "from": "network",
+        "to": "api"
+      },
+      {
+        "from": "api",
+        "to": "fake-db"
+      }
+    ]
+  },
   "triggers": [
     {
       "id": "jumprope",

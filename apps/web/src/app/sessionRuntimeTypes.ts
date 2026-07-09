@@ -7,7 +7,10 @@ import type {
 } from '@incident/shared';
 import type {ApiClientSurface} from '../api/client.js';
 import type {ReplayEventEmitter} from '../game/events/emitReplayEvent.js';
-import type {SessionClockResponse} from './appRuntime.js';
+import type {
+  SessionClockResponse,
+  SessionSnapshotResponse,
+} from './appRuntime.js';
 import type {FinishMode, Screen, ScenarioSummary} from './AppScreens.js';
 
 export interface SessionRecordingBridge {
@@ -70,7 +73,11 @@ export interface SessionRuntimeBindings {
   ) => void;
   currentGameTimeMs: () => number;
   endSession: (mode: FinishMode) => Promise<void>;
-  applyClockSnapshot: (clock: SessionClockResponse) => void;
+  // Accepts both the full SSE snapshot payload and the narrower POST /clock
+  // response; only the optional serviceHealth field needs to be readable.
+  applyClockSnapshot: (
+    clock: SessionClockResponse & Pick<SessionSnapshotResponse, 'serviceHealth'>
+  ) => void;
   applyExerciseSnapshot: (snapshot: ExerciseSnapshot) => void;
   applyParticipantCursor: (event: ParticipantCursorEvent) => void;
 }

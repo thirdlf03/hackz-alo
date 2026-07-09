@@ -72,6 +72,88 @@ test('scenario validator rejects malformed trigger params', () => {
   );
 });
 
+test('scenario validator accepts a valid topology', () => {
+  const scenario = validScenario({
+    topology: {
+      nodes: [
+        {id: 'user', label: 'ユーザー', kind: 'external'},
+        {id: 'api', label: 'やまびこ API', kind: 'service', processId: 'api'},
+      ],
+      edges: [{from: 'user', to: 'api'}],
+    },
+  });
+
+  const result = validateScenarioDefinition(scenario);
+  assert.equal(result.ok, true);
+});
+
+test('scenario validator rejects duplicate topology node ids', () => {
+  const scenario = validScenario({
+    topology: {
+      nodes: [
+        {id: 'user', label: 'ユーザー', kind: 'external'},
+        {id: 'user', label: 'ユーザー2', kind: 'external'},
+      ],
+      edges: [],
+    },
+  });
+
+  const errors = expectInvalidScenario(scenario);
+  assert.match(errors, /topology\.nodes\[1\]\.id must be unique/);
+});
+
+test('scenario validator rejects topology edges referencing unknown nodes', () => {
+  const scenario = validScenario({
+    topology: {
+      nodes: [{id: 'user', label: 'ユーザー', kind: 'external'}],
+      edges: [{from: 'user', to: 'missing'}],
+    },
+  });
+
+  const errors = expectInvalidScenario(scenario);
+  assert.match(
+    errors,
+    /topology\.edges\[0\]\.to must reference an existing node id/
+  );
+});
+
+test('scenario validator rejects topology processId not present in startup', () => {
+  const scenario = validScenario({
+    topology: {
+      nodes: [
+        {
+          id: 'ghost',
+          label: 'Ghost',
+          kind: 'service',
+          processId: 'not-a-startup-id',
+        },
+      ],
+      edges: [],
+    },
+  });
+
+  const errors = expectInvalidScenario(scenario);
+  assert.match(
+    errors,
+    /topology\.nodes\[0\]\.processId must reference a startup id/
+  );
+});
+
+test('scenario validator rejects self-loop topology edges', () => {
+  const scenario = validScenario({
+    topology: {
+      nodes: [{id: 'api', label: 'やまびこ API', kind: 'service'}],
+      edges: [{from: 'api', to: 'api'}],
+    },
+  });
+
+  const errors = expectInvalidScenario(scenario);
+  assert.match(
+    errors,
+    /topology\.edges\[0\] must not be a self loop \(from equals to\)/
+  );
+});
+
 test('scenario validator rejects unsupported alert enums', () => {
   const scenario = validScenario({
     alerts: [

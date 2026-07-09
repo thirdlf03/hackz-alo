@@ -94,7 +94,7 @@ export function ReplayPage({replayId, timeline}: Props) {
     ])
       .then(([replay, indexed, loadedComments]) => {
         if (cancelled) return;
-        setMeta(replay as ReplayMeta);
+        setMeta(replay);
         setEvents(indexed);
         setComments(loadedComments);
       })

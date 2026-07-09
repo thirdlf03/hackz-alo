@@ -47,6 +47,12 @@ const successTypes = new Set([
   'log_absent',
   'kodama_batch_ok',
 ]);
+const topologyNodeKinds = new Set([
+  'external',
+  'service',
+  'datastore',
+  'batch',
+]);
 const idPattern = /^[a-zA-Z0-9._-]+$/;
 
 export function validateScenarioDefinition(
@@ -97,6 +103,8 @@ export function validateScenarioDefinition(
     }
   });
   requireNonEmptyArray(value, 'startup', errors);
+
+  validateTopology(value, startupIds, errors);
 
   const triggerIds = new Set<string>();
   validateArray(value, 'triggers', errors, (item, path) => {
@@ -215,6 +223,71 @@ export function validateScenarioDefinition(
 
   if (errors.length > 0) return {ok: false, errors};
   return {ok: true, value: input as ScenarioDefinition};
+}
+
+function validateTopology(
+  value: Record<string, unknown>,
+  startupIds: Set<string>,
+  errors: string[]
+) {
+  if (value.topology === undefined) return;
+  if (!isObject(value.topology)) {
+    errors.push('topology must be an object');
+    return;
+  }
+  const topology = value.topology;
+
+  const nodeIds = new Set<string>();
+  validateArray(topology, 'nodes', errors, (item, path) => {
+    const fullPath = `topology.${path}`;
+    if (!isObject(item)) {
+      errors.push(`${fullPath} must be an object`);
+      return;
+    }
+    requireId(item, 'id', errors, `topology.${path}`);
+    if (typeof item.id === 'string' && item.id !== '') {
+      rememberUnique(nodeIds, item.id, `${fullPath}.id`, errors);
+    }
+    requireString(item, 'label', errors, `topology.${path}`);
+    if (typeof item.kind !== 'string' || !topologyNodeKinds.has(item.kind)) {
+      errors.push(
+        `${fullPath}.kind must be external, service, datastore, or batch`
+      );
+    }
+    if (item.processId !== undefined) {
+      if (typeof item.processId !== 'string' || item.processId === '') {
+        errors.push(`${fullPath}.processId must be a non-empty string`);
+      } else if (!startupIds.has(item.processId)) {
+        errors.push(`${fullPath}.processId must reference a startup id`);
+      }
+    }
+  });
+
+  validateArray(topology, 'edges', errors, (item, path) => {
+    const fullPath = `topology.${path}`;
+    if (!isObject(item)) {
+      errors.push(`${fullPath} must be an object`);
+      return;
+    }
+    requireString(item, 'from', errors, `topology.${path}`);
+    requireString(item, 'to', errors, `topology.${path}`);
+    const from = item.from;
+    const to = item.to;
+    if (typeof from === 'string' && from !== '' && !nodeIds.has(from)) {
+      errors.push(`${fullPath}.from must reference an existing node id`);
+    }
+    if (typeof to === 'string' && to !== '' && !nodeIds.has(to)) {
+      errors.push(`${fullPath}.to must reference an existing node id`);
+    }
+    if (
+      typeof from === 'string' &&
+      typeof to === 'string' &&
+      from !== '' &&
+      from === to
+    ) {
+      errors.push(`${fullPath} must not be a self loop (from equals to)`);
+    }
+  });
 }
 
 function validateExercise(exercise: Record<string, unknown>, errors: string[]) {

@@ -377,6 +377,10 @@ button:disabled {
   font-weight: 700;
 }
 
+.pager-row {
+  display: flex;
+}
+
 .briefing-meta {
   display: flex;
   flex-wrap: wrap;
@@ -412,15 +416,6 @@ button:disabled {
   justify-content: center;
   width: 100%;
   height: 100%;
-}
-
-.play-speed-control {
-  position: absolute;
-  top: 12px;
-  left: 50%;
-  z-index: 10;
-  transform: translateX(-50%);
-  pointer-events: auto;
 }
 
 .perf-overlay {
@@ -1254,7 +1249,6 @@ canvas:focus-visible {
   }
 
   .play-speed-control {
-    top: 8px;
     max-width: calc(100% - 16px);
     grid-template-columns: repeat(3, minmax(var(--touch-speed), 1fr));
   }

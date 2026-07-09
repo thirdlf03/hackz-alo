@@ -27,6 +27,11 @@ import {
   useSessionEditor,
   useTerminalBridge,
 } from './appRuntime.js';
+import {
+  fetchPushPublicKey,
+  registerPagerSubscription,
+  type PagerSubscriptionPayload,
+} from '../api/pushApi.js';
 import {useCanvasInteraction} from './useCanvasInteraction.js';
 import {useMetricsPolling} from './useMetricsPolling.js';
 import {
@@ -96,6 +101,11 @@ export function App() {
   const [saveRecording, setSaveRecording] = useState(
     () => localStorage.getItem(SAVE_RECORDING_KEY) !== '0'
   );
+  const [pagerPublicKey, setPagerPublicKey] = useState<
+    string | null | undefined
+  >(undefined);
+  const [pagerRegistered, setPagerRegistered] = useState(false);
+  const [pagerBusy, setPagerBusy] = useState(false);
 
   const sessionRuntime = useSessionRuntime({
     api,
@@ -135,6 +145,14 @@ export function App() {
   useEffect(() => {
     sessionStorage.setItem(PARTICIPANT_ROLE_KEY, participantRole);
   }, [participantRole]);
+
+  useEffect(() => {
+    void fetchPushPublicKey().then(setPagerPublicKey);
+  }, []);
+
+  useEffect(() => {
+    setPagerRegistered(false);
+  }, [session?.sessionId]);
 
   useEffect(() => {
     if (
@@ -189,6 +207,43 @@ export function App() {
     endSession,
     submitChatMessage,
   } = sessionRuntime;
+
+  const registerPager = async () => {
+    if (!pagerPublicKey || !session) return;
+    if (
+      typeof Notification === 'undefined' ||
+      !('serviceWorker' in navigator) ||
+      typeof PushManager === 'undefined'
+    ) {
+      return;
+    }
+    setPagerBusy(true);
+    try {
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') {
+        setPagerBusy(false);
+        return;
+      }
+      const registration = await navigator.serviceWorker.register('/sw.js');
+      await navigator.serviceWorker.ready;
+      const subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(
+          pagerPublicKey
+        ) as BufferSource,
+      });
+      await registerPagerSubscription(
+        session.sessionId,
+        api.sessionAccessToken(),
+        subscription.toJSON() as PagerSubscriptionPayload
+      );
+      setPagerRegistered(true);
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setPagerBusy(false);
+    }
+  };
 
   const {
     attachTerminalSession,
@@ -323,8 +378,10 @@ export function App() {
         screen={screen}
         isStarting={isStarting}
         canNavigateToReplay={canNavigateToReplay}
+        gameSpeed={gameSpeed}
         onSetScreen={setScreen}
         onOpenReplay={openReplay}
+        onSetGameSpeed={setGameSpeed}
       />
       {appError && (
         <p class='app-error' role='alert'>
@@ -357,18 +414,22 @@ export function App() {
         />
       )}
 
-      {screen === 'briefing' && scenario && (
+      {screen === 'briefing' && scenario && session && (
         <BriefingScreen
           scenario={scenario}
           isStarting={isStarting}
           sandboxReady={sandboxReady}
           recordingConsent={recordingConsent}
           saveRecording={saveRecording}
+          pagerAvailable={pagerPublicKey != null}
+          pagerRegistered={pagerRegistered}
+          pagerBusy={pagerBusy}
           onBack={() => {
             setScreen('scenario-list');
           }}
           onSetRecordingConsent={setRecordingConsent}
           onSetSaveRecording={setSaveRecording}
+          onRegisterPager={() => void registerPager()}
           onStartPlay={() => void startPlay()}
         />
       )}
@@ -534,4 +595,17 @@ function readParticipantRole(): ParticipantRole {
     return value;
   }
   return 'ops';
+}
+
+function urlBase64ToUint8Array(base64String: string): Uint8Array {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding)
+    .replaceAll('-', '+')
+    .replaceAll('_', '/');
+  const rawData = atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; i++) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+  return outputArray;
 }

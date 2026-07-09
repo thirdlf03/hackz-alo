@@ -10,6 +10,7 @@ import type {
   ParticipantRole,
   ReplayEvent,
   ScenarioDefinition,
+  ServiceHealth,
   SessionStatus,
   ChatMessageDefinition,
 } from '@incident/shared';
@@ -50,6 +51,7 @@ export type SessionSnapshotResponse = SessionClockResponse & {
   status: SessionStatus;
   elapsedMs: number;
   scenario: ScenarioDefinition;
+  serviceHealth?: Record<string, ServiceHealth>;
 };
 
 export class SessionApi {

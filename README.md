@@ -83,8 +83,22 @@ pnpm run setup:domain   # sets INCIDENT_WORKER_URL to https://incident.thirdlf03
 
 ## Environment variables (Worker secrets)
 
-| Name                   | Purpose                                   |
-| ---------------------- | ----------------------------------------- |
-| `ENVIRONMENT`          | Set to `production` to disable dev routes |
-| `TURNSTILE_SECRET_KEY` | Optional bot protection on session create |
-| `ADMIN_SECRET`         | Admin API fallback when Access JWT absent |
+| Name                   | Purpose                                                          |
+| ---------------------- | ---------------------------------------------------------------- |
+| `ENVIRONMENT`          | Set to `production` to disable dev routes                        |
+| `TURNSTILE_SECRET_KEY` | Optional bot protection on session create                        |
+| `ADMIN_SECRET`         | Admin API fallback when Access JWT absent                        |
+| `VAPID_PUBLIC_KEY`     | Web Push の VAPID 公開鍵(ページャー機能。未設定なら機能は無効化) |
+| `VAPID_PRIVATE_KEY`    | Web Push の VAPID 秘密鍵                                         |
+| `VAPID_SUBJECT`        | VAPID subject(`mailto:` 形式)                                    |
+
+### ページャー(Web Push)の VAPID 鍵セットアップ
+
+```sh
+npx web-push generate-vapid-keys
+pnpm exec wrangler secret put VAPID_PUBLIC_KEY -c apps/worker/wrangler.toml
+pnpm exec wrangler secret put VAPID_PRIVATE_KEY -c apps/worker/wrangler.toml
+pnpm exec wrangler secret put VAPID_SUBJECT -c apps/worker/wrangler.toml   # mailto:... 形式
+```
+
+ローカル開発では `apps/worker/.dev.vars` に同名のキーを設定する(`.dev.vars.example` 参照)。未設定の場合、`GET /api/push/public-key` は `{publicKey: null}` を返し、クライアントはページャー UI を表示しない。

@@ -13,6 +13,9 @@ import {createWriteToken, hashWriteToken} from '../pure/writeAuth.js';
 import {purgeReplayStorage} from '../storage/replayPurge.js';
 import type {Bindings} from '../types.js';
 import {getSessionDoStub} from '../effect/sessionDoStub.js';
+import {sendPagerNotification} from '../effect/pagerPush.js';
+import {buildPagerNotificationPayload} from '../pure/pagerNotification.js';
+import {upsertPagerSubscription} from '../repositories/pagerSubscriptionRepository.js';
 
 const difficulties = new Set<Difficulty>([
   'beginner',
@@ -30,6 +33,7 @@ const sessionActionsWithoutDbLookup = new Set([
 const SESSION_CREATE_BODY_MAX_BYTES = 8 * 1024;
 const SESSION_CONTROL_BODY_MAX_BYTES = 8 * 1024;
 const SESSION_FILE_BODY_MAX_BYTES = 1024 * 1024;
+const SESSION_PAGER_BODY_MAX_BYTES = 4096;
 
 export function registerSessionRoutes(app: WorkerApp) {
   app.post('/api/sessions', async (c) => {
@@ -159,11 +163,52 @@ export function registerSessionRoutes(app: WorkerApp) {
     const sessionId = c.req.param('sessionId');
     const record = await getSession(c.env, sessionId);
     if (!record) return c.json(err('not_found', 'session not found'), 404);
-    return proxySession(c, 'start', {
+    const response = await proxySession(c, 'start', {
       sessionId,
       replayId: record.replay_id,
       scenarioId: record.scenario_id,
+      originUrl: new URL(c.req.url).origin,
     });
+    if (response.ok) {
+      scheduleSessionPagerAlerts(c, sessionId, record.scenario_id);
+    }
+    return response;
+  });
+  app.post('/api/sessions/:sessionId/pager', async (c) => {
+    const denied = await requireSessionWriteAccess(c, c.req.param('sessionId'));
+    if (denied) return denied;
+    const sessionId = c.req.param('sessionId');
+    const parsedBody = await readRouteJsonObject(
+      c,
+      SESSION_PAGER_BODY_MAX_BYTES,
+      {emptyValue: {}}
+    );
+    if (parsedBody instanceof Response) return parsedBody;
+    const body = parsedBody as {
+      endpoint?: string;
+      expirationTime?: number | null;
+      keys?: {p256dh?: string; auth?: string};
+    };
+    if (typeof body.endpoint !== 'string' || body.endpoint.length === 0) {
+      return c.json(err('bad_request', 'endpoint is required'), 400);
+    }
+    if (
+      !body.keys ||
+      typeof body.keys.p256dh !== 'string' ||
+      typeof body.keys.auth !== 'string'
+    ) {
+      return c.json(
+        err('bad_request', 'keys.p256dh and keys.auth are required'),
+        400
+      );
+    }
+    await upsertPagerSubscription(c.env, {
+      sessionId,
+      endpoint: body.endpoint,
+      subscriptionJson: JSON.stringify(body),
+      createdAt: Date.now(),
+    });
+    return c.json(ok({registered: true}));
   });
   app.post('/api/sessions/:sessionId/resolve', async (c) => {
     const denied = await requireSessionWriteAccess(c, c.req.param('sessionId'));
@@ -471,6 +516,29 @@ function scheduleSessionPrepare(
           message: messageFrom(error),
         });
       })
+  );
+}
+
+function scheduleSessionPagerAlerts(
+  c: WorkerContext,
+  sessionId: string,
+  scenarioId: string
+) {
+  const scenario = getScenario(scenarioId);
+  if (!scenario) return;
+  const origin = new URL(c.req.url).origin;
+  const payload = buildPagerNotificationPayload(
+    scenario,
+    `${origin}/`,
+    sessionId
+  );
+  c.executionCtx.waitUntil(
+    sendPagerNotification(c.env, sessionId, payload).catch((error: unknown) => {
+      logStructured('pager_alerts_failed', {
+        sessionId,
+        message: messageFrom(error),
+      });
+    })
   );
 }
 

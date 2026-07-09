@@ -3,6 +3,8 @@ export const logicalHeight = 1080;
 export const monitorContentWidth = 496;
 export const monitorContentHeight = 540;
 export const terminalContentWidth = 496;
+/** Upper slice of the metrics monitor reserved for the service topology map. */
+export const TOPOLOGY_MAP_HEIGHT = 240;
 
 const runbookContentX = 1332;
 const runbookContentY = 204;

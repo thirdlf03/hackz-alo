@@ -5,6 +5,7 @@ import type {
   SessionStatus,
 } from '@incident/shared';
 import {computeGameTimeMs} from '../pure/sessionTime.js';
+import {computeServiceHealthMap} from '../pure/serviceHealthMap.js';
 
 export interface StoredSession {
   sessionId: string;
@@ -16,6 +17,7 @@ export interface StoredSession {
   gameTimeMs: number;
   gameSpeed: number;
   gameClockWallMs?: number;
+  pagerOriginUrl?: string;
   triggeredIds: string[];
   firedAlertIds: string[];
   firedChatIds: string[];
@@ -98,6 +100,9 @@ export function buildSessionSnapshot(
   nowMs = Date.now()
 ) {
   const gameTimeMs = getGameTimeMs(session, nowMs);
+  const firedTriggers = scenario.triggers.filter((trigger) =>
+    session.triggeredIds.includes(trigger.id)
+  );
   return {
     ...session,
     gameTimeMs,
@@ -105,6 +110,11 @@ export function buildSessionSnapshot(
     alerts: firedAlerts(scenario, session),
     chatMessages: firedChatMessages(scenario, session),
     scenario,
+    serviceHealth: computeServiceHealthMap(
+      scenario.topology,
+      firedTriggers,
+      session.status === 'resolved'
+    ),
   };
 }
 

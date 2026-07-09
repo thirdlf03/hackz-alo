@@ -25,6 +25,46 @@
       "waitForPort": 15432
     }
   ],
+  "topology": {
+    "nodes": [
+      {
+        "id": "user",
+        "label": "ユーザー",
+        "kind": "external"
+      },
+      {
+        "id": "api",
+        "label": "やまびこ API",
+        "kind": "service",
+        "processId": "api"
+      },
+      {
+        "id": "fake-db",
+        "label": "疑似データベース",
+        "kind": "datastore",
+        "processId": "fake-db"
+      },
+      {
+        "id": "power",
+        "label": "電源",
+        "kind": "external"
+      }
+    ],
+    "edges": [
+      {
+        "from": "user",
+        "to": "api"
+      },
+      {
+        "from": "api",
+        "to": "fake-db"
+      },
+      {
+        "from": "api",
+        "to": "power"
+      }
+    ]
+  },
   "triggers": [
     {
       "id": "spam",

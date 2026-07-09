@@ -20,7 +20,10 @@ import {createEmptyTerminalMirror} from '../game/terminal/mirror.js';
 import {playAlertBeep} from '../game/recording/audio.js';
 import {collectStateTransitions} from '../game/events/sessionEvents.js';
 import type {ApiClientSurface} from '../api/client.js';
-import type {SessionClockResponse} from './appRuntime.js';
+import type {
+  SessionClockResponse,
+  SessionSnapshotResponse,
+} from './appRuntime.js';
 import type {FinishMode, Screen, ScenarioSummary} from './AppScreens.js';
 import {
   computeLiveGameTimeMs,
@@ -258,7 +261,9 @@ export function useSessionRuntime(options: {
     );
   }
 
-  const applyClockSnapshot = (clock: SessionClockResponse) => {
+  const applyClockSnapshot = (
+    clock: SessionClockResponse & Pick<SessionSnapshotResponse, 'serviceHealth'>
+  ) => {
     elapsedMsRef.current = clock.gameTimeMs;
     lastTickAtRef.current = performance.now();
     const previous = gameStateRef.current;
@@ -271,7 +276,8 @@ export function useSessionRuntime(options: {
       clock.gameSpeed,
       delta,
       clock.alerts,
-      clock.chatMessages
+      clock.chatMessages,
+      clock.serviceHealth
     );
     const prevAlertCount = previous.monitors.left.alerts.length;
     if (next.monitors.left.alerts.length > prevAlertCount) {

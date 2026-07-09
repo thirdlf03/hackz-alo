@@ -1,4 +1,7 @@
-import type {ParticipantCursorEvent, ScenarioDefinition} from '@incident/shared';
+import type {
+  ParticipantCursorEvent,
+  ScenarioDefinition,
+} from '@incident/shared';
 import {getScenario} from '@incident/scenarios';
 import {readJsonObjectBody, RequestBodyError} from '../http/body.js';
 import {HttpError, jsonOk, messageFrom} from '../http/response.js';

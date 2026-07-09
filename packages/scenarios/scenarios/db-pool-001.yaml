@@ -16,6 +16,24 @@ startup:
   - id: fake-db
     command: node /workspace/services/fake-db/server.mjs
     waitForPort: 15432
+topology:
+  nodes:
+    - id: user
+      label: ユーザー
+      kind: external
+    - id: api
+      label: やまびこ API
+      kind: service
+      processId: api
+    - id: fake-db
+      label: 疑似データベース
+      kind: datastore
+      processId: fake-db
+  edges:
+    - from: user
+      to: api
+    - from: api
+      to: fake-db
 triggers:
   - id: pool-exhaust
     atMs: 60000

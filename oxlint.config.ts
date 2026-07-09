@@ -38,6 +38,7 @@ export default defineConfig({
     'scripts/**',
     'sandbox/**',
     'tests/**',
+    'apps/web/public/**',
     'playwright.config.ts',
     'playwright.perf.config.ts',
     'packages/scenarios/data/**',

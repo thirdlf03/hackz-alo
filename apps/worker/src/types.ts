@@ -13,4 +13,7 @@ export interface Bindings {
   TURNSTILE_SECRET_KEY?: string;
   ADMIN_SECRET?: string;
   AI?: Ai;
+  VAPID_PUBLIC_KEY?: string;
+  VAPID_PRIVATE_KEY?: string;
+  VAPID_SUBJECT?: string;
 }

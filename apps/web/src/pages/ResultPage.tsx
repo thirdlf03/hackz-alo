@@ -55,7 +55,7 @@ export function ResultPage({
   useEffect(() => {
     Promise.all([api.getReplay(replayId), api.getReplayEvents(replayId)])
       .then(([replay, indexed]) => {
-        setMeta(replay as ReplayMeta);
+        setMeta(replay);
         setEvents(indexed);
       })
       .catch((loadError: unknown) => {

@@ -52,12 +52,41 @@ const difficultyOptions: Array<{
   },
 ];
 
+function GameSpeedControl(props: {
+  gameSpeed: number;
+  onSetGameSpeed: (speed: number) => void;
+}) {
+  return (
+    <div
+      class='speed-control play-speed-control'
+      role='group'
+      aria-label='ゲーム速度'
+    >
+      {speedOptions.map((speed) => (
+        <button
+          key={speed}
+          type='button'
+          class={speed === props.gameSpeed ? 'active' : ''}
+          aria-pressed={speed === props.gameSpeed}
+          onClick={() => {
+            props.onSetGameSpeed(speed);
+          }}
+        >
+          {speed}x
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export function TopBar(props: {
   screen: Screen;
   isStarting: boolean;
   canNavigateToReplay: boolean;
+  gameSpeed: number;
   onSetScreen: (screen: Screen) => void;
   onOpenReplay: () => void;
+  onSetGameSpeed: (speed: number) => void;
 }) {
   const navigationDisabled = props.screen === 'play' || props.isStarting;
   return (
@@ -82,6 +111,12 @@ export function TopBar(props: {
       >
         障害対応訓練
       </strong>
+      {props.screen === 'play' && (
+        <GameSpeedControl
+          gameSpeed={props.gameSpeed}
+          onSetGameSpeed={props.onSetGameSpeed}
+        />
+      )}
       <div class='topbar-actions'>
         <button
           type='button'
@@ -204,9 +239,13 @@ export function BriefingScreen(props: {
   sandboxReady: boolean;
   recordingConsent: boolean;
   saveRecording: boolean;
+  pagerAvailable: boolean;
+  pagerRegistered: boolean;
+  pagerBusy: boolean;
   onBack: () => void;
   onSetRecordingConsent: (value: boolean) => void;
   onSetSaveRecording: (value: boolean) => void;
+  onRegisterPager: () => void;
   onStartPlay: () => void;
 }) {
   return (
@@ -253,6 +292,21 @@ export function BriefingScreen(props: {
       <p id='briefing-consent-note'>
         ブラウザ全体や別タブは録画されません。公開するかどうかは後から選べます。
       </p>
+      {props.pagerAvailable && (
+        <div class='pager-row'>
+          <button
+            type='button'
+            onClick={props.onRegisterPager}
+            disabled={props.pagerBusy || props.pagerRegistered}
+          >
+            {props.pagerRegistered
+              ? '📟 待機中'
+              : props.pagerBusy
+                ? '登録中…'
+                : '📟 ページャー待機'}
+          </button>
+        </div>
+      )}
       <button
         type='button'
         onClick={props.onStartPlay}
@@ -362,33 +416,6 @@ export function LobbyScreen(props: {
   );
 }
 
-function GameSpeedControl(props: {
-  gameSpeed: number;
-  onSetGameSpeed: (speed: number) => void;
-}) {
-  return (
-    <div
-      class='speed-control play-speed-control'
-      role='group'
-      aria-label='ゲーム速度'
-    >
-      {speedOptions.map((speed) => (
-        <button
-          key={speed}
-          type='button'
-          class={speed === props.gameSpeed ? 'active' : ''}
-          aria-pressed={speed === props.gameSpeed}
-          onClick={() => {
-            props.onSetGameSpeed(speed);
-          }}
-        >
-          {speed}x
-        </button>
-      ))}
-    </div>
-  );
-}
-
 export function PlayScreen(props: {
   gameState: GameRenderState | undefined;
   gameSpeed: number;
@@ -480,10 +507,6 @@ export function PlayScreen(props: {
           onWheel={props.onCanvasWheel}
           onKeyDown={props.onTerminalKey}
           onPaste={props.onCanvasPaste}
-        />
-        <GameSpeedControl
-          gameSpeed={props.gameSpeed}
-          onSetGameSpeed={props.onSetGameSpeed}
         />
         <PerfOverlay />
       </div>
