@@ -6,6 +6,7 @@ import type {
   ExerciseTaskStatus,
   IncidentLogEntryKind,
   MetricsSnapshot,
+  ParticipantCursorEvent,
   ParticipantRole,
   ReplayEvent,
   ScenarioDefinition,
@@ -99,6 +100,7 @@ export class SessionApi {
     handlers: {
       onSnapshot?: (snapshot: SessionSnapshotResponse) => void;
       onExercise?: (snapshot: ExerciseSnapshot) => void;
+      onCursor?: (event: ParticipantCursorEvent) => void;
       onReplay?: (event: ReplayEvent) => void;
       onError?: (event: Event) => void;
     }
@@ -118,6 +120,13 @@ export class SessionApi {
     source.addEventListener('replay', (event) => {
       handlers.onReplay?.(
         JSON.parse((event as MessageEvent<string>).data) as ReplayEvent
+      );
+    });
+    source.addEventListener('cursor', (event) => {
+      handlers.onCursor?.(
+        JSON.parse(
+          (event as MessageEvent<string>).data
+        ) as ParticipantCursorEvent
       );
     });
     for (const eventName of [
@@ -174,7 +183,7 @@ export class SessionApi {
     sessionId: string,
     input: {participantId: string; x: number; y: number; visible?: boolean}
   ) {
-    return this.http.post<{exercise: ExerciseSnapshot}>(
+    return this.http.post<{ok: true}>(
       `/api/sessions/${encodeURIComponent(sessionId)}/participants/cursor`,
       input
     );

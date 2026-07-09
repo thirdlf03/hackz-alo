@@ -2,6 +2,7 @@ import type {MutableRef} from 'preact/hooks';
 import type {
   ExerciseSnapshot,
   GameRenderState,
+  ParticipantCursorEvent,
   ScenarioDefinition,
 } from '@incident/shared';
 import type {ApiClientSurface} from '../api/client.js';
@@ -71,6 +72,7 @@ export interface SessionRuntimeBindings {
   endSession: (mode: FinishMode) => Promise<void>;
   applyClockSnapshot: (clock: SessionClockResponse) => void;
   applyExerciseSnapshot: (snapshot: ExerciseSnapshot) => void;
+  applyParticipantCursor: (event: ParticipantCursorEvent) => void;
 }
 
 export interface SessionRuntimeBootstrapOptions {

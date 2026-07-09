@@ -20,6 +20,7 @@ interface InitialGameStateOptions {
   recordingStatus?: GameRenderState['recording']['status'];
   recordingSaveEnabled?: boolean;
   speed?: number;
+  localParticipantId?: string;
 }
 
 const DEFAULT_EDITOR_FILES: EditorPanelState['files'] = [
@@ -106,6 +107,9 @@ export function createInitialGameState(
     world: {narrativeHour: 0, expandedMonitor: null},
     commandInputFocused: false,
     cursor: {x: 960, y: 540, visible: true},
+    ...(options.localParticipantId
+      ? {localParticipantId: options.localParticipantId}
+      : {}),
     room: {
       participants: [],
       tasks: [],

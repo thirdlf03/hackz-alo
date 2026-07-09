@@ -2,6 +2,7 @@ import {useEffect, useRef} from 'preact/hooks';
 import type {
   ExerciseSnapshot,
   GameRenderState,
+  ParticipantCursorEvent,
   ScenarioDefinition,
 } from '@incident/shared';
 import {
@@ -53,6 +54,7 @@ export function useSessionRuntime(options: {
   recordingConsent: boolean;
   isStarting: boolean;
   sandboxReady: boolean;
+  participantId: string;
   deepLinkReplayId: string | undefined;
   deepLinkValidated: boolean;
   recordingRef: {current: SessionRecordingBridge | undefined};
@@ -121,6 +123,7 @@ export function useSessionRuntime(options: {
     recordingConsent,
     isStarting,
     sandboxReady,
+    participantId,
     deepLinkReplayId,
     deepLinkValidated,
     recordingRef,
@@ -309,6 +312,36 @@ export function useSessionRuntime(options: {
     );
   };
 
+  const applyParticipantCursor = (event: ParticipantCursorEvent) => {
+    const current = gameStateRef.current;
+    if (!current) return;
+    let found = false;
+    const participants = current.room.participants.map((participant) => {
+      if (participant.participantId !== event.participantId) return participant;
+      found = true;
+      return {
+        ...participant,
+        online: true,
+        cursor: {
+          x: event.x,
+          y: event.y,
+          visible: event.visible,
+          updatedAt: event.updatedAt,
+        },
+      };
+    });
+    if (!found) return;
+    const next = {
+      ...current,
+      room: {
+        ...current.room,
+        participants,
+      },
+    };
+    gameStateRef.current = next;
+    setGameState(next);
+  };
+
   const bindings: SessionRuntimeBindings = {
     api,
     screen,
@@ -326,6 +359,7 @@ export function useSessionRuntime(options: {
     endSession,
     applyClockSnapshot,
     applyExerciseSnapshot,
+    applyParticipantCursor,
   };
 
   async function createSessionForScenario(scenarioId: string) {
@@ -361,7 +395,7 @@ export function useSessionRuntime(options: {
           created.sessionId,
           created.replayId,
           createEmptyTerminalMirror(),
-          {speed: gameSpeed}
+          {speed: gameSpeed, localParticipantId: participantId}
         )
       );
       setScreen('lobby');
@@ -426,6 +460,7 @@ export function useSessionRuntime(options: {
             recordingStatus: saveRecording ? 'initializing' : 'idle',
             recordingSaveEnabled: saveRecording,
             speed: gameSpeed,
+            localParticipantId: participantId,
           }
         )
       );

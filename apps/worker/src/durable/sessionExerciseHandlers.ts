@@ -1,4 +1,4 @@
-import type {ScenarioDefinition} from '@incident/shared';
+import type {ParticipantCursorEvent, ScenarioDefinition} from '@incident/shared';
 import {getScenario} from '@incident/scenarios';
 import {readJsonObjectBody, RequestBodyError} from '../http/body.js';
 import {HttpError, jsonOk, messageFrom} from '../http/response.js';
@@ -103,7 +103,27 @@ export class SessionExerciseHub {
       await this.loadOrCreate(session),
       body
     );
-    return this.saveResponse(session, room, 'presence');
+    await this.deps.storage.put('exercise', room);
+
+    const requestedId =
+      typeof body.participantId === 'string' ? body.participantId.trim() : '';
+    const participant = room.participants.find(
+      (entry) => entry.participantId === requestedId
+    );
+    if (!participant?.cursor) {
+      throw new HttpError(404, 'not_found', 'participant not found');
+    }
+
+    const event: ParticipantCursorEvent = {
+      sessionId: session.sessionId,
+      participantId: participant.participantId,
+      x: participant.cursor.x,
+      y: participant.cursor.y,
+      visible: participant.cursor.visible,
+      updatedAt: participant.cursor.updatedAt,
+    };
+    this.deps.sseHub.broadcast('cursor', event);
+    return jsonOk({ok: true});
   }
 
   async participantRole(request: Request) {

@@ -203,6 +203,15 @@ export interface ParticipantCursor {
   updatedAt: string;
 }
 
+export interface ParticipantCursorEvent {
+  sessionId: string;
+  participantId: string;
+  x: number;
+  y: number;
+  visible: boolean;
+  updatedAt: string;
+}
+
 export interface ParticipantPresence {
   participantId: string;
   displayName: string;
@@ -440,6 +449,8 @@ export interface GameRenderState {
   };
   commandInputFocused: boolean;
   cursor: {x: number; y: number; visible: boolean};
+  /** Local multiplayer participant id; remote cursor draw skips this id. */
+  localParticipantId?: string;
   room: {
     participants: ParticipantPresence[];
     tasks: ExerciseTask[];

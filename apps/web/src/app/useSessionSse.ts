@@ -12,6 +12,7 @@ export function useSessionSse(bindings: SessionRuntimeBindings) {
     setTimeline,
     applyClockSnapshot,
     applyExerciseSnapshot,
+    applyParticipantCursor,
   } = bindings;
 
   useEffect(() => {
@@ -24,6 +25,7 @@ export function useSessionSse(bindings: SessionRuntimeBindings) {
     const source = api.subscribeSessionEvents(session.sessionId, {
       onSnapshot: applyClockSnapshot,
       onExercise: applyExerciseSnapshot,
+      onCursor: applyParticipantCursor,
       onReplay: (event) => {
         if (
           refs.liveReplayEventIdsRef.current.has(event.id) ||

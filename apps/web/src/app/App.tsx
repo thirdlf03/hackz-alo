@@ -108,6 +108,7 @@ export function App() {
     recordingConsent,
     isStarting,
     sandboxReady,
+    participantId,
     deepLinkReplayId,
     deepLinkValidated,
     recordingRef,

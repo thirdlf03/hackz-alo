@@ -208,6 +208,10 @@ export function drawNavigationOverlay(
   }
 }
 
+const remoteCursorDisplay = new Map<string, {x: number; y: number}>();
+const REMOTE_CURSOR_LERP = 0.32;
+const REMOTE_CURSOR_SNAP_PX = 400;
+
 export function drawCursor(
   surface: CanvasRenderSurface,
   state: GameRenderState
@@ -234,10 +238,28 @@ function drawParticipantCursors(
     palette.accentPink,
     palette.textClock,
   ];
+  const presentIds = new Set<string>();
   state.room.participants.forEach((participant, index) => {
+    if (participant.participantId === state.localParticipantId) return;
     if (!participant.cursor?.visible || !participant.online) return;
+    presentIds.add(participant.participantId);
     const color = colors[index % colors.length] ?? palette.accentCyan;
-    const {x, y} = participant.cursor;
+    const target = participant.cursor;
+    const previous = remoteCursorDisplay.get(participant.participantId);
+    let x = target.x;
+    let y = target.y;
+    if (previous) {
+      const dx = target.x - previous.x;
+      const dy = target.y - previous.y;
+      if (dx * dx + dy * dy > REMOTE_CURSOR_SNAP_PX * REMOTE_CURSOR_SNAP_PX) {
+        x = target.x;
+        y = target.y;
+      } else {
+        x = previous.x + dx * REMOTE_CURSOR_LERP;
+        y = previous.y + dy * REMOTE_CURSOR_LERP;
+      }
+    }
+    remoteCursorDisplay.set(participant.participantId, {x, y});
     surface.ctx.save();
     surface.ctx.globalAlpha = 0.82;
     surface.ctx.fillStyle = color;
@@ -251,6 +273,9 @@ function drawParticipantCursors(
     surface.ctx.fillText(participant.displayName, x + 16, y + 18);
     surface.ctx.restore();
   });
+  for (const id of remoteCursorDisplay.keys()) {
+    if (!presentIds.has(id)) remoteCursorDisplay.delete(id);
+  }
 }
 
 export function drawCommandWarning(

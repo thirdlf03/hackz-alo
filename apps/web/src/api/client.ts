@@ -4,6 +4,7 @@ import type {
   ExerciseSnapshot,
   ExerciseTaskStatus,
   IncidentLogEntryKind,
+  ParticipantCursorEvent,
   ParticipantRole,
   ReplayEvent,
   ScenarioDefinition,
@@ -50,6 +51,7 @@ export type {
 interface SessionHandlers {
   onSnapshot?: (snapshot: SessionSnapshotResponse) => void;
   onExercise?: (snapshot: ExerciseSnapshot) => void;
+  onCursor?: (event: ParticipantCursorEvent) => void;
   onReplay?: (event: ReplayEvent) => void;
   onError?: (event: Event) => void;
 }
@@ -147,7 +149,7 @@ export interface ApiClientSurface
   updateParticipantCursor(
     sessionId: string,
     input: {participantId: string; x: number; y: number; visible?: boolean}
-  ): Promise<{exercise: ExerciseSnapshot}>;
+  ): Promise<{ok: true}>;
   updateParticipantRole(
     sessionId: string,
     input: {participantId: string; role: ParticipantRole}

@@ -25,7 +25,16 @@ export function useCanvasRenderer(options: {
     const draw = () => {
       const latest = options.gameStateRef.current;
       const scenario = options.scenarioRef.current;
-      const animate = Boolean(latest?.commandInputFocused);
+      const hasRemoteCursors = Boolean(
+        latest?.room.participants.some(
+          (participant) =>
+            participant.cursor?.visible &&
+            participant.online &&
+            participant.participantId !== latest.localParticipantId
+        )
+      );
+      const animate =
+        Boolean(latest?.commandInputFocused) || hasRemoteCursors;
       if (
         latest &&
         (animate || latest !== lastState || scenario !== lastScenario)
@@ -33,7 +42,7 @@ export function useCanvasRenderer(options: {
         const drawStartedAt = performance.now();
         renderer.draw(latest, scenario);
         recordCanvasDraw(performance.now() - drawStartedAt, {
-          command_input_focused: animate,
+          command_input_focused: Boolean(latest?.commandInputFocused),
         });
         if (!animate) {
           lastState = latest;
