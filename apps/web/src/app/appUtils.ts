@@ -6,6 +6,7 @@ import {
 import {toErrorMessage} from '../pure/errors.js';
 import {containsPoint} from '../pure/geometry.js';
 import {SessionActionError} from '../api/httpClient.js';
+import {participantRoleLabels} from './AppScreens.js';
 
 export function readReplayIdFromSearch() {
   if (typeof window === 'undefined') return undefined;
@@ -38,17 +39,30 @@ export {toErrorMessage};
 
 export function describeSessionActionError(
   error: unknown,
-  context: 'start' | 'fireInject' | 'phase'
+  context: 'start' | 'fireInject' | 'phase' | 'task' | 'incidentLog' | 'hotwash'
 ): string {
   if (error instanceof SessionActionError) {
     if (error.code === 'host_required') {
-      if (context === 'fireInject')
+      if (context === 'fireInject') {
         return 'インジェクトの投入はホストのみ行えます。';
+      }
       if (context === 'phase') return 'フェーズの進行はホストのみ行えます。';
       return 'セッションの開始はホストのみ行えます。';
     }
     if (error.code === 'participants_not_ready') {
       return '全員の準備が完了するまで開始できません。';
+    }
+    if (error.code === 'role_required') {
+      // The server reports `ops` as the representative required role for
+      // sandbox operations, which are allowed to Ops and Facilitator.
+      const roles =
+        !error.requiredRole || error.requiredRole === 'ops'
+          ? `${participantRoleLabels.ops} / ${participantRoleLabels.facilitator}`
+          : participantRoleLabels[error.requiredRole];
+      return `この操作には ${roles} の役割が必要です。`;
+    }
+    if (error.code === 'observer_read_only') {
+      return `${participantRoleLabels.observer} は閲覧専用です。`;
     }
   }
   return toErrorMessage(error);

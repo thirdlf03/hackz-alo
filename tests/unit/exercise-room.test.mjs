@@ -6,6 +6,8 @@ const {
   appendIncidentLog,
   areParticipantsReadyToStart,
   buildExerciseSnapshot,
+  canContributeRecords,
+  canOperateSandbox,
   canPerformRoleGatedAction,
   createExerciseRoom,
   createTask,
@@ -145,6 +147,88 @@ test('areParticipantsReadyToStart requires all online non-observer participants 
     ready: true,
   });
   assert.equal(areParticipantsReadyToStart(room), true);
+});
+
+test('canOperateSandbox allows solo play regardless of role', () => {
+  let room = createExerciseRoom(scenario);
+  room = joinParticipant(room, {participantId: 'solo_1', role: 'observer'});
+  assert.equal(canOperateSandbox(room, 'solo_1').allowed, true);
+});
+
+test('canOperateSandbox allows ops and facilitator in multiplayer, rejects others', () => {
+  let room = createExerciseRoom(scenario);
+  room = joinParticipant(room, {participantId: 'ops_1', role: 'ops'});
+  room = joinParticipant(room, {participantId: 'fac_1', role: 'facilitator'});
+  room = joinParticipant(room, {
+    participantId: 'ic_1',
+    role: 'incident_commander',
+  });
+  room = joinParticipant(room, {participantId: 'obs_1', role: 'observer'});
+  assert.equal(canOperateSandbox(room, 'ops_1').allowed, true);
+  assert.equal(canOperateSandbox(room, 'fac_1').allowed, true);
+  assert.equal(canOperateSandbox(room, 'ic_1').allowed, false);
+  assert.equal(canOperateSandbox(room, 'obs_1').allowed, false);
+});
+
+test('canOperateSandbox rejects unknown or missing participantId in multiplayer', () => {
+  let room = createExerciseRoom(scenario);
+  room = joinParticipant(room, {participantId: 'ops_1', role: 'ops'});
+  room = joinParticipant(room, {participantId: 'ops_2', role: 'ops'});
+  assert.equal(canOperateSandbox(room, 'stranger').allowed, false);
+  assert.equal(canOperateSandbox(room, undefined).allowed, false);
+});
+
+test('canOperateSandbox ignores offline participants for the solo rescue', () => {
+  const staleAt = '2024-01-01T00:00:00.000Z';
+  const freshAt = '2024-01-01T00:00:40.000Z';
+  const checkAt = '2024-01-01T00:00:41.000Z';
+  let room = createExerciseRoom(scenario);
+  room = joinParticipant(
+    room,
+    {participantId: 'scribe_1', role: 'scribe'},
+    freshAt
+  );
+  room = joinParticipant(
+    room,
+    {participantId: 'stale_1', role: 'ops'},
+    staleAt
+  );
+  // Only scribe_1 is online: solo rescue lifts the role restriction.
+  assert.equal(canOperateSandbox(room, 'scribe_1', checkAt).allowed, true);
+});
+
+test('canContributeRecords rejects only observers in multiplayer', () => {
+  let room = createExerciseRoom(scenario);
+  room = joinParticipant(room, {participantId: 'scribe_1', role: 'scribe'});
+  room = joinParticipant(room, {participantId: 'obs_1', role: 'observer'});
+  assert.equal(canContributeRecords(room, 'scribe_1').allowed, true);
+  assert.equal(canContributeRecords(room, 'obs_1').allowed, false);
+  assert.equal(canContributeRecords(room, 'stranger').allowed, false);
+  assert.equal(canContributeRecords(room, undefined).allowed, false);
+});
+
+test('canContributeRecords allows a solo observer', () => {
+  let room = createExerciseRoom(scenario);
+  room = joinParticipant(room, {participantId: 'obs_1', role: 'observer'});
+  assert.equal(canContributeRecords(room, 'obs_1').allowed, true);
+});
+
+test('canContributeRecords ignores offline participants when counting the room', () => {
+  const staleAt = '2024-01-01T00:00:00.000Z';
+  const freshAt = '2024-01-01T00:00:40.000Z';
+  const checkAt = '2024-01-01T00:00:41.000Z';
+  let room = createExerciseRoom(scenario);
+  room = joinParticipant(
+    room,
+    {participantId: 'obs_1', role: 'observer'},
+    freshAt
+  );
+  room = joinParticipant(
+    room,
+    {participantId: 'stale_1', role: 'ops'},
+    staleAt
+  );
+  assert.equal(canContributeRecords(room, 'obs_1', checkAt).allowed, true);
 });
 
 test('areParticipantsReadyToStart ignores observers and stale participants', () => {

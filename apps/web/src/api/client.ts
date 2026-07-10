@@ -182,6 +182,7 @@ export interface ApiClientSurface
       title?: string;
       status?: ExerciseTaskStatus;
       assigneeParticipantId?: string | null;
+      actorParticipantId?: string;
     }
   ): Promise<{exercise: ExerciseSnapshot}>;
   fireInject(

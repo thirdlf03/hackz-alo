@@ -11,6 +11,7 @@ import {setCenterTool, updateEditorPanel} from '../game/state/gameState.js';
 import {centerEditorOverlayRegion} from '../game/render/canvasLayout.js';
 import {formatTime} from '../pure/canvasFormat.js';
 import {areParticipantsReadyToStart} from '../pure/participantsReady.js';
+import {canContributeRecords} from '../pure/rolePermissions.js';
 import {ReplayPage} from '../pages/ReplayPage.js';
 import {ResultPage} from '../pages/ResultPage.js';
 import {
@@ -339,7 +340,7 @@ export function BriefingScreen(props: {
   );
 }
 
-const participantRoleLabels: Record<ParticipantRole, string> = {
+export const participantRoleLabels: Record<ParticipantRole, string> = {
   incident_commander: 'IC',
   ops: 'Ops',
   scribe: 'Scribe',
@@ -434,6 +435,10 @@ export function LobbyScreen(props: {
             ))}
           </select>
         </label>
+        <small class='role-permission-hint'>
+          Ops / Facilitator: ターミナル・エディタを操作できます / Observer:
+          閲覧専用
+        </small>
       </div>
       <div class='participant-list'>
         {participants.map((participant) => (
@@ -563,6 +568,10 @@ export function PlayScreen(props: {
       </div>
       <TeamExercisePanel
         exercise={props.exercise}
+        canContribute={canContributeRecords(
+          props.exercise?.participants ?? [],
+          props.participantId
+        )}
         onCreateTask={props.onCreateTask}
         onAppendIncidentLog={props.onAppendIncidentLog}
         onFireInject={props.onFireInject}
@@ -576,6 +585,7 @@ export function PlayScreen(props: {
 
 function TeamExercisePanel(props: {
   exercise: ExerciseSnapshot | undefined;
+  canContribute: boolean;
   onCreateTask: (title: string) => void;
   onAppendIncidentLog: (body: string) => void;
   onFireInject: (injectId: string) => void;
@@ -599,9 +609,17 @@ function TeamExercisePanel(props: {
           ))}
         </div>
       </section>
+      {!props.canContribute && (
+        <p class='team-readonly-note' role='status'>
+          Observer は閲覧専用です
+        </p>
+      )}
       <section>
         <h2>Tasks</h2>
-        <TaskComposer onCreateTask={props.onCreateTask} />
+        <TaskComposer
+          disabled={!props.canContribute}
+          onCreateTask={props.onCreateTask}
+        />
         <ol class='team-list'>
           {tasks.slice(-6).map((task) => (
             <li key={task.id}>
@@ -613,7 +631,10 @@ function TeamExercisePanel(props: {
       </section>
       <section>
         <h2>Incident Log</h2>
-        <LogComposer onAppendIncidentLog={props.onAppendIncidentLog} />
+        <LogComposer
+          disabled={!props.canContribute}
+          onAppendIncidentLog={props.onAppendIncidentLog}
+        />
         <ol class='team-list'>
           {incidentLog.map((entry) => (
             <li key={entry.id}>
@@ -663,12 +684,16 @@ function TeamExercisePanel(props: {
   );
 }
 
-function TaskComposer(props: {onCreateTask: (title: string) => void}) {
+function TaskComposer(props: {
+  disabled?: boolean;
+  onCreateTask: (title: string) => void;
+}) {
   return (
     <form
       class='team-composer'
       onSubmit={(event) => {
         event.preventDefault();
+        if (props.disabled) return;
         const input = event.currentTarget.elements.namedItem('task');
         if (!(input instanceof HTMLInputElement)) return;
         const title = input.value.trim();
@@ -677,18 +702,30 @@ function TaskComposer(props: {onCreateTask: (title: string) => void}) {
         input.value = '';
       }}
     >
-      <input name='task' type='text' maxLength={160} placeholder='タスク追加' />
-      <button type='submit'>追加</button>
+      <input
+        name='task'
+        type='text'
+        maxLength={160}
+        placeholder='タスク追加'
+        disabled={props.disabled}
+      />
+      <button type='submit' disabled={props.disabled}>
+        追加
+      </button>
     </form>
   );
 }
 
-function LogComposer(props: {onAppendIncidentLog: (body: string) => void}) {
+function LogComposer(props: {
+  disabled?: boolean;
+  onAppendIncidentLog: (body: string) => void;
+}) {
   return (
     <form
       class='team-composer'
       onSubmit={(event) => {
         event.preventDefault();
+        if (props.disabled) return;
         const input = event.currentTarget.elements.namedItem('log');
         if (!(input instanceof HTMLInputElement)) return;
         const body = input.value.trim();
@@ -697,14 +734,23 @@ function LogComposer(props: {onAppendIncidentLog: (body: string) => void}) {
         input.value = '';
       }}
     >
-      <input name='log' type='text' maxLength={2000} placeholder='記録追加' />
-      <button type='submit'>記録</button>
+      <input
+        name='log'
+        type='text'
+        maxLength={2000}
+        placeholder='記録追加'
+        disabled={props.disabled}
+      />
+      <button type='submit' disabled={props.disabled}>
+        記録
+      </button>
     </form>
   );
 }
 
 export function HotwashScreen(props: {
   exercise: ExerciseSnapshot | undefined;
+  participantId: string;
   report: AfterActionReport | undefined;
   onSubmit: (input: {
     wentWell: string;
@@ -714,14 +760,24 @@ export function HotwashScreen(props: {
   onGenerateAar: () => void;
   onOpenReplay: () => void;
 }) {
+  const canContribute = canContributeRecords(
+    props.exercise?.participants ?? [],
+    props.participantId
+  );
   return (
     <section class='panel hotwash-panel' aria-labelledby='hotwash-heading'>
       <p class='eyebrow'>Hotwash</p>
       <h1 id='hotwash-heading'>ふりかえり</h1>
+      {!canContribute && (
+        <p class='team-readonly-note' role='status'>
+          Observer は閲覧専用です
+        </p>
+      )}
       <form
         class='hotwash-form'
         onSubmit={(event) => {
           event.preventDefault();
+          if (!canContribute) return;
           const form = event.currentTarget;
           const value = (name: string) => {
             const field = form.elements.namedItem(name);
@@ -737,17 +793,19 @@ export function HotwashScreen(props: {
       >
         <label>
           うまくいったこと
-          <textarea name='wentWell' required />
+          <textarea name='wentWell' required disabled={!canContribute} />
         </label>
         <label>
           改善したいこと
-          <textarea name='improve' required />
+          <textarea name='improve' required disabled={!canContribute} />
         </label>
         <label>
           Follow-up
-          <textarea name='followUp' required />
+          <textarea name='followUp' required disabled={!canContribute} />
         </label>
-        <button type='submit'>提出</button>
+        <button type='submit' disabled={!canContribute}>
+          提出
+        </button>
       </form>
       <div class='participant-list'>
         {(props.exercise?.hotwashNotes ?? []).map((note) => (

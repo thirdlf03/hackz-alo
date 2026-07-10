@@ -12,6 +12,7 @@ import {
   formatTime,
 } from './canvasDrawUtils.js';
 import {gamePalette as palette, uiFont, monoFont} from './gamePalette.js';
+import {canOperateSandbox} from '../../pure/rolePermissions.js';
 import {
   inputDockRects,
   logicalWidth,
@@ -78,12 +79,17 @@ export function drawInputDock(
   const input = inputDockRects.input;
   const button = inputDockRects.button;
   const enabled = state.session.status === 'running';
-  const focused = state.commandInputFocused;
+  const sandboxAllowed = canOperateSandbox(
+    state.room.participants,
+    state.localParticipantId
+  );
+  const inputEnabled = enabled && sandboxAllowed;
+  const focused = state.commandInputFocused && sandboxAllowed;
   const typed = extractTypedCommand(
     state.monitors.center.terminal.commandDraft
   );
   const caretVisible =
-    enabled && focused && Math.floor(performance.now() / 530) % 2 === 0;
+    inputEnabled && focused && Math.floor(performance.now() / 530) % 2 === 0;
 
   surface.ctx.fillStyle = palette.bgPanelDark;
   surface.ctx.fillRect(0, 850, logicalWidth, 170);
@@ -96,9 +102,9 @@ export function drawInputDock(
   roundRect(surface.ctx, input.x, input.y, input.width, input.height, 8);
   surface.ctx.fill();
   surface.ctx.strokeStyle =
-    enabled && focused
+    inputEnabled && focused
       ? palette.borderFocus
-      : enabled
+      : inputEnabled
         ? palette.borderDefault
         : palette.bgCard;
   surface.ctx.lineWidth = 2;
@@ -107,13 +113,17 @@ export function drawInputDock(
   const inputTextY = input.y + Math.round(input.height / 2) + 8;
   surface.ctx.font = monoFont(22);
   const textStartX = input.x + 20;
-  if (typed) {
+  if (typed && sandboxAllowed) {
     surface.ctx.fillStyle = palette.textTerminal;
     surface.ctx.fillText(typed, textStartX, inputTextY);
   } else if (!focused) {
     surface.ctx.fillStyle = palette.textMuted;
     surface.ctx.fillText(
-      enabled ? 'コマンドを入力…' : 'セッション開始後に入力できます',
+      !sandboxAllowed
+        ? 'ターミナル操作は Ops / Facilitator のみ'
+        : enabled
+          ? 'コマンドを入力…'
+          : 'セッション開始後に入力できます',
       textStartX,
       inputTextY
     );

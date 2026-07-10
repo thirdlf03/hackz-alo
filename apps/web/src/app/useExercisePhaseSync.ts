@@ -2,6 +2,7 @@ import {useEffect} from 'preact/hooks';
 import {createInitialGameState} from '../game/state/gameState.js';
 import {createEmptyTerminalMirror} from '../game/terminal/mirror.js';
 import {isHostParticipant} from '../pure/isHostParticipant.js';
+import {canOperateSandbox} from '../pure/rolePermissions.js';
 import type {SessionRuntimeBindings} from './sessionRuntimeTypes.js';
 
 /**
@@ -65,7 +66,12 @@ export function useExercisePhaseSync(bindings: SessionRuntimeBindings) {
     // the host's startPlay() ordering.
     void (async () => {
       try {
-        await terminalBridgeRef.current?.attachTerminalSession(session);
+        // Role gate mirrors the server (see pure/rolePermissions.ts):
+        // guests without sandbox permission stay detached and see the
+        // read-only terminal panel instead.
+        if (canOperateSandbox(exerciseSnapshot.participants, participantId)) {
+          await terminalBridgeRef.current?.attachTerminalSession(session);
+        }
       } catch (error) {
         console.error(error);
       } finally {

@@ -18,6 +18,7 @@ import {
   jsonOk,
   messageFrom,
   participantsNotReadyResponse,
+  roleRequiredResponse,
 } from '../http/response.js';
 import {logStructured} from '../http/requestLog.js';
 import type {Bindings} from '../types.js';
@@ -54,6 +55,7 @@ import {
 } from './sessionResourceHandlers.js';
 import {
   areParticipantsReadyToStart,
+  canOperateSandbox,
   canPerformRoleGatedAction,
   setExercisePhase,
 } from '../pure/exerciseRoom.js';
@@ -491,6 +493,10 @@ export class SessionDurableObject implements DurableObject {
 
   private async terminal(request: Request) {
     const session = await this.requireSession();
+    const participantId =
+      new URL(request.url).searchParams.get('participantId') ?? undefined;
+    const denied = await this.denySandboxOperation(session, participantId);
+    if (denied) return denied;
     await this.touchClientActivity();
     return handleSessionTerminal(
       this.env,
@@ -501,10 +507,16 @@ export class SessionDurableObject implements DurableObject {
   }
 
   private async terminalResize(request: Request) {
+    const session = await this.requireSession();
     const body = (await readInternalJsonObject(
       request,
       SESSION_CONTROL_BODY_MAX_BYTES
-    )) as {cols?: number; rows?: number};
+    )) as {cols?: number; rows?: number; participantId?: unknown};
+    const denied = await this.denySandboxOperation(
+      session,
+      typeof body.participantId === 'string' ? body.participantId : undefined
+    );
+    if (denied) return denied;
     this.terminalDimensions = mergeTerminalResize(
       this.terminalDimensions,
       body
@@ -563,10 +575,30 @@ export class SessionDurableObject implements DurableObject {
     const body = (await readInternalJsonObject(
       request,
       SESSION_FILE_BODY_MAX_BYTES
-    )) as {path?: unknown; content?: unknown};
+    )) as {path?: unknown; content?: unknown; participantId?: unknown};
+    const denied = await this.denySandboxOperation(
+      session,
+      typeof body.participantId === 'string' ? body.participantId : undefined
+    );
+    if (denied) return denied;
     const response = await writeSessionFileContent(this.env, session, body);
     await this.touchClientActivity();
     return response;
+  }
+
+  /**
+   * Returns a 403 response when the participant may not operate the
+   * sandbox (terminal / editor writes); undefined when allowed. The
+   * `ops` role in the payload stands for the allowed set (ops or
+   * facilitator) — see canOperateSandbox.
+   */
+  private async denySandboxOperation(
+    session: StoredSession,
+    participantId: string | undefined
+  ) {
+    const room = await this.exercise.loadOrCreate(session);
+    const decision = canOperateSandbox(room, participantId);
+    return decision.allowed ? undefined : roleRequiredResponse('ops');
   }
 
   private clearMetricsCache() {
