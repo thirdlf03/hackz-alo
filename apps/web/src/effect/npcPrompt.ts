@@ -1,7 +1,4 @@
-import {
-  progressEventRatio,
-  type AssistAvailability,
-} from '../pure/aiAssist.js';
+import {progressEventRatio, type AssistAvailability} from '../pure/aiAssist.js';
 import {NPC_SYSTEM_PROMPT} from '../pure/npcColleague.js';
 
 interface LanguageModelMessage {

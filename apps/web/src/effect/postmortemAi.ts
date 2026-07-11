@@ -1,7 +1,4 @@
-import {
-  progressEventRatio,
-  type AssistAvailability,
-} from '../pure/aiAssist.js';
+import {progressEventRatio, type AssistAvailability} from '../pure/aiAssist.js';
 import {POSTMORTEM_SHARED_CONTEXT} from '../pure/postmortem.js';
 
 type StreamingResult = ReadableStream<string> & AsyncIterable<string>;

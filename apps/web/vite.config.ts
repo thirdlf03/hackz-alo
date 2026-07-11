@@ -23,7 +23,8 @@ export default defineConfig({
     },
     proxy: {
       '/api': {
-        target: process.env.INCIDENT_API_PROXY_TARGET ?? 'http://127.0.0.1:8787',
+        target:
+          process.env.INCIDENT_API_PROXY_TARGET ?? 'http://127.0.0.1:8787',
         ws: true,
       },
     },

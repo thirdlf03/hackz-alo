@@ -621,6 +621,6 @@ function tabLabel(
   if (tab === 'commands') return 'コマンド';
   if (tab === 'alerts') return 'アラート';
   if (tab === 'comments') return 'コメント';
-  if (tab === 'highlights') return `ハイライト (${highlightCount})`;
+  if (tab === 'highlights') return `ハイライト (${String(highlightCount)})`;
   return 'Runbook';
 }
