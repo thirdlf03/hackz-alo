@@ -4,6 +4,7 @@ import type {
   Difficulty,
   ExerciseSnapshot,
   GameRenderState,
+  IncidentLogEntryKind,
   ParticipantRole,
   ScenarioDefinition,
 } from '@incident/shared';
@@ -23,6 +24,7 @@ import {
 } from './appTypes.js';
 import {PerfOverlay} from './PerfOverlay.js';
 import {AiAssistPanel} from './AiAssistPanel.js';
+import {SpeechIncidentLogPanel} from './SpeechIncidentLogPanel.js';
 import {ModelDownloadButton} from './ModelDownloadButton.js';
 
 export type {FinishMode, ScenarioSummary, Screen} from './appTypes.js';
@@ -479,6 +481,7 @@ export function PlayScreen(props: {
   gameState: GameRenderState | undefined;
   gameSpeed: number;
   participantId: string;
+  scenario: ScenarioDefinition | undefined;
   exercise: ExerciseSnapshot | undefined;
   canvasRef: {current: HTMLCanvasElement | null};
   editorTextareaRef: {current: HTMLTextAreaElement | null};
@@ -491,7 +494,7 @@ export function PlayScreen(props: {
   onTerminalKey: (event: KeyboardEvent) => void;
   onCanvasPaste: (event: ClipboardEvent) => void;
   onCreateTask: (title: string) => void;
-  onAppendIncidentLog: (body: string) => void;
+  onAppendIncidentLog: (body: string, kind?: IncidentLogEntryKind) => void;
   onFireInject: (injectId: string) => void;
 }) {
   return (
@@ -576,6 +579,8 @@ export function PlayScreen(props: {
           props.participantId
         )}
         canvasRef={props.canvasRef}
+        scenario={props.scenario}
+        commandInputFocused={props.gameState?.commandInputFocused ?? false}
         onCreateTask={props.onCreateTask}
         onAppendIncidentLog={props.onAppendIncidentLog}
         onFireInject={props.onFireInject}
@@ -591,8 +596,10 @@ function TeamExercisePanel(props: {
   exercise: ExerciseSnapshot | undefined;
   canContribute: boolean;
   canvasRef: {current: HTMLCanvasElement | null};
+  scenario: ScenarioDefinition | undefined;
+  commandInputFocused: boolean;
   onCreateTask: (title: string) => void;
-  onAppendIncidentLog: (body: string) => void;
+  onAppendIncidentLog: (body: string, kind?: IncidentLogEntryKind) => void;
   onFireInject: (injectId: string) => void;
 }) {
   const participants = props.exercise?.participants ?? [];
@@ -639,6 +646,14 @@ function TeamExercisePanel(props: {
         <LogComposer
           disabled={!props.canContribute}
           onAppendIncidentLog={props.onAppendIncidentLog}
+        />
+        <SpeechIncidentLogPanel
+          scenario={props.scenario}
+          canContribute={props.canContribute}
+          commandInputFocused={props.commandInputFocused}
+          onAppendIncidentLog={(body, kind) => {
+            props.onAppendIncidentLog(body, kind);
+          }}
         />
         <ol class='team-list'>
           {incidentLog.map((entry) => (

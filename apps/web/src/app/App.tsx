@@ -518,6 +518,7 @@ export function App() {
         <PlayScreen
           gameState={gameState}
           gameSpeed={gameSpeed}
+          scenario={scenario}
           canvasRef={canvasRef}
           editorTextareaRef={editorTextareaRef}
           patchGameStateRef={patchGameStateRef}
@@ -544,12 +545,12 @@ export function App() {
                 setAppError(describeSessionActionError(error, 'task'));
               });
           }}
-          onAppendIncidentLog={(body) => {
+          onAppendIncidentLog={(body, kind) => {
             if (!session) return;
             void api
               .appendIncidentLog(session.sessionId, {
                 body,
-                kind: 'note',
+                kind: kind ?? 'note',
                 actorParticipantId: participantId,
               })
               .then(({exercise}) => {
