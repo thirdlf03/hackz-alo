@@ -111,6 +111,7 @@ export class SessionApi {
       onExercise?: (snapshot: ExerciseSnapshot) => void;
       onCursor?: (event: ParticipantCursorEvent) => void;
       onReplay?: (event: ReplayEvent) => void;
+      onRtcSignal?: (data: unknown) => void;
       onError?: (event: Event) => void;
     }
   ) {
@@ -153,8 +154,36 @@ export class SessionApi {
         );
       });
     }
+    source.addEventListener('rtc_signal', (event) => {
+      handlers.onRtcSignal?.(
+        JSON.parse((event as MessageEvent<string>).data) as unknown
+      );
+    });
     source.addEventListener('error', (event) => handlers.onError?.(event));
     return source;
+  }
+
+  /** WebRTC ウォールーム音声用の ICE サーバー(Cloudflare TURN)を取得する。 */
+  getRtcIceServers(sessionId: string) {
+    return this.http.post<{iceServers: unknown}>(
+      `/api/sessions/${encodeURIComponent(sessionId)}/rtc/turn-credentials`,
+      {}
+    );
+  }
+
+  sendRtcSignal(
+    sessionId: string,
+    input: {
+      fromParticipantId: string;
+      toParticipantId?: string;
+      kind: 'join' | 'offer' | 'answer' | 'ice' | 'leave';
+      payload?: unknown;
+    }
+  ) {
+    return this.http.post<{sent: boolean}>(
+      `/api/sessions/${encodeURIComponent(sessionId)}/rtc/signal`,
+      input
+    );
   }
 
   getExerciseState(sessionId: string) {

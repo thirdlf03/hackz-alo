@@ -32,6 +32,7 @@ export type SessionRouteName =
   | 'incidentLog'
   | 'hotwash'
   | 'aar'
+  | 'rtcSignal'
   | 'snapshot';
 
 const routeTable: Record<string, Partial<Record<string, SessionRouteName>>> = {
@@ -57,6 +58,7 @@ const routeTable: Record<string, Partial<Record<string, SessionRouteName>>> = {
     phase: 'exercisePhase',
     'incident-log': 'incidentLog',
     hotwash: 'hotwash',
+    signal: 'rtcSignal',
   },
   GET: {
     events: 'events',

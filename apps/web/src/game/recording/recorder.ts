@@ -47,7 +47,11 @@ export class CanvasRecorder {
     return Math.max(0, Math.round(performance.now() - this.startedAt));
   }
 
-  start() {
+  /**
+   * @param audioStream 録画へ合成する音声(アラート音・ウォールーム音声の
+   *   ミックス)。省略時は従来どおり映像のみ(tech.md R30-R32)。
+   */
+  start(audioStream?: MediaStream) {
     if (this.recorder && this.recorder.state !== 'inactive') return;
     const mimeType = pickSupportedMimeType((candidate) =>
       MediaRecorder.isTypeSupported(candidate)
@@ -56,7 +60,12 @@ export class CanvasRecorder {
       throw new Error('MediaRecorder is not supported in this browser');
     }
     this.activeMimeType = mimeType;
-    const stream = this.canvas.captureStream(30);
+    const canvasStream = this.canvas.captureStream(30);
+    const audioTracks = audioStream?.getAudioTracks() ?? [];
+    const stream =
+      audioTracks.length > 0
+        ? new MediaStream([...canvasStream.getVideoTracks(), ...audioTracks])
+        : canvasStream;
     this.startedAt = performance.now();
     this.lastChunkEndedAtMs = 0;
     this.seq = 0;

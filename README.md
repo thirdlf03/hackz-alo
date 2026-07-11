@@ -83,14 +83,28 @@ pnpm run setup:domain   # sets INCIDENT_WORKER_URL to https://incident.thirdlf03
 
 ## Environment variables (Worker secrets)
 
-| Name                   | Purpose                                                          |
-| ---------------------- | ---------------------------------------------------------------- |
-| `ENVIRONMENT`          | Set to `production` to disable dev routes                        |
-| `TURNSTILE_SECRET_KEY` | Optional bot protection on session create                        |
-| `ADMIN_SECRET`         | Admin API fallback when Access JWT absent                        |
-| `VAPID_PUBLIC_KEY`     | Web Push の VAPID 公開鍵(ページャー機能。未設定なら機能は無効化) |
-| `VAPID_PRIVATE_KEY`    | Web Push の VAPID 秘密鍵                                         |
-| `VAPID_SUBJECT`        | VAPID subject(`mailto:` 形式)                                    |
+| Name                    | Purpose                                                               |
+| ----------------------- | --------------------------------------------------------------------- |
+| `ENVIRONMENT`           | Set to `production` to disable dev routes                             |
+| `TURNSTILE_SECRET_KEY`  | Optional bot protection on session create                             |
+| `ADMIN_SECRET`          | Admin API fallback when Access JWT absent                             |
+| `VAPID_PUBLIC_KEY`      | Web Push の VAPID 公開鍵(ページャー機能。未設定なら機能は無効化)      |
+| `VAPID_PRIVATE_KEY`     | Web Push の VAPID 秘密鍵                                              |
+| `VAPID_SUBJECT`         | VAPID subject(`mailto:` 形式)                                         |
+| `CF_TURN_KEY_ID`        | Cloudflare Calls TURN 鍵の ID(ウォールーム音声。未設定なら STUN のみ) |
+| `CF_TURN_KEY_API_TOKEN` | Cloudflare Calls TURN 鍵の API トークン                               |
+
+### ウォールーム音声(WebRTC)の TURN セットアップ
+
+[Cloudflare Calls ダッシュボード](https://dash.cloudflare.com/?to=/:account/calls) で TURN 鍵を作成し、
+worker のシークレットに設定すると NAT 越えに Cloudflare TURN が使われます。
+
+```sh
+pnpm exec wrangler secret put CF_TURN_KEY_ID -c apps/worker/wrangler.toml
+pnpm exec wrangler secret put CF_TURN_KEY_API_TOKEN -c apps/worker/wrangler.toml
+```
+
+未設定の場合は `stun:stun.cloudflare.com:3478` のみで接続を試みます(同一 NAT 内なら大抵つながります)。
 
 ### ページャー(Web Push)の VAPID 鍵セットアップ
 

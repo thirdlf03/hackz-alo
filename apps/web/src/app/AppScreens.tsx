@@ -32,6 +32,12 @@ import {PerfOverlay} from './PerfOverlay.js';
 import {AiAssistPanel} from './AiAssistPanel.js';
 import {SpeechIncidentLogPanel} from './SpeechIncidentLogPanel.js';
 import {ModelDownloadButton} from './ModelDownloadButton.js';
+import {describeAssistAvailability} from '../pure/aiAssist.js';
+import {describeVoiceStatus} from '../pure/voiceChat.js';
+import {PIP_MONITOR_LABELS, type PipMonitorId} from '../pure/pipMonitor.js';
+import type {VoiceChatControls} from './useVoiceChat.js';
+import type {NpcColleagueControls} from './useNpcColleague.js';
+import type {MonitorPipControls} from './useMonitorPip.js';
 
 export type {FinishMode, ScenarioSummary, Screen} from './appTypes.js';
 
@@ -505,6 +511,9 @@ export function PlayScreen(props: {
   onCreateTask: (title: string) => void;
   onAppendIncidentLog: (body: string, kind?: IncidentLogEntryKind) => void;
   onFireInject: (injectId: string) => void;
+  voice: VoiceChatControls;
+  npc: NpcColleagueControls;
+  pip: MonitorPipControls;
 }) {
   return (
     <section class='game-layout'>
@@ -615,6 +624,7 @@ export function PlayScreen(props: {
           )}
         </canvas>
         <PerfOverlay />
+        <MonitorPipToolbar pip={props.pip} />
       </div>
       <TeamExercisePanel
         exercise={props.exercise}
@@ -628,6 +638,8 @@ export function PlayScreen(props: {
         onCreateTask={props.onCreateTask}
         onAppendIncidentLog={props.onAppendIncidentLog}
         onFireInject={props.onFireInject}
+        voice={props.voice}
+        npc={props.npc}
       />
       <p id='canvas-play-hint' class='visually-hidden'>
         ターミナルにフォーカスしてキーボードでコマンドを入力できます。画面上のボタンはマウスで操作します。
@@ -645,6 +657,8 @@ function TeamExercisePanel(props: {
   onCreateTask: (title: string) => void;
   onAppendIncidentLog: (body: string, kind?: IncidentLogEntryKind) => void;
   onFireInject: (injectId: string) => void;
+  voice: VoiceChatControls;
+  npc: NpcColleagueControls;
 }) {
   const participants = props.exercise?.participants ?? [];
   const tasks = props.exercise?.tasks ?? [];
@@ -665,6 +679,8 @@ function TeamExercisePanel(props: {
           ))}
         </div>
       </section>
+      <WarRoomVoicePanel voice={props.voice} />
+      <NpcColleaguePanel npc={props.npc} onCreateTask={props.onCreateTask} />
       {!props.canContribute && (
         <p class='team-readonly-note' role='status'>
           Observer は閲覧専用です
@@ -746,6 +762,147 @@ function TeamExercisePanel(props: {
       </section>
       <AiAssistPanel canvasRef={props.canvasRef} />
     </aside>
+  );
+}
+
+/** gameCanvas のモニターを Document PiP へ「取り外す」ボタン列。 */
+function MonitorPipToolbar(props: {pip: MonitorPipControls}) {
+  const monitors: PipMonitorId[] = ['metrics', 'chat'];
+  return (
+    <div class='play-pip-toolbar' role='group' aria-label='モニターの取り外し'>
+      {monitors.map((monitorId) => {
+        const detached = props.pip.detached.includes(monitorId);
+        return (
+          <button
+            key={monitorId}
+            type='button'
+            class={detached ? 'active' : ''}
+            aria-pressed={detached}
+            disabled={!props.pip.supported}
+            title={
+              props.pip.supported
+                ? '常時最前面の PiP ウィンドウにミラー表示します'
+                : 'このブラウザは Document Picture-in-Picture に対応していません'
+            }
+            onClick={() => {
+              props.pip.toggle(monitorId);
+            }}
+          >
+            {detached ? '📌 戻す: ' : '📌 取り外す: '}
+            {PIP_MONITOR_LABELS[monitorId]}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/** WebRTC ウォールーム音声(Cloudflare TURN 経由)の参加・ミュート操作。 */
+function WarRoomVoicePanel(props: {voice: VoiceChatControls}) {
+  const {voice} = props;
+  const joined = voice.status === 'connected';
+  const joining = voice.status === 'requesting_mic';
+  return (
+    <section class='voice-panel' aria-label='ウォールーム音声'>
+      <h2>
+        War Room 音声 <span class='ai-assist-badge'>WebRTC</span>
+      </h2>
+      <p class='voice-status' role='status'>
+        {describeVoiceStatus(voice.status, voice.peerIds.length, voice.muted)}
+      </p>
+      {joined ? (
+        <div class='voice-actions'>
+          <button
+            type='button'
+            class={
+              voice.muted ? 'voice-mute-button muted' : 'voice-mute-button'
+            }
+            aria-pressed={voice.muted}
+            aria-label={
+              voice.muted ? 'マイクのミュートを解除' : 'マイクをミュート'
+            }
+            onClick={voice.toggleMute}
+          >
+            {voice.muted ? '🔇 ミュート中' : '🎙 ミュート'}
+          </button>
+          <button type='button' onClick={voice.leave}>
+            退出
+          </button>
+        </div>
+      ) : (
+        <div class='voice-actions'>
+          <button type='button' disabled={joining} onClick={voice.join}>
+            {joining ? '接続中…' : '🎙 音声に参加'}
+          </button>
+        </div>
+      )}
+      <small class='voice-note'>参加中の会話はリプレイ録画に残ります</small>
+    </section>
+  );
+}
+
+/** Prompt API structured output で動く AI NPC「後輩ソラ」の操作パネル。 */
+function NpcColleaguePanel(props: {
+  npc: NpcColleagueControls;
+  onCreateTask: (title: string) => void;
+}) {
+  const {npc} = props;
+  const unavailable =
+    npc.availability === 'unsupported' || npc.availability === 'unavailable';
+  return (
+    <section class='npc-panel' aria-label='AI NPC 後輩ソラ'>
+      <h2>
+        後輩ソラ <span class='ai-assist-badge'>on-device NPC</span>
+      </h2>
+      {unavailable || npc.availability === undefined ? (
+        <p class='npc-status' role='status'>
+          {npc.availability === undefined
+            ? '利用可否を確認中…'
+            : describeAssistAvailability(npc.availability)}
+        </p>
+      ) : (
+        <>
+          <label class='npc-toggle'>
+            <input
+              type='checkbox'
+              checked={npc.enabled}
+              onChange={(event) => {
+                npc.setEnabled(event.currentTarget.checked);
+              }}
+            />
+            チャットに常駐させる
+          </label>
+          <p class='npc-status' role='status'>
+            {npc.enabled
+              ? npc.thinking
+                ? '状況を観察中…'
+                : '数十秒おきに状況を見て発言します(提案の採否はあなた次第)'
+              : 'オフ'}
+          </p>
+          {npc.suggestedTask && (
+            <div class='npc-suggestion' role='group' aria-label='後輩の提案'>
+              <p>提案: {npc.suggestedTask}</p>
+              <div class='npc-suggestion-actions'>
+                <button
+                  type='button'
+                  onClick={() => {
+                    if (npc.suggestedTask) {
+                      props.onCreateTask(npc.suggestedTask);
+                    }
+                    npc.dismissSuggestedTask();
+                  }}
+                >
+                  タスクに採用
+                </button>
+                <button type='button' onClick={npc.dismissSuggestedTask}>
+                  却下
+                </button>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </section>
   );
 }
 

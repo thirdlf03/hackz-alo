@@ -379,6 +379,20 @@ export function submitPlayerChatMessage(
   });
 }
 
+export function appendNpcChatMessage(
+  state: GameRenderState,
+  body: string,
+  atMs: number,
+  from: string
+): GameRenderState {
+  return reduceGameState(state, {
+    type: 'append_npc_chat_message',
+    body,
+    atMs,
+    from,
+  });
+}
+
 export function toggleExpandedMonitor(
   state: GameRenderState,
   monitor: 'metrics' | 'terminal' | 'runbook'

@@ -30,6 +30,7 @@ import {
   scheduleSessionLifecycleAlarms,
   touchSessionClientActivity,
 } from './sessionLifecycle.js';
+import {parseRtcSignalBody} from '../pure/turnCredentials.js';
 import {persistReplayStart, persistSession} from './sessionPersistence.js';
 import {handleSessionPagerEvent} from './sessionPagerEvents.js';
 import {resolveSessionAction} from './sessionResolve.js';
@@ -82,6 +83,7 @@ import {
 const SESSION_BOOTSTRAP_BODY_MAX_BYTES = 8 * 1024;
 const SESSION_CONTROL_BODY_MAX_BYTES = 8 * 1024;
 const SESSION_FILE_BODY_MAX_BYTES = 1024 * 1024;
+const RTC_SIGNAL_BODY_MAX_BYTES = 64 * 1024;
 // Short TTL: only meant to absorb near-simultaneous double-fires of
 // prepareSandbox (server-scheduled prepare + client-triggered prepare),
 // not to serve as a long-lived cache — the sandbox container itself can
@@ -221,6 +223,7 @@ export class SessionDurableObject implements DurableObject {
             incidentLog: (req) => this.exercise.incidentLog(req),
             hotwash: (req) => this.exercise.hotwash(req),
             aar: () => this.exercise.aar(),
+            rtcSignal: (req) => this.rtcSignal(req),
             snapshot: async () => jsonOk(await this.snapshot()),
           });
           if (response) {
@@ -438,6 +441,26 @@ export class SessionDurableObject implements DurableObject {
   private async events(request: Request) {
     await this.requireSession();
     return this.sseHub.response(request);
+  }
+
+  /**
+   * WebRTC ウォールーム音声のシグナリング中継。SDP/ICE を保存せず、
+   * セッションの SSE ストリームへ `rtc_signal` としてブロードキャスト
+   * するだけ(宛先の絞り込みはクライアント側で行う)。
+   */
+  private async rtcSignal(request: Request) {
+    const session = await this.requireSession();
+    const body = parseRtcSignalBody(
+      await readInternalJsonObject(request, RTC_SIGNAL_BODY_MAX_BYTES)
+    );
+    if (!body) {
+      throw new HttpError(400, 'bad_request', 'invalid rtc signal body');
+    }
+    this.sseHub.broadcast('rtc_signal', {
+      sessionId: session.sessionId,
+      ...body,
+    });
+    return jsonOk({sent: true});
   }
 
   private async terminal(request: Request) {

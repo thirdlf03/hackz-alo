@@ -53,6 +53,7 @@ interface SessionHandlers {
   onExercise?: (snapshot: ExerciseSnapshot) => void;
   onCursor?: (event: ParticipantCursorEvent) => void;
   onReplay?: (event: ReplayEvent) => void;
+  onRtcSignal?: (data: unknown) => void;
   onError?: (event: Event) => void;
 }
 
@@ -108,6 +109,8 @@ export interface ApiClientSurface
       | 'appendIncidentLog'
       | 'submitHotwash'
       | 'getAfterActionReport'
+      | 'getRtcIceServers'
+      | 'sendRtcSignal'
     >,
     Pick<
       RecordingUploadApi,
@@ -272,6 +275,8 @@ export class ApiClient {
       'appendIncidentLog',
       'submitHotwash',
       'getAfterActionReport',
+      'getRtcIceServers',
+      'sendRtcSignal',
     ]);
     bindApiMethods(this, this.recordingUpload, [
       'uploadChunk',

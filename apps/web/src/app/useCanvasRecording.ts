@@ -7,6 +7,7 @@ import {
 } from '@incident/observability/browser';
 import type {ApiClientSurface} from '../api/client.js';
 import {CanvasRecorder} from '../game/recording/recorder.js';
+import {getRecordingAudioStream} from '../game/recording/audioMixer.js';
 import {RecordingFinalizer} from '../game/recording/finalizer.js';
 import {
   installOfflineFlush,
@@ -115,7 +116,9 @@ export function useCanvasRecording(options: {
       updateRecordingStatus(current, 'initializing')
     );
     try {
-      recorder.start();
+      // アラート音とウォールーム音声を録画に合成する(tech.md R30-R32)。
+      // 対応外ブラウザでは undefined になり従来どおり映像のみ録画する。
+      recorder.start(getRecordingAudioStream());
       recordingStartedAtGameMsRef.current = options.currentGameTimeMs();
       recordingClockSegmentsRef.current = [
         {

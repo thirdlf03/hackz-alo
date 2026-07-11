@@ -65,6 +65,7 @@ export function useSessionRuntime(options: {
   deepLinkValidated: boolean;
   recordingRef: {current: SessionRecordingBridge | undefined};
   terminalBridgeRef: {current: TerminalBridgeRef | undefined};
+  rtcSignalHandlerRef: {current: ((data: unknown) => void) | undefined};
   setScreen: (screen: Screen) => void;
   setSession: (
     session: {sessionId: string; replayId: string} | undefined
@@ -135,6 +136,7 @@ export function useSessionRuntime(options: {
     deepLinkValidated,
     recordingRef,
     terminalBridgeRef,
+    rtcSignalHandlerRef,
     setScreen,
     setSession,
     setScenario,
@@ -380,6 +382,7 @@ export function useSessionRuntime(options: {
     applyClockSnapshot,
     applyExerciseSnapshot,
     applyParticipantCursor,
+    rtcSignalHandlerRef,
   };
 
   async function createSessionForScenario(scenarioId: string) {

@@ -1532,3 +1532,77 @@ canvas:focus-visible {
     grid-template-columns: 1fr;
   }
 }
+
+/* --- War Room voice / AI NPC / monitor PiP --- */
+.voice-panel,
+.npc-panel {
+  margin-top: 4px;
+}
+
+.voice-status,
+.npc-status {
+  margin: 0 0 8px;
+  color: var(--text-secondary);
+  font-size: var(--font-caption);
+}
+
+.voice-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.voice-mute-button.muted {
+  background: var(--surface-error, #b3261e);
+  color: #fff;
+}
+
+.voice-note {
+  display: block;
+  margin-top: 6px;
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.npc-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: var(--font-caption);
+  color: var(--text-primary);
+}
+
+.npc-suggestion {
+  margin-top: 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--surface-raised);
+  padding: 8px 10px;
+}
+
+.npc-suggestion p {
+  margin: 0 0 8px;
+  font-size: var(--font-caption);
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.npc-suggestion-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.play-pip-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.play-pip-toolbar button {
+  font-size: var(--font-caption);
+}
+
+.play-pip-toolbar button.active {
+  border-color: var(--border-focus, #7aa2ff);
+}
