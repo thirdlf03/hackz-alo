@@ -33,6 +33,7 @@ import {
   type PagerSubscriptionPayload,
 } from '../api/pushApi.js';
 import {useCanvasInteraction} from './useCanvasInteraction.js';
+import {useWebMcpTools} from './useWebMcpTools.js';
 import {useMetricsPolling} from './useMetricsPolling.js';
 import {
   readReplayIdFromSearch,
@@ -234,6 +235,15 @@ export function App() {
   } = sessionRuntime;
 
   const isHost = isHostParticipant(exerciseSnapshot, participantId);
+
+  useWebMcpTools({
+    api,
+    screen,
+    session,
+    participantId,
+    gameStateRef,
+    setExerciseSnapshot,
+  });
 
   const registerPager = async () => {
     if (!pagerPublicKey || !session) return;
