@@ -6,6 +6,7 @@ const {
   buildAssistPrompt,
   computeSnapshotSize,
   describeAssistAvailability,
+  describeModelDownloadStatus,
   formatDownloadProgress,
 } = await tsImport('../../apps/web/src/pure/aiAssist.ts', import.meta.url);
 
@@ -62,4 +63,34 @@ test('formatDownloadProgress renders clamped percentages', () => {
   assert.equal(formatDownloadProgress(1), '100%');
   assert.equal(formatDownloadProgress(4), '100%');
   assert.equal(formatDownloadProgress(Number.NaN), '0%');
+});
+
+test('describeModelDownloadStatus reports the downloaded state', () => {
+  assert.equal(
+    describeModelDownloadStatus('available'),
+    'AIモデルはダウンロード済みです'
+  );
+});
+
+test('describeModelDownloadStatus reports the downloadable state', () => {
+  assert.equal(describeModelDownloadStatus('downloadable').length > 0, true);
+});
+
+test('describeModelDownloadStatus reports downloading without progress', () => {
+  assert.equal(
+    describeModelDownloadStatus('downloading'),
+    'AIモデルをダウンロードしています…'
+  );
+});
+
+test('describeModelDownloadStatus reports downloading with progress', () => {
+  assert.equal(
+    describeModelDownloadStatus('downloading', 0.5),
+    'AIモデルをダウンロードしています… 50%'
+  );
+});
+
+test('describeModelDownloadStatus returns empty string for unsupported states', () => {
+  assert.equal(describeModelDownloadStatus('unsupported'), '');
+  assert.equal(describeModelDownloadStatus('unavailable'), '');
 });

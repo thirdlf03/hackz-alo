@@ -59,3 +59,21 @@ export function formatDownloadProgress(loaded: number): string {
   const ratio = Number.isFinite(loaded) ? Math.min(Math.max(loaded, 0), 1) : 0;
   return `${String(Math.round(ratio * 100))}%`;
 }
+
+export function describeModelDownloadStatus(
+  availability: AssistAvailability,
+  downloadProgress?: number
+): string {
+  switch (availability) {
+    case 'available':
+      return 'AIモデルはダウンロード済みです';
+    case 'downloading':
+      return downloadProgress === undefined
+        ? 'AIモデルをダウンロードしています…'
+        : `AIモデルをダウンロードしています… ${formatDownloadProgress(downloadProgress)}`;
+    case 'downloadable':
+      return 'プレイ中のAI Assistで使うAIモデルを、端末内で事前にダウンロードできます。';
+    default:
+      return '';
+  }
+}
