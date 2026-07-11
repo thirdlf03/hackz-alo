@@ -1233,6 +1233,51 @@ canvas:focus-visible {
   color: var(--text-success-badge);
 }
 
+.ai-assist-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--surface-tutorial-badge);
+  color: var(--text-tutorial-badge);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  vertical-align: middle;
+}
+
+.ai-assist-status {
+  margin: 0 0 10px;
+  color: var(--text-secondary);
+  font-size: var(--font-caption);
+}
+
+.ai-assist-error {
+  margin: 8px 0 0;
+  color: var(--text-error);
+  font-size: var(--font-caption);
+}
+
+.ai-assist-preview {
+  display: block;
+  width: 100%;
+  margin-top: 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+}
+
+.ai-assist-answer {
+  margin: 10px 0 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--surface-raised);
+  padding: 10px 12px;
+  color: var(--text-primary);
+  font-size: var(--font-caption);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .hotwash-form {
   display: grid;
   gap: 12px;

@@ -22,6 +22,7 @@ import {
   type ScenarioSummary,
 } from './appTypes.js';
 import {PerfOverlay} from './PerfOverlay.js';
+import {AiAssistPanel} from './AiAssistPanel.js';
 
 export type {FinishMode, ScenarioSummary, Screen} from './appTypes.js';
 
@@ -572,6 +573,7 @@ export function PlayScreen(props: {
           props.exercise?.participants ?? [],
           props.participantId
         )}
+        canvasRef={props.canvasRef}
         onCreateTask={props.onCreateTask}
         onAppendIncidentLog={props.onAppendIncidentLog}
         onFireInject={props.onFireInject}
@@ -586,6 +588,7 @@ export function PlayScreen(props: {
 function TeamExercisePanel(props: {
   exercise: ExerciseSnapshot | undefined;
   canContribute: boolean;
+  canvasRef: {current: HTMLCanvasElement | null};
   onCreateTask: (title: string) => void;
   onAppendIncidentLog: (body: string) => void;
   onFireInject: (injectId: string) => void;
@@ -680,6 +683,7 @@ function TeamExercisePanel(props: {
           ))}
         </ol>
       </section>
+      <AiAssistPanel canvasRef={props.canvasRef} />
     </aside>
   );
 }
