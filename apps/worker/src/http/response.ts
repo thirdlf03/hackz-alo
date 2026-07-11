@@ -1,4 +1,4 @@
-import type {ApiResult} from '@incident/shared';
+import type {ApiResult, ParticipantRole} from '@incident/shared';
 
 export function ok<T>(data: T): ApiResult<T> {
   return {ok: true, data};
@@ -58,4 +58,12 @@ export function hostRequiredResponse() {
 
 export function participantsNotReadyResponse() {
   return jsonResponse({error: 'participants_not_ready'}, 409);
+}
+
+export function roleRequiredResponse(requiredRole: ParticipantRole) {
+  return jsonResponse({error: 'role_required', requiredRole}, 403);
+}
+
+export function observerReadOnlyResponse() {
+  return jsonResponse({error: 'observer_read_only'}, 403);
 }

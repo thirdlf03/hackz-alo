@@ -19,6 +19,8 @@ export type TerminalConnectionState =
 export interface TerminalSessionOptions {
   sessionId: string;
   accessToken?: string | undefined;
+  /** Sent as a WS query param for the server-side role gate. */
+  participantId?: string | undefined;
   cols?: number;
   rows?: number;
   onSnapshot: (snapshot: TerminalMirrorState) => void;
@@ -81,6 +83,9 @@ export class TerminalSession {
         );
         if (options.accessToken) {
           url.searchParams.set('accessToken', options.accessToken);
+        }
+        if (options.participantId) {
+          url.searchParams.set('participantId', options.participantId);
         }
         return url.toString();
       },

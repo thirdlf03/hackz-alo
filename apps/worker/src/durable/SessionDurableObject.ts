@@ -1,5 +1,4 @@
 import {
-  canDeclareRecovery,
   type ReplayEvent,
   type ScenarioDefinition,
   type SessionStatus,
@@ -9,7 +8,7 @@ import {
   INCIDENT_SPAN_NAMES,
   withWorkerSpan,
 } from '@incident/observability/worker';
-import {readJsonObjectBody, RequestBodyError} from '../http/body.js';
+import {readInternalJsonObject} from '../http/body.js';
 import {
   errorResponse,
   HttpError,
@@ -18,13 +17,10 @@ import {
   jsonOk,
   messageFrom,
   participantsNotReadyResponse,
+  roleRequiredResponse,
 } from '../http/response.js';
 import {logStructured} from '../http/requestLog.js';
 import type {Bindings} from '../types.js';
-import {
-  computeServiceHealthMap,
-  diffServiceHealth,
-} from '../pure/serviceHealthMap.js';
 import {emitSessionReplayEvent} from './sessionEventEmit.js';
 import {finishSessionTransaction} from './sessionFinish.js';
 import {
@@ -35,14 +31,8 @@ import {
   touchSessionClientActivity,
 } from './sessionLifecycle.js';
 import {persistReplayStart, persistSession} from './sessionPersistence.js';
-import {sendPagerNotification} from '../effect/pagerPush.js';
-import {
-  buildPagerAlertPayload,
-  buildPagerChatPayload,
-  PAGER_ALERT_MIN_INTERVAL_MS,
-  shouldThrottlePagerAlert,
-  type PagerNotificationPayload,
-} from '../pure/pagerNotification.js';
+import {handleSessionPagerEvent} from './sessionPagerEvents.js';
+import {resolveSessionAction} from './sessionResolve.js';
 import {
   readSessionFileContent,
   readSessionFiles,
@@ -54,6 +44,7 @@ import {
 } from './sessionResourceHandlers.js';
 import {
   areParticipantsReadyToStart,
+  canOperateSandbox,
   canPerformRoleGatedAction,
   setExercisePhase,
 } from '../pure/exerciseRoom.js';
@@ -71,10 +62,9 @@ import {
   startStoredSession,
   type SessionBootstrap,
   type StoredSession,
-  type SuccessCheck,
 } from './sessionState.js';
 import {SessionSseHub} from './sessionSseHub.js';
-import {SessionTimeline, type PagerTimelineEvent} from './sessionTimeline.js';
+import {SessionTimeline} from './sessionTimeline.js';
 import {
   handleSessionTerminal,
   handleSessionTerminalInterrupt,
@@ -83,7 +73,6 @@ import {
 } from './sessionTerminalHandlers.js';
 import {
   destroySessionSandbox,
-  evaluateSuccessCondition,
   injectFault,
   prepareScenarioSandbox,
   startScenarioSandbox,
@@ -151,7 +140,12 @@ export class SessionDurableObject implements DurableObject {
         this.sseHub.broadcast(event, data);
       },
       onPagerEvent: (session, event) => {
-        this.handlePagerEvent(session, event);
+        this.lastAlertPagerSentAt = handleSessionPagerEvent(
+          this.env,
+          session,
+          event,
+          this.lastAlertPagerSentAt
+        );
       },
       fireScheduledInject: async (injectId) => {
         const session = await this.requireSession();
@@ -358,59 +352,16 @@ export class SessionDurableObject implements DurableObject {
 
   private async resolve() {
     const session = await this.requireSession();
-    const scenario = requireScenario(session.scenarioId);
-    const incidentStarted = canDeclareRecovery(scenario, session.triggeredIds);
-    const checks: SuccessCheck[] = await Promise.all(
-      scenario.successConditions.map(async (condition) => ({
-        condition,
-        ok: await evaluateSuccessCondition(
-          this.env,
-          session.sessionId,
-          condition
-        ),
-      }))
-    );
-    const resolved = incidentStarted && checks.every((check) => check.ok);
-    const beforeHealth = computeServiceHealthMap(
-      scenario.topology,
-      scenario.triggers.filter((t) => session.triggeredIds.includes(t.id)),
-      session.status === 'resolved'
-    );
-    const finished = await this.finishSession(
-      session,
-      resolved ? 'resolved' : 'failed',
-      resolved ? 'resolved' : 'false_resolve'
-    );
-    let result = await this.emit(
-      finished,
-      resolved ? 'incident_resolved' : 'session_end',
-      getGameTimeMs(finished),
-      resolved ? 'system' : 'player',
-      resolved ? {checks} : {result: 'false_resolve', checks}
-    );
-    const afterHealth = computeServiceHealthMap(
-      scenario.topology,
-      scenario.triggers.filter((t) => result.triggeredIds.includes(t.id)),
-      result.status === 'resolved'
-    );
-    for (const change of diffServiceHealth(
-      beforeHealth,
-      afterHealth,
-      scenario.topology
-    )) {
-      result = await this.emit(
-        result,
-        'service_health_changed',
-        getGameTimeMs(finished),
-        'system',
-        {...change}
-      );
-    }
-    this.sseHub.broadcast('snapshot', this.snapshotFor(result));
-    return jsonOk({
-      ok: resolved,
-      checks,
-      session: this.snapshotFor(result),
+    return resolveSessionAction(session, {
+      env: this.env,
+      finishSession: (target, status, result) =>
+        this.finishSession(target, status, result),
+      emit: (target, type, at, actor, payload) =>
+        this.emit(target, type, at, actor, payload),
+      snapshotFor: (target) => this.snapshotFor(target),
+      broadcast: (event, data) => {
+        this.sseHub.broadcast(event, data);
+      },
     });
   }
 
@@ -491,6 +442,10 @@ export class SessionDurableObject implements DurableObject {
 
   private async terminal(request: Request) {
     const session = await this.requireSession();
+    const participantId =
+      new URL(request.url).searchParams.get('participantId') ?? undefined;
+    const denied = await this.denySandboxOperation(session, participantId);
+    if (denied) return denied;
     await this.touchClientActivity();
     return handleSessionTerminal(
       this.env,
@@ -501,10 +456,16 @@ export class SessionDurableObject implements DurableObject {
   }
 
   private async terminalResize(request: Request) {
+    const session = await this.requireSession();
     const body = (await readInternalJsonObject(
       request,
       SESSION_CONTROL_BODY_MAX_BYTES
-    )) as {cols?: number; rows?: number};
+    )) as {cols?: number; rows?: number; participantId?: unknown};
+    const denied = await this.denySandboxOperation(
+      session,
+      typeof body.participantId === 'string' ? body.participantId : undefined
+    );
+    if (denied) return denied;
     this.terminalDimensions = mergeTerminalResize(
       this.terminalDimensions,
       body
@@ -563,10 +524,30 @@ export class SessionDurableObject implements DurableObject {
     const body = (await readInternalJsonObject(
       request,
       SESSION_FILE_BODY_MAX_BYTES
-    )) as {path?: unknown; content?: unknown};
+    )) as {path?: unknown; content?: unknown; participantId?: unknown};
+    const denied = await this.denySandboxOperation(
+      session,
+      typeof body.participantId === 'string' ? body.participantId : undefined
+    );
+    if (denied) return denied;
     const response = await writeSessionFileContent(this.env, session, body);
     await this.touchClientActivity();
     return response;
+  }
+
+  /**
+   * Returns a 403 response when the participant may not operate the
+   * sandbox (terminal / editor writes); undefined when allowed. The
+   * `ops` role in the payload stands for the allowed set (ops or
+   * facilitator) — see canOperateSandbox.
+   */
+  private async denySandboxOperation(
+    session: StoredSession,
+    participantId: string | undefined
+  ) {
+    const room = await this.exercise.loadOrCreate(session);
+    const decision = canOperateSandbox(room, participantId);
+    return decision.allowed ? undefined : roleRequiredResponse('ops');
   }
 
   private clearMetricsCache() {
@@ -711,61 +692,6 @@ export class SessionDurableObject implements DurableObject {
     return finished;
   }
 
-  private handlePagerEvent(session: StoredSession, event: PagerTimelineEvent) {
-    try {
-      if (!session.pagerOriginUrl) return;
-      const sessionUrl = `${session.pagerOriginUrl}/`;
-      const scenario = requireScenario(session.scenarioId);
-      if (event.kind === 'alert') {
-        if (event.alert.severity !== 'critical') return;
-        const now = Date.now();
-        if (
-          shouldThrottlePagerAlert(
-            this.lastAlertPagerSentAt,
-            now,
-            PAGER_ALERT_MIN_INTERVAL_MS
-          )
-        ) {
-          return;
-        }
-        this.lastAlertPagerSentAt = now;
-        const payload = buildPagerAlertPayload(
-          scenario,
-          event.alert,
-          sessionUrl,
-          session.sessionId
-        );
-        this.sendPagerNotificationSafe(session.sessionId, payload);
-        return;
-      }
-      const payload = buildPagerChatPayload(
-        event.chat,
-        sessionUrl,
-        session.sessionId
-      );
-      this.sendPagerNotificationSafe(session.sessionId, payload);
-    } catch (error: unknown) {
-      logStructured('pager_event_failed', {
-        sessionId: session.sessionId,
-        message: messageFrom(error),
-      });
-    }
-  }
-
-  private sendPagerNotificationSafe(
-    sessionId: string,
-    payload: PagerNotificationPayload
-  ) {
-    sendPagerNotification(this.env, sessionId, payload).catch(
-      (error: unknown) => {
-        logStructured('pager_push_failed', {
-          sessionId,
-          message: messageFrom(error),
-        });
-      }
-    );
-  }
-
   private async emit(
     session: StoredSession,
     type: ReplayEvent['type'],
@@ -797,15 +723,4 @@ async function readBootstrap(
     request,
     SESSION_BOOTSTRAP_BODY_MAX_BYTES
   );
-}
-
-async function readInternalJsonObject(request: Request, maxBytes: number) {
-  try {
-    return await readJsonObjectBody(request, maxBytes, {emptyValue: {}});
-  } catch (error) {
-    if (error instanceof RequestBodyError) {
-      throw new HttpError(error.status, error.code, error.message);
-    }
-    throw error;
-  }
 }

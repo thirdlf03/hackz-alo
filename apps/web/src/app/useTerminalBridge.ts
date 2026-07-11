@@ -12,6 +12,7 @@ import {
 import {TerminalSession} from '../game/terminal/session.js';
 import {terminalDebug} from '../game/terminal/debug.js';
 import {keyboardEventToTerminalInput} from '../game/terminal/input.js';
+import {canOperateSandbox} from '../pure/rolePermissions.js';
 import {
   classifyCommandEvent,
   commandEventPayload,
@@ -37,6 +38,7 @@ const DANGEROUS_COMMAND = /\brm\s+-rf\b/i;
 export function useTerminalBridge(options: {
   api: ApiClientSurface;
   screen: Screen;
+  participantId: string;
   gameState: GameRenderState | undefined;
   gameStateRef: MutableRef<GameRenderState | undefined>;
   sessionRef: MutableRef<SessionIdentity | undefined>;
@@ -73,15 +75,26 @@ export function useTerminalBridge(options: {
     attachedSessionIdRef.current = activeSession.sessionId;
     try {
       const {cols, rows} = defaultTerminalDimensions();
-      await options.api.resizeTerminal(activeSession.sessionId, cols, rows);
+      await options.api.resizeTerminal(
+        activeSession.sessionId,
+        cols,
+        rows,
+        options.participantId
+      );
       const terminal = new TerminalSession({
         sessionId: activeSession.sessionId,
         accessToken: options.api.sessionAccessToken(),
+        participantId: options.participantId,
         cols,
         rows,
         onResize: (nextCols, nextRows) => {
           void options.api
-            .resizeTerminal(activeSession.sessionId, nextCols, nextRows)
+            .resizeTerminal(
+              activeSession.sessionId,
+              nextCols,
+              nextRows,
+              options.participantId
+            )
             .catch(console.error);
         },
         onSnapshot: (snapshot) => {
@@ -225,6 +238,16 @@ export function useTerminalBridge(options: {
       return;
     }
     if (!terminalRef.current) return;
+    if (
+      !canOperateSandbox(
+        options.gameStateRef.current?.room.participants ?? [],
+        options.participantId
+      )
+    ) {
+      // Non-ops participants never attach the terminal, so this is a
+      // safety net for the window where a role change lands mid-play.
+      return;
+    }
     if (!options.gameStateRef.current?.commandInputFocused) {
       options.patchGameStateRef((current) => focusCommandInput(current));
     }

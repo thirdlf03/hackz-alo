@@ -370,6 +370,63 @@ export function canPerformRoleGatedAction(
     : {allowed: false};
 }
 
+/**
+ * Gates sandbox operations (terminal input over the PTY WebSocket,
+ * terminal resize, editor file writes) to the `ops` and `facilitator`
+ * roles. Solo rescue: when at most one participant is online the room is
+ * effectively single-player and no restriction applies. In multiplayer,
+ * an unknown or missing participantId is rejected. This is a cooperative
+ * game rule, not a security boundary (the shared write token remains the
+ * only auth). Mirrored client-side by
+ * apps/web/src/pure/rolePermissions.ts `canOperateSandbox`.
+ */
+export function canOperateSandbox(
+  room: StoredExerciseRoom,
+  participantId: string | undefined,
+  nowIso = new Date().toISOString()
+): HostGateDecision {
+  if (countOnlineParticipants(room, nowIso) <= 1) return {allowed: true};
+  const participant = findParticipant(room, participantId);
+  if (!participant) return {allowed: false};
+  return participant.role === 'ops' || participant.role === 'facilitator'
+    ? {allowed: true}
+    : {allowed: false};
+}
+
+/**
+ * Gates record contributions (task create/update, incident log entries,
+ * hotwash notes): observers are read-only. Same solo rescue and
+ * unknown-participant rejection as `canOperateSandbox`. Mirrored
+ * client-side by apps/web/src/pure/rolePermissions.ts
+ * `canContributeRecords`.
+ */
+export function canContributeRecords(
+  room: StoredExerciseRoom,
+  participantId: string | undefined,
+  nowIso = new Date().toISOString()
+): HostGateDecision {
+  if (countOnlineParticipants(room, nowIso) <= 1) return {allowed: true};
+  const participant = findParticipant(room, participantId);
+  if (!participant) return {allowed: false};
+  return participant.role === 'observer' ? {allowed: false} : {allowed: true};
+}
+
+function countOnlineParticipants(room: StoredExerciseRoom, nowIso: string) {
+  return room.participants.filter((participant) =>
+    isParticipantOnline(participant, nowIso)
+  ).length;
+}
+
+function findParticipant(
+  room: StoredExerciseRoom,
+  participantId: string | undefined
+) {
+  if (!participantId) return undefined;
+  return room.participants.find(
+    (participant) => participant.participantId === participantId
+  );
+}
+
 export function areParticipantsReadyToStart(
   room: StoredExerciseRoom,
   nowIso = new Date().toISOString()

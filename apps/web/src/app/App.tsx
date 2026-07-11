@@ -280,6 +280,7 @@ export function App() {
   } = useTerminalBridge({
     api,
     screen,
+    participantId,
     gameState,
     gameStateRef,
     sessionRef,
@@ -321,6 +322,7 @@ export function App() {
     useSessionEditor({
       api,
       screen,
+      participantId,
       gameState,
       sessionRef,
       gameStateRef,
@@ -527,6 +529,9 @@ export function App() {
               })
               .then(({exercise}) => {
                 setExerciseSnapshot(exercise);
+              })
+              .catch((error: unknown) => {
+                setAppError(describeSessionActionError(error, 'task'));
               });
           }}
           onAppendIncidentLog={(body) => {
@@ -539,6 +544,9 @@ export function App() {
               })
               .then(({exercise}) => {
                 setExerciseSnapshot(exercise);
+              })
+              .catch((error: unknown) => {
+                setAppError(describeSessionActionError(error, 'incidentLog'));
               });
           }}
           onFireInject={(injectId) => {
@@ -561,6 +569,7 @@ export function App() {
       {screen === 'hotwash' && session && (
         <HotwashScreen
           exercise={exerciseSnapshot}
+          participantId={participantId}
           report={afterActionReport}
           onSubmit={(input) => {
             void api
@@ -570,6 +579,9 @@ export function App() {
               })
               .then(({exercise}) => {
                 setExerciseSnapshot(exercise);
+              })
+              .catch((error: unknown) => {
+                setAppError(describeSessionActionError(error, 'hotwash'));
               });
           }}
           onGenerateAar={() => {

@@ -251,6 +251,7 @@ export class SessionApi {
       title?: string;
       status?: ExerciseTaskStatus;
       assigneeParticipantId?: string | null;
+      actorParticipantId?: string;
     }
   ) {
     return this.http.post<{exercise: ExerciseSnapshot}>(
@@ -350,17 +351,27 @@ export class SessionApi {
     );
   }
 
-  writeSessionFile(sessionId: string, path: string, content: string) {
+  writeSessionFile(
+    sessionId: string,
+    path: string,
+    content: string,
+    participantId?: string
+  ) {
     return this.http.put<{path: string; byteLength: number}>(
       `/api/sessions/${encodeURIComponent(sessionId)}/file`,
-      {path, content}
+      {path, content, ...(participantId ? {participantId} : {})}
     );
   }
 
-  resizeTerminal(sessionId: string, cols: number, rows: number) {
+  resizeTerminal(
+    sessionId: string,
+    cols: number,
+    rows: number,
+    participantId?: string
+  ) {
     return this.http.post<{cols: number; rows: number}>(
       `/api/sessions/${encodeURIComponent(sessionId)}/terminal/resize`,
-      {cols, rows}
+      {cols, rows, ...(participantId ? {participantId} : {})}
     );
   }
 

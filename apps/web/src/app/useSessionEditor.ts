@@ -2,6 +2,7 @@ import {useEffect, useRef} from 'preact/hooks';
 import type {GameRenderState} from '@incident/shared';
 import type {ApiClientSurface} from '../api/client.js';
 import {updateEditorPanel} from '../game/state/gameState.js';
+import {canOperateSandbox} from '../pure/rolePermissions.js';
 import type {ReplayEventEmitter} from '../game/events/emitReplayEvent.js';
 import type {Screen} from './appTypes.js';
 
@@ -17,6 +18,7 @@ type PatchGameState = (
 export function useSessionEditor(options: {
   api: ApiClientSurface;
   screen: Screen;
+  participantId: string;
   gameState: GameRenderState | undefined;
   sessionRef: {current: SessionIdentity | undefined};
   gameStateRef: {current: GameRenderState | undefined};
@@ -150,6 +152,21 @@ export function useSessionEditor(options: {
     if (!activeSession || !editor?.currentPath || editor.status === 'saving') {
       return;
     }
+    if (
+      !canOperateSandbox(
+        options.gameStateRef.current?.room.participants ?? [],
+        options.participantId
+      )
+    ) {
+      options.patchGameStateRef((current) =>
+        updateEditorPanel(current, (value) => ({
+          ...value,
+          status: 'error',
+          error: 'ファイル保存は Ops / Facilitator のみ行えます',
+        }))
+      );
+      return;
+    }
     options.patchGameStateRef((current) =>
       updateEditorPanel(current, (value) => ({
         ...value,
@@ -161,7 +178,8 @@ export function useSessionEditor(options: {
       const saved = await options.api.writeSessionFile(
         activeSession.sessionId,
         editor.currentPath,
-        editor.content
+        editor.content,
+        options.participantId
       );
       options.patchGameStateRef((current) =>
         updateEditorPanel(current, (value) => ({

@@ -14,6 +14,7 @@ import {
 } from '../game/state/gameState.js';
 import {metricsPanelScrollRegion} from '../game/render/canvasLayout.js';
 import {resolveCanvasAction} from '../game/input/canvasActions.js';
+import {canOperateSandbox} from '../pure/rolePermissions.js';
 import type {ReplayEventEmitter} from '../game/events/emitReplayEvent.js';
 import type {FinishMode, Screen} from './AppScreens.js';
 import {containsPoint, toLogicalCanvasPoint} from './appUtils.js';
@@ -76,6 +77,14 @@ export function useCanvasInteraction(options: {
         return void endSession(action.mode);
       }
       if (action.type === 'focus_command_input') {
+        // Mirrors the server-side sandbox role gate: participants who
+        // cannot operate the terminal can't focus the command input
+        // either (the dock shows the reason instead).
+        if (
+          !canOperateSandbox(state.room.participants, state.localParticipantId)
+        ) {
+          return;
+        }
         patchGameStateRef((current) =>
           focusCommandInput(deactivateChatCompose(current))
         );
