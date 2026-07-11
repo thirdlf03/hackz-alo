@@ -1,5 +1,6 @@
 import {useEffect, useMemo, useState} from 'preact/hooks';
 import {createApiClient} from '../api/client.js';
+import {PostmortemPanel} from '../app/PostmortemPanel.js';
 import {
   buildTimelineFromEvents,
   filterImportantEvents,
@@ -172,6 +173,14 @@ export function ResultPage({
           </ol>
         </section>
       )}
+
+      <PostmortemPanel
+        sessionId={sessionId}
+        scenarioTitle={scenarioTitle}
+        result={meta?.result ?? null}
+        durationMs={durationMs}
+        events={events}
+      />
 
       <p class='result-session-meta'>
         <span class='result-label'>セッション</span>
