@@ -6,18 +6,25 @@ import type {Screen} from './appTypes.js';
 
 interface RendererHandle {
   scrollMetricsPanel(deltaY: number): void;
+  setChatInput(input: HTMLInputElement | null): void;
 }
 
 export function useCanvasRenderer(options: {
   screen: Screen;
   canvasRef: {current: HTMLCanvasElement | null};
+  chatInputRef?: {current: HTMLInputElement | null};
   rendererRef: {current: RendererHandle | null};
   gameStateRef: {current: GameRenderState | undefined};
   scenarioRef: {current: ScenarioDefinition | undefined};
 }) {
   useEffect(() => {
     if (options.screen !== 'play' || !options.canvasRef.current) return;
-    const renderer = new CanvasRenderer(options.canvasRef.current);
+    const canvas = options.canvasRef.current;
+    const renderer = new CanvasRenderer(canvas);
+    renderer.setChatInput(options.chatInputRef?.current ?? null);
+    // HTML-in-Canvas 有効時のみ layoutsubtree を付与し、canvas 子孫(埋め込み
+    // input)をレイアウト・ヒットテストに参加させる。
+    if (renderer.embedsHtml) canvas.setAttribute('layoutsubtree', '');
     options.rendererRef.current = renderer;
     let frame = 0;
     let lastState: GameRenderState | undefined;
@@ -56,6 +63,8 @@ export function useCanvasRenderer(options: {
     draw();
     return () => {
       cancelAnimationFrame(frame);
+      renderer.setChatInput(null);
+      canvas.removeAttribute('layoutsubtree');
       options.rendererRef.current = null;
     };
   }, [options.screen]);

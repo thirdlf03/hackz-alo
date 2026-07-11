@@ -7,7 +7,13 @@ import type {
   ParticipantRole,
   ScenarioDefinition,
 } from '@incident/shared';
-import {setCenterTool, updateEditorPanel} from '../game/state/gameState.js';
+import {
+  activateChatCompose,
+  deactivateChatCompose,
+  setCenterTool,
+  setChatDraft,
+  updateEditorPanel,
+} from '../game/state/gameState.js';
 import {centerEditorOverlayRegion} from '../game/render/canvasLayout.js';
 import {formatTime} from '../pure/canvasFormat.js';
 import {areParticipantsReadyToStart} from '../pure/participantsReady.js';
@@ -481,6 +487,8 @@ export function PlayScreen(props: {
   participantId: string;
   exercise: ExerciseSnapshot | undefined;
   canvasRef: {current: HTMLCanvasElement | null};
+  chatInputRef: {current: HTMLInputElement | null};
+  htmlInCanvasChat: boolean;
   editorTextareaRef: {current: HTMLTextAreaElement | null};
   patchGameStateRef: PatchGameState;
   onSetGameSpeed: (speed: number) => void;
@@ -490,6 +498,7 @@ export function PlayScreen(props: {
   onCanvasWheel: (event: WheelEvent) => void;
   onTerminalKey: (event: KeyboardEvent) => void;
   onCanvasPaste: (event: ClipboardEvent) => void;
+  onChatSubmit: () => void;
   onCreateTask: (title: string) => void;
   onAppendIncidentLog: (body: string) => void;
   onFireInject: (injectId: string) => void;
@@ -566,7 +575,42 @@ export function PlayScreen(props: {
           onWheel={props.onCanvasWheel}
           onKeyDown={props.onTerminalKey}
           onPaste={props.onCanvasPaste}
-        />
+        >
+          {/* HTML-in-Canvas 対応時のみ、canvas 内チャット欄を本物の <input> に
+              置き換える(IME・テキスト選択・スクリーンリーダー対応)。非対応時は
+              子を描画せず、従来の canvas 自前描画へフォールバックする。 */}
+          {props.htmlInCanvasChat && (
+            <input
+              ref={props.chatInputRef}
+              class='canvas-embedded-chat-input'
+              aria-label='チャットメッセージ'
+              maxLength={500}
+              value={props.gameState?.chatCompose.draft ?? ''}
+              onInput={(event) => {
+                const {value} = event.currentTarget;
+                props.patchGameStateRef((current) =>
+                  setChatDraft(current, value)
+                );
+              }}
+              onFocus={() => {
+                props.patchGameStateRef((current) =>
+                  activateChatCompose(current)
+                );
+              }}
+              onBlur={() => {
+                props.patchGameStateRef((current) =>
+                  deactivateChatCompose(current)
+                );
+              }}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault();
+                  props.onChatSubmit();
+                }
+              }}
+            />
+          )}
+        </canvas>
         <PerfOverlay />
       </div>
       <TeamExercisePanel

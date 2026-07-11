@@ -458,6 +458,30 @@ button:disabled {
   height: 100%;
 }
 
+/* HTML-in-Canvas 有効時に canvas 内へ埋め込むチャット入力欄。位置は
+   drawElementImage が返す transform で描画位置に合わせるため、初期状態は
+   画面外へ退避しておく。非対応環境ではそもそもレンダリングされない。 */
+.canvas-embedded-chat-input {
+  position: absolute;
+  top: 0;
+  left: 0;
+  box-sizing: border-box;
+  width: 470px;
+  height: 44px;
+  padding: 0 12px;
+  border: 2px solid var(--border-default, rgba(255, 255, 255, 0.2));
+  border-radius: 6px;
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  font-size: 16px;
+  outline: none;
+  transform: translateY(-9999px);
+}
+
+.canvas-embedded-chat-input:focus {
+  border-color: var(--accent-blue, #4c8dff);
+}
+
 .perf-overlay {
   position: absolute;
   top: 12px;
