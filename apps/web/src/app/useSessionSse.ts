@@ -13,6 +13,7 @@ export function useSessionSse(bindings: SessionRuntimeBindings) {
     applyClockSnapshot,
     applyExerciseSnapshot,
     applyParticipantCursor,
+    rtcSignalHandlerRef,
   } = bindings;
 
   useEffect(() => {
@@ -39,6 +40,7 @@ export function useSessionSse(bindings: SessionRuntimeBindings) {
           {at: event.at / 1000, label: replayEventSummary(event)},
         ]);
       },
+      onRtcSignal: (data) => rtcSignalHandlerRef.current?.(data),
       onError: console.error,
     });
     return () => {

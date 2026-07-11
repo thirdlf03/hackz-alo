@@ -32,6 +32,12 @@ export type GameStateAction =
       atMs: number;
     }
   | {
+      type: 'append_npc_chat_message';
+      body: string;
+      atMs: number;
+      from: string;
+    }
+  | {
       type: 'toggle_expanded_monitor';
       monitor: 'metrics' | 'terminal' | 'runbook';
     };

@@ -31,6 +31,7 @@ import {
   touchSessionClientActivity,
 } from './sessionLifecycle.js';
 import {persistReplayStart, persistSession} from './sessionPersistence.js';
+import {handleSessionRtcSignal} from './sessionRtc.js';
 import {handleSessionPagerEvent} from './sessionPagerEvents.js';
 import {resolveSessionAction} from './sessionResolve.js';
 import {
@@ -221,6 +222,7 @@ export class SessionDurableObject implements DurableObject {
             incidentLog: (req) => this.exercise.incidentLog(req),
             hotwash: (req) => this.exercise.hotwash(req),
             aar: () => this.exercise.aar(),
+            rtcSignal: (req) => this.rtcSignal(req),
             snapshot: async () => jsonOk(await this.snapshot()),
           });
           if (response) {
@@ -438,6 +440,11 @@ export class SessionDurableObject implements DurableObject {
   private async events(request: Request) {
     await this.requireSession();
     return this.sseHub.response(request);
+  }
+
+  private async rtcSignal(request: Request) {
+    const session = await this.requireSession();
+    return handleSessionRtcSignal(request, session.sessionId, this.sseHub);
   }
 
   private async terminal(request: Request) {

@@ -88,6 +88,8 @@ export interface SessionRuntimeBindings {
   ) => void;
   applyExerciseSnapshot: (snapshot: ExerciseSnapshot) => void;
   applyParticipantCursor: (event: ParticipantCursorEvent) => void;
+  /** ウォールーム音声(WebRTC)のシグナリング受信ハンドラ。 */
+  rtcSignalHandlerRef: {current: ((data: unknown) => void) | undefined};
 }
 
 export interface SessionRuntimeBootstrapOptions {

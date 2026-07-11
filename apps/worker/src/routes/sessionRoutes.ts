@@ -13,6 +13,7 @@ import {createWriteToken, hashWriteToken} from '../pure/writeAuth.js';
 import {purgeReplayStorage} from '../storage/replayPurge.js';
 import type {Bindings} from '../types.js';
 import {getSessionDoStub} from '../effect/sessionDoStub.js';
+import {generateIceServers} from '../effect/cloudflareTurn.js';
 import {sendPagerNotification} from '../effect/pagerPush.js';
 import {buildPagerNotificationPayload} from '../pure/pagerNotification.js';
 import {upsertPagerSubscription} from '../repositories/pagerSubscriptionRepository.js';
@@ -32,11 +33,13 @@ const sessionActionsWithoutDbLookup = new Set([
   'participant-cursor',
   'terminal',
   'terminal-resize',
+  'signal',
 ]);
 const SESSION_CREATE_BODY_MAX_BYTES = 8 * 1024;
 const SESSION_CONTROL_BODY_MAX_BYTES = 8 * 1024;
 const SESSION_FILE_BODY_MAX_BYTES = 1024 * 1024;
 const SESSION_PAGER_BODY_MAX_BYTES = 4096;
+const RTC_SIGNAL_BODY_MAX_BYTES = 64 * 1024;
 const SESSION_READ_TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
 
 export function registerSessionRoutes(app: WorkerApp) {
@@ -451,6 +454,27 @@ export function registerSessionRoutes(app: WorkerApp) {
   app.get('/api/sessions/:sessionId/aar', async (c) =>
     proxySessionRead(c, 'aar')
   );
+  app.post('/api/sessions/:sessionId/rtc/turn-credentials', async (c) => {
+    const denied = await requireSessionWriteAccess(c, c.req.param('sessionId'));
+    if (denied) return denied;
+    const record = await getSession(c.env, c.req.param('sessionId'));
+    if (!record) return c.json(err('not_found', 'session not found'), 404);
+    const body = await readRouteJsonObject(c, SESSION_CONTROL_BODY_MAX_BYTES, {
+      emptyValue: {},
+    });
+    if (body instanceof Response) return body;
+    return c.json(ok({iceServers: await generateIceServers(c.env)}));
+  });
+  app.post('/api/sessions/:sessionId/rtc/signal', async (c) => {
+    const denied = await requireSessionWriteAccess(c, c.req.param('sessionId'));
+    if (denied) return denied;
+    // SDP オファーを含むため、通常の制御ボディより大きめの上限を許す。
+    const body = await readRouteJsonObject(c, RTC_SIGNAL_BODY_MAX_BYTES, {
+      emptyValue: {},
+    });
+    if (body instanceof Response) return body;
+    return proxySession(c, 'signal', body);
+  });
 }
 
 function resolveRequestedScenario(body: {

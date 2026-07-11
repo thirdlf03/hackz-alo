@@ -168,6 +168,20 @@ export function reduceGameState(
         chatCompose: {active: false, draft: ''},
       };
     }
+    case 'append_npc_chat_message': {
+      const trimmed = action.body.trim();
+      if (!trimmed) return state;
+      const message = {
+        id: `npc-${crypto.randomUUID()}`,
+        atMs: action.atMs,
+        from: action.from,
+        body: trimmed,
+      };
+      return {
+        ...state,
+        playerChatMessages: [...state.playerChatMessages, message],
+      };
+    }
     case 'toggle_expanded_monitor': {
       const expandedMonitor =
         state.world.expandedMonitor === action.monitor ? null : action.monitor;

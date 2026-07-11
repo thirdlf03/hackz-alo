@@ -1,6 +1,20 @@
 import {useEffect, useMemo, useRef, useState} from 'preact/hooks';
 import {createApiClient} from '../api/client.js';
 import {
+  ReplayFilmstrip,
+  ReplayFramePreview,
+  ReplayHighlightReel,
+} from '../app/ReplayHighlights.js';
+import {
+  isWebCodecsSupported,
+  ReplayFrameExtractor,
+} from '../effect/webcodecsReplay.js';
+import {
+  demuxWebm,
+  pickHighlightWindows,
+  type DemuxedWebm,
+} from '../pure/webmDemux.js';
+import {
   buildTimelineFromEvents,
   formatDuration,
   formatSeconds,
@@ -52,6 +66,13 @@ export function ReplayPage({replayId, timeline}: Props) {
   const [commentDraft, setCommentDraft] = useState('');
   const [shareWarning, setShareWarning] = useState(false);
   const [shareStatus, setShareStatus] = useState<string>();
+  const [demuxed, setDemuxed] = useState<DemuxedWebm>();
+  const [frameExtractor, setFrameExtractor] = useState<ReplayFrameExtractor>();
+  const [framePreview, setFramePreview] = useState<{
+    id: string;
+    label: string;
+    videoSeconds: number;
+  }>();
 
   const browserInfo = useMemo(
     () => parseBrowserInfo(meta?.browser_info_json),
@@ -84,8 +105,13 @@ export function ReplayPage({replayId, timeline}: Props) {
     setVideoLoadState('loading');
     setVideoDuration(0);
     setCurrentTime(0);
+    setDemuxed(undefined);
+    setFrameExtractor(undefined);
+    setFramePreview(undefined);
     let cancelled = false;
+    const isCancelled = () => cancelled;
     let videoObjectUrl: string | undefined;
+    let extractor: ReplayFrameExtractor | undefined;
 
     Promise.all([
       api.getReplay(replayId),
@@ -114,7 +140,20 @@ export function ReplayPage({replayId, timeline}: Props) {
         videoObjectUrl = URL.createObjectURL(blob);
         setVideoSrc(videoObjectUrl);
         setVideoLoadState('ready');
-        void refreshReplayTimingMeta(replayId, () => cancelled, setMeta);
+        void refreshReplayTimingMeta(replayId, isCancelled, setMeta);
+        // WebCodecs 補助機能: 失敗しても通常の再生には影響させない。
+        try {
+          if (!isWebCodecsSupported()) return;
+          const buffer = await blob.arrayBuffer();
+          if (isCancelled()) return;
+          const parsed = demuxWebm(buffer);
+          if (!parsed || parsed.samples.length === 0) return;
+          extractor = new ReplayFrameExtractor(parsed);
+          setDemuxed(parsed);
+          setFrameExtractor(extractor);
+        } catch {
+          // demux / WebCodecs 未対応時はフィルムストリップ等を出さないだけ。
+        }
       })
       .catch(() => {
         if (!cancelled) {
@@ -125,6 +164,7 @@ export function ReplayPage({replayId, timeline}: Props) {
 
     return () => {
       cancelled = true;
+      extractor?.dispose();
       if (videoObjectUrl) URL.revokeObjectURL(videoObjectUrl);
     };
   }, [replayId]);
@@ -133,6 +173,33 @@ export function ReplayPage({replayId, timeline}: Props) {
     () => buildTimelineFromEvents(events, timeline),
     [events, timeline]
   );
+  const highlightWindows = useMemo(() => {
+    if (!demuxed || demuxed.durationMs <= 0) return [];
+    const mapped = events.map((event) => ({
+      event_id: event.event_id,
+      type: event.type,
+      at_ms: Math.round(
+        timelineDisplaySeconds(
+          event.at_ms / 1000,
+          canUseVideoTimelineMapping,
+          effectiveVideoDuration,
+          meta?.duration_ms ?? 0,
+          recordingStartMs,
+          recordingClockSegments
+        ) * 1000
+      ),
+      summary: event.summary ?? null,
+    }));
+    return pickHighlightWindows(mapped, demuxed.durationMs);
+  }, [
+    demuxed,
+    events,
+    canUseVideoTimelineMapping,
+    effectiveVideoDuration,
+    meta?.duration_ms,
+    recordingStartMs,
+    recordingClockSegments,
+  ]);
   const commands = events.filter((event) => event.type === 'command_detected');
   const alerts = events.filter((event) => event.type === 'alert');
   const runbooks = events.filter((event) => event.type === 'runbook_open');
@@ -168,6 +235,15 @@ export function ReplayPage({replayId, timeline}: Props) {
       if (seekRequestRef.current !== seekRequestId) return;
       void video.play().catch(() => {});
     });
+  }
+
+  function showFramePreview(id: string, label: string, videoSeconds: number) {
+    if (!frameExtractor) return;
+    setFramePreview({id, label, videoSeconds: Math.max(0, videoSeconds)});
+  }
+
+  function hideFramePreview(id: string) {
+    setFramePreview((current) => (current?.id === id ? undefined : current));
   }
 
   function rememberVideoDuration(video: HTMLVideoElement) {
@@ -256,6 +332,24 @@ export function ReplayPage({replayId, timeline}: Props) {
             保存された録画はありません。タイムラインのみ表示しています。
           </p>
         )}
+        {frameExtractor && demuxed && (
+          <ReplayFilmstrip
+            durationMs={demuxed.durationMs}
+            extractor={frameExtractor}
+            onSeek={(seconds) => {
+              seekVideoSeconds(seconds);
+            }}
+          />
+        )}
+        {frameExtractor && highlightWindows.length > 0 && (
+          <ReplayHighlightReel
+            highlights={highlightWindows}
+            extractor={frameExtractor}
+            onWatchInMain={(seconds) => {
+              seekVideoSeconds(seconds);
+            }}
+          />
+        )}
         <div class='replay-meta'>
           <span>結果: {meta?.result ?? '-'}</span>
           <span>難易度: {meta?.difficulty ?? '-'}</span>
@@ -300,6 +394,21 @@ export function ReplayPage({replayId, timeline}: Props) {
           ))}
         </div>
         <div class='replay-panel-scroll' tabIndex={0}>
+          {tab === 'timeline' && !isTimelineLoading && frameExtractor && (
+            <div class='replay-frame-preview-slot'>
+              {framePreview ? (
+                <ReplayFramePreview
+                  extractor={frameExtractor}
+                  timestampMs={framePreview.videoSeconds * 1000}
+                  label={`${formatSeconds(framePreview.videoSeconds)} ${framePreview.label}`}
+                />
+              ) : (
+                <p class='replay-frame-preview-empty'>
+                  項目にカーソルを合わせると、その時点のフレームを表示します
+                </p>
+              )}
+            </div>
+          )}
           {tab === 'timeline' &&
             (isTimelineLoading ? (
               <p
@@ -333,6 +442,26 @@ export function ReplayPage({replayId, timeline}: Props) {
                           }}
                           onClick={() => {
                             seekVideoSeconds(seekSeconds, event.id);
+                          }}
+                          onMouseEnter={() => {
+                            showFramePreview(
+                              event.id,
+                              event.label,
+                              videoSeconds
+                            );
+                          }}
+                          onFocus={() => {
+                            showFramePreview(
+                              event.id,
+                              event.label,
+                              videoSeconds
+                            );
+                          }}
+                          onMouseLeave={() => {
+                            hideFramePreview(event.id);
+                          }}
+                          onBlur={() => {
+                            hideFramePreview(event.id);
                           }}
                         >
                           {formatSeconds(videoSeconds)} {event.label}

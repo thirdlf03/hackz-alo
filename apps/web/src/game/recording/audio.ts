@@ -1,11 +1,8 @@
 import type {AlertDefinition} from '@incident/shared';
-
-let audioContext: AudioContext | undefined;
-
-function getAudioContext(): AudioContext {
-  if (!audioContext) audioContext = new AudioContext();
-  return audioContext;
-}
+import {
+  connectNodeToRecordingMix,
+  getSharedAudioContext,
+} from './audioMixer.js';
 
 function beep(
   ctx: AudioContext,
@@ -20,6 +17,8 @@ function beep(
   oscillator.frequency.value = frequency;
   oscillator.connect(gain);
   gain.connect(ctx.destination);
+  // アラート音もリプレイに残す(tech.md R30-R32): 録画ミックスにも分岐する
+  connectNodeToRecordingMix(gain);
   gain.gain.setValueAtTime(volume, startAt);
   gain.gain.exponentialRampToValueAtTime(0.001, startAt + durationSec);
   oscillator.start(startAt);
@@ -30,7 +29,7 @@ export function playAlertBeep(
   severity: AlertDefinition['severity'] = 'warning'
 ) {
   try {
-    const ctx = getAudioContext();
+    const ctx = getSharedAudioContext();
     if (ctx.state === 'suspended') void ctx.resume();
     const now = ctx.currentTime;
     const frequency =

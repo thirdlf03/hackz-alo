@@ -34,6 +34,9 @@ import {
 } from '../api/pushApi.js';
 import {useCanvasInteraction} from './useCanvasInteraction.js';
 import {useWebMcpTools} from './useWebMcpTools.js';
+import {useVoiceChat} from './useVoiceChat.js';
+import {useNpcColleague} from './useNpcColleague.js';
+import {useMonitorPip} from './useMonitorPip.js';
 import {detectHtmlInCanvasSupport} from '../effect/htmlInCanvas.js';
 import {useMetricsPolling} from './useMetricsPolling.js';
 import {
@@ -69,6 +72,9 @@ export function App() {
   const recordingRef = useRef<SessionRecordingBridge | undefined>(undefined);
   const terminalBridgeRef = useRef<TerminalBridgeRef | undefined>(undefined);
   const lastCursorSentAtRef = useRef(0);
+  const rtcSignalHandlerRef = useRef<((data: unknown) => void) | undefined>(
+    undefined
+  );
 
   const [screen, setScreen] = useState<Screen>(
     initialReplayId ? 'replay' : 'select'
@@ -136,6 +142,7 @@ export function App() {
     deepLinkValidated,
     recordingRef,
     terminalBridgeRef,
+    rtcSignalHandlerRef,
     setScreen,
     setSession,
     setScenario,
@@ -248,6 +255,22 @@ export function App() {
     gameStateRef,
     setExerciseSnapshot,
   });
+
+  const voice = useVoiceChat({api, screen, session, participantId});
+  rtcSignalHandlerRef.current = (data) => {
+    voice.handleSignal(data);
+  };
+
+  const npc = useNpcColleague({
+    screen,
+    session,
+    gameStateRef,
+    eventEmitterRef,
+    patchGameStateRef,
+    currentGameTimeMs,
+  });
+
+  const pip = useMonitorPip({screen, canvasRef, setAppError});
 
   const registerPager = async () => {
     if (!pagerPublicKey || !session) return;
@@ -540,6 +563,9 @@ export function App() {
           onChatSubmit={submitChatMessage}
           participantId={participantId}
           exercise={exerciseSnapshot}
+          voice={voice}
+          npc={npc}
+          pip={pip}
           onCreateTask={(title) => {
             if (!session) return;
             void api
