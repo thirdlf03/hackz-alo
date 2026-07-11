@@ -442,10 +442,14 @@ export class SessionDurableObject implements DurableObject {
 
   private async terminal(request: Request) {
     const session = await this.requireSession();
-    const participantId =
-      new URL(request.url).searchParams.get('participantId') ?? undefined;
-    const denied = await this.denySandboxOperation(session, participantId);
-    if (denied) return denied;
+    // Unlike terminalResize/writeFile, this handshake is not gated by
+    // canOperateSandbox: the terminal output mirror is broadcast to every
+    // role (Observer/Scribe watch a read-only PTY tunnel), while
+    // proxySessionTerminal is a raw WS pass-through the server cannot
+    // inspect message-by-message. Input restriction to ops/facilitator is
+    // therefore enforced client-side as a cooperative-play rule (see
+    // canOperateSandbox docs); resize and file writes stay server-gated
+    // below since those go over discrete REST calls the server can check.
     await this.touchClientActivity();
     return handleSessionTerminal(
       this.env,
@@ -537,9 +541,11 @@ export class SessionDurableObject implements DurableObject {
 
   /**
    * Returns a 403 response when the participant may not operate the
-   * sandbox (terminal / editor writes); undefined when allowed. The
-   * `ops` role in the payload stands for the allowed set (ops or
-   * facilitator) — see canOperateSandbox.
+   * sandbox (terminal resize, editor writes); undefined when allowed.
+   * Terminal *input* travels over the raw PTY WS tunnel established by
+   * terminal() above, which is intentionally not gated here — see the
+   * comment on terminal(). The `ops` role in the payload stands for the
+   * allowed set (ops or facilitator) — see canOperateSandbox.
    */
   private async denySandboxOperation(
     session: StoredSession,

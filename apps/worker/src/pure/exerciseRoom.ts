@@ -371,14 +371,20 @@ export function canPerformRoleGatedAction(
 }
 
 /**
- * Gates sandbox operations (terminal input over the PTY WebSocket,
- * terminal resize, editor file writes) to the `ops` and `facilitator`
- * roles. Solo rescue: when at most one participant is online the room is
- * effectively single-player and no restriction applies. In multiplayer,
- * an unknown or missing participantId is rejected. This is a cooperative
- * game rule, not a security boundary (the shared write token remains the
- * only auth). Mirrored client-side by
- * apps/web/src/pure/rolePermissions.ts `canOperateSandbox`.
+ * Gates sandbox *operations* — terminal input, terminal resize, and
+ * editor file writes — to the `ops` and `facilitator` roles. It does not
+ * gate connecting to the terminal WebSocket: the output mirror is
+ * broadcast to every role so Observer/Scribe can watch along, and the
+ * proxied PTY tunnel can't be inspected message-by-message server-side.
+ * Terminal resize and editor writes go over discrete REST calls the
+ * SessionDurableObject gates directly; terminal input enforcement is a
+ * client-side cooperative-play rule. Solo rescue: when at most one
+ * participant is online the room is effectively single-player and no
+ * restriction applies. In multiplayer, an unknown or missing
+ * participantId is rejected. This is a cooperative game rule, not a
+ * security boundary (the shared write token remains the only auth).
+ * Mirrored client-side by apps/web/src/pure/rolePermissions.ts
+ * `canOperateSandbox`.
  */
 export function canOperateSandbox(
   room: StoredExerciseRoom,

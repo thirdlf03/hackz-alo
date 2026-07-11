@@ -1,5 +1,9 @@
 import {useEffect, useRef} from 'preact/hooks';
-import type {GameRenderState, ScenarioDefinition} from '@incident/shared';
+import type {
+  GameRenderState,
+  ParticipantPresence,
+  ScenarioDefinition,
+} from '@incident/shared';
 import {
   deactivateChatCompose,
   focusCommandInput,
@@ -12,7 +16,10 @@ import {
 import {TerminalSession} from '../game/terminal/session.js';
 import {terminalDebug} from '../game/terminal/debug.js';
 import {keyboardEventToTerminalInput} from '../game/terminal/input.js';
-import {canOperateSandbox} from '../pure/rolePermissions.js';
+import {
+  canOperateSandbox,
+  resolveTerminalCanOperate,
+} from '../pure/rolePermissions.js';
 import {
   classifyCommandEvent,
   commandEventPayload,
@@ -57,7 +64,10 @@ export function useTerminalBridge(options: {
     attachedSessionIdRef.current = undefined;
   }
 
-  async function attachTerminalSession(activeSession: SessionIdentity) {
+  async function attachTerminalSession(
+    activeSession: SessionIdentity,
+    participants: ParticipantPresence[]
+  ) {
     if (attachedSessionIdRef.current === activeSession.sessionId) {
       // Already connected for this session, or an attach for this session
       // is already in flight (e.g. the host attached via startPlay and the
@@ -73,21 +83,46 @@ export function useTerminalBridge(options: {
     // instead of racing to attach twice. Reset to undefined on failure so
     // a later retry isn't permanently blocked.
     attachedSessionIdRef.current = activeSession.sessionId;
-    try {
-      const {cols, rows} = defaultTerminalDimensions();
-      await options.api.resizeTerminal(
-        activeSession.sessionId,
-        cols,
-        rows,
+    // Every role attaches (the output mirror is broadcast to everyone),
+    // but only ops/facilitator may operate the shared PTY. gameStateRef
+    // isn't populated yet this early (gameState is created just after
+    // this call resolves), so the initial decision uses the participants
+    // snapshot the caller already had live (exerciseSnapshot); once
+    // gameState exists, canOperate() below switches to that live source
+    // so a mid-session role change takes effect immediately.
+    const canAttachOperate = canOperateSandbox(
+      participants,
+      options.participantId
+    );
+    const canOperate = () =>
+      resolveTerminalCanOperate(
+        options.gameStateRef.current?.room.participants,
+        participants,
         options.participantId
       );
+    try {
+      const {cols, rows} = defaultTerminalDimensions();
+      if (canAttachOperate) {
+        await options.api.resizeTerminal(
+          activeSession.sessionId,
+          cols,
+          rows,
+          options.participantId
+        );
+      }
       const terminal = new TerminalSession({
         sessionId: activeSession.sessionId,
         accessToken: options.api.sessionAccessToken(),
         participantId: options.participantId,
         cols,
         rows,
+        canOperate,
         onResize: (nextCols, nextRows) => {
+          // Defense in depth: TerminalSession itself already gates every
+          // path that could trigger this callback on canOperate(), but
+          // re-check here too since this callback is what actually
+          // issues the REST call that could change the shared PTY size.
+          if (!canOperate()) return;
           void options.api
             .resizeTerminal(
               activeSession.sessionId,
@@ -194,6 +229,16 @@ export function useTerminalBridge(options: {
   function handleCanvasPaste(event: ClipboardEvent) {
     const clipboard = event.clipboardData;
     if (!clipboard || !terminalRef.current) return;
+    if (
+      !canOperateSandbox(
+        options.gameStateRef.current?.room.participants ?? [],
+        options.participantId
+      )
+    ) {
+      // Every role attaches to the terminal now, so paste needs its own
+      // role gate — same live check as handleTerminalKey below.
+      return;
+    }
     const text = clipboard.getData('text/plain');
     if (text) {
       event.preventDefault();
@@ -244,7 +289,8 @@ export function useTerminalBridge(options: {
         options.participantId
       )
     ) {
-      // Non-ops participants never attach the terminal, so this is a
+      // Every role attaches the terminal (to see the output mirror), but
+      // only ops/facilitator may send input. This also acts as the
       // safety net for the window where a role change lands mid-play.
       return;
     }

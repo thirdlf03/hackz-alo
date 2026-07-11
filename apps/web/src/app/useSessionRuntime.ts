@@ -31,7 +31,6 @@ import {
   readReplayIdFromSearch,
   toErrorMessage,
 } from './appUtils.js';
-import {canOperateSandbox} from '../pure/rolePermissions.js';
 import {useExercisePhaseSync} from './useExercisePhaseSync.js';
 import {useSessionBootstrap} from './useSessionBootstrap.js';
 import {useSessionClockSync} from './useSessionClockSync.js';
@@ -462,14 +461,15 @@ export function useSessionRuntime(options: {
     setIsStarting(true);
     try {
       await api.startSession(session.sessionId, {participantId});
-      // Role gate mirrors the server (see pure/rolePermissions.ts):
-      // participants who may not operate the sandbox never attach the
-      // shared terminal.
-      if (
-        canOperateSandbox(exerciseSnapshot?.participants ?? [], participantId)
-      ) {
-        await terminalBridgeRef.current?.attachTerminalSession(session);
-      }
+      // Every role attaches to the shared terminal: the output mirror is
+      // broadcast to all participants (Observer/Scribe watch along),
+      // while sending input stays gated to ops/facilitator client-side
+      // (see pure/rolePermissions.ts canOperateSandbox, enforced in
+      // useTerminalBridge).
+      await terminalBridgeRef.current?.attachTerminalSession(
+        session,
+        exerciseSnapshot?.participants ?? []
+      );
       markJourney(INCIDENT_SPAN_NAMES.journeyTerminalReady, {
         [INCIDENT_ATTRS.sessionId]: session.sessionId,
       });

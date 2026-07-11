@@ -3,6 +3,7 @@ import type {
   ExerciseSnapshot,
   GameRenderState,
   ParticipantCursorEvent,
+  ParticipantPresence,
   ScenarioDefinition,
 } from '@incident/shared';
 import type {ApiClientSurface} from '../api/client.js';
@@ -24,10 +25,13 @@ export interface SessionRecordingBridge {
 }
 
 export interface TerminalBridgeRef {
-  attachTerminalSession: (session: {
-    sessionId: string;
-    replayId: string;
-  }) => Promise<void>;
+  attachTerminalSession: (
+    session: {
+      sessionId: string;
+      replayId: string;
+    },
+    participants: ParticipantPresence[]
+  ) => Promise<void>;
   destroyTerminal: () => void;
 }
 
