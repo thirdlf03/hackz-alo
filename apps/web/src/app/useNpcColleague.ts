@@ -78,9 +78,10 @@ export function useNpcColleague(options: {
     }
 
     let cancelled = false;
+    const isCancelled = () => cancelled;
 
     const observe = async () => {
-      if (cancelled || busyRef.current) return;
+      if (isCancelled() || busyRef.current) return;
       const state = options.gameStateRef.current;
       const overview = summarizeIncidentState(state);
       if (!state || !overview || state.session.status !== 'running') return;
@@ -94,9 +95,9 @@ export function useNpcColleague(options: {
         const raw = await promptNpc(
           sessionRef.current,
           buildNpcUserPrompt(overview, recentSaysRef.current),
-          NPC_RESPONSE_SCHEMA as unknown as Record<string, unknown>
+          NPC_RESPONSE_SCHEMA
         );
-        if (cancelled) return;
+        if (isCancelled()) return;
         const parsed = parseNpcReply(raw);
         if (!parsed) return;
         const reply = filterNpcReply(
@@ -129,7 +130,7 @@ export function useNpcColleague(options: {
         console.error('npc colleague error', error);
       } finally {
         busyRef.current = false;
-        if (!cancelled) setThinking(false);
+        if (!isCancelled()) setThinking(false);
       }
     };
 

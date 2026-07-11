@@ -48,7 +48,8 @@ export function useVoiceChat(options: {
   const join = () => {
     const session = options.session;
     if (!session || managerRef.current) return;
-    if (typeof navigator.mediaDevices?.getUserMedia !== 'function') {
+    const mediaDevices = (navigator as Partial<Navigator>).mediaDevices;
+    if (typeof mediaDevices?.getUserMedia !== 'function') {
       setStatus('mic_denied');
       return;
     }

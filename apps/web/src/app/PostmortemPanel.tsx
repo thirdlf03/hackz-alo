@@ -82,8 +82,27 @@ export function PostmortemPanel(props: {
     summarizerAvailability,
     writerAvailability
   );
-  if (availability === 'unsupported' || availability === 'unavailable') {
-    return null;
+  // 非対応ブラウザでもパネル自体は出し、機能の存在と対応環境を案内する
+  const unavailable =
+    availability === 'unsupported' || availability === 'unavailable';
+  if (unavailable) {
+    return (
+      <section class='postmortem-panel' aria-label='AIポストモーテム'>
+        <h2>
+          AIポストモーテム <span class='ai-assist-badge'>on-device</span>
+        </h2>
+        <p class='ai-assist-status' role='status'>
+          {describePostmortemAvailability(availability)}(Chrome の Summarizer /
+          Writer API 対応環境で、イベントログとインシデントログから
+          タイムライン要約・根本原因・改善アクションの草案を生成できます)
+        </p>
+        <div class='postmortem-actions'>
+          <button type='button' disabled>
+            ポストモーテム草案を生成
+          </button>
+        </div>
+      </section>
+    );
   }
 
   const generate = async () => {

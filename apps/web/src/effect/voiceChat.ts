@@ -93,7 +93,7 @@ export class VoiceChatManager {
         kind: 'leave',
       })
       .catch(() => undefined);
-    for (const participantId of [...this.peers.keys()]) {
+    for (const participantId of Array.from(this.peers.keys())) {
       this.closePeer(participantId);
     }
     this.releaseLocalStream();
@@ -160,7 +160,7 @@ export class VoiceChatManager {
     const existing = this.peers.get(remoteId);
     if (existing) return existing;
     const connection = new RTCPeerConnection({
-      iceServers: this.options.iceServers as RTCIceServer[],
+      iceServers: this.options.iceServers,
     });
     const peer: VoicePeer = {
       connection,

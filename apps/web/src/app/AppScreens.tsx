@@ -821,17 +821,30 @@ function WarRoomVoicePanel(props: {voice: VoiceChatControls}) {
             aria-label={
               voice.muted ? 'マイクのミュートを解除' : 'マイクをミュート'
             }
-            onClick={voice.toggleMute}
+            onClick={() => {
+              voice.toggleMute();
+            }}
           >
             {voice.muted ? '🔇 ミュート中' : '🎙 ミュート'}
           </button>
-          <button type='button' onClick={voice.leave}>
+          <button
+            type='button'
+            onClick={() => {
+              voice.leave();
+            }}
+          >
             退出
           </button>
         </div>
       ) : (
         <div class='voice-actions'>
-          <button type='button' disabled={joining} onClick={voice.join}>
+          <button
+            type='button'
+            disabled={joining}
+            onClick={() => {
+              voice.join();
+            }}
+          >
             {joining ? '接続中…' : '🎙 音声に参加'}
           </button>
         </div>
@@ -894,7 +907,12 @@ function NpcColleaguePanel(props: {
                 >
                   タスクに採用
                 </button>
-                <button type='button' onClick={npc.dismissSuggestedTask}>
+                <button
+                  type='button'
+                  onClick={() => {
+                    npc.dismissSuggestedTask();
+                  }}
+                >
                   却下
                 </button>
               </div>

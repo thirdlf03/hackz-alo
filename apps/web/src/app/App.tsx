@@ -257,7 +257,9 @@ export function App() {
   });
 
   const voice = useVoiceChat({api, screen, session, participantId});
-  rtcSignalHandlerRef.current = voice.handleSignal;
+  rtcSignalHandlerRef.current = (data) => {
+    voice.handleSignal(data);
+  };
 
   const npc = useNpcColleague({
     screen,
