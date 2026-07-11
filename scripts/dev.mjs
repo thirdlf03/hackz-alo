@@ -15,7 +15,12 @@ if (env.INCIDENT_PERF || env.INCIDENT_DISABLE_TURNSTILE === "1") {
     workerArgs.push("--var", `INCIDENT_PERF:${env.INCIDENT_PERF}`);
   }
   if (env.INCIDENT_DISABLE_TURNSTILE === "1") {
+    // Clear worker secret AND web site key. Otherwise apps/web/.env.local's
+    // VITE_TURNSTILE_SITE_KEY still forces a client-side challenge that fails
+    // under Playwright (design/capture.mjs, e2e) even though the worker would
+    // accept sessions without a token. Matches playwright.config.ts.
     workerArgs.push("--var", "TURNSTILE_SECRET_KEY:");
+    env.VITE_TURNSTILE_SITE_KEY = "";
   }
 } else {
   workerArgs.push("run", "dev");
