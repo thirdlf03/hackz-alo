@@ -34,6 +34,7 @@ import {
 } from '../api/pushApi.js';
 import {useCanvasInteraction} from './useCanvasInteraction.js';
 import {useWebMcpTools} from './useWebMcpTools.js';
+import {detectHtmlInCanvasSupport} from '../effect/htmlInCanvas.js';
 import {useMetricsPolling} from './useMetricsPolling.js';
 import {
   readReplayIdFromSearch,
@@ -59,9 +60,11 @@ export function App() {
   const initialReplayId = readReplayIdFromSearch();
   const initialInvite = readInviteFromSearch();
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const rendererRef = useRef<{scrollMetricsPanel(deltaY: number): void} | null>(
-    null
-  );
+  const chatInputRef = useRef<HTMLInputElement>(null);
+  const rendererRef = useRef<{
+    scrollMetricsPanel(deltaY: number): void;
+    setChatInput(input: HTMLInputElement | null): void;
+  } | null>(null);
   const gameSpeedRef = useRef(1);
   const recordingRef = useRef<SessionRecordingBridge | undefined>(undefined);
   const terminalBridgeRef = useRef<TerminalBridgeRef | undefined>(undefined);
@@ -86,6 +89,7 @@ export function App() {
     replayId: string;
   }>();
   const [participantId] = useState(() => readOrCreateParticipantId());
+  const [htmlInCanvasChat] = useState(() => detectHtmlInCanvasSupport());
   const [participantName, setParticipantName] = useState(
     () => sessionStorage.getItem(PARTICIPANT_NAME_KEY) ?? 'Player'
   );
@@ -323,6 +327,7 @@ export function App() {
   useCanvasRenderer({
     screen,
     canvasRef,
+    chatInputRef,
     rendererRef,
     gameStateRef,
     scenarioRef,
@@ -356,6 +361,7 @@ export function App() {
     useCanvasInteraction({
       screen,
       canvasRef,
+      chatInputRef,
       rendererRef,
       gameStateRef,
       sessionRef,
@@ -520,6 +526,8 @@ export function App() {
           gameSpeed={gameSpeed}
           scenario={scenario}
           canvasRef={canvasRef}
+          chatInputRef={chatInputRef}
+          htmlInCanvasChat={htmlInCanvasChat}
           editorTextareaRef={editorTextareaRef}
           patchGameStateRef={patchGameStateRef}
           onSetGameSpeed={setGameSpeed}
@@ -529,6 +537,7 @@ export function App() {
           onCanvasWheel={handleCanvasWheel}
           onTerminalKey={handleTerminalKey}
           onCanvasPaste={handleCanvasPaste}
+          onChatSubmit={submitChatMessage}
           participantId={participantId}
           exercise={exerciseSnapshot}
           onCreateTask={(title) => {

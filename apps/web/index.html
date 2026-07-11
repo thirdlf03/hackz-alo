@@ -4,6 +4,14 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#0a0e14" />
+    <!--
+      HTML-in-Canvas Origin Trial (trial: HTMLInCanvas, Chrome 148-150).
+      本番オリジンごとに発行したトークンを content に埋める。トークン未設定でも
+      プログレッシブエンハンスメントによりゲームは動作する(canvas 自前描画へ
+      フォールバック)。発行/運用手順は docs/dev/html-in-canvas-design.md §4.6。
+      ローカルは chrome://flags/#canvas-draw-element で確認できる。
+    -->
+    <!-- <meta http-equiv="origin-trial" content="REPLACE_WITH_HTML_IN_CANVAS_TOKEN" /> -->
     <title>障害対応訓練</title>
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="apple-touch-icon" href="/icons/icon-192.png" />

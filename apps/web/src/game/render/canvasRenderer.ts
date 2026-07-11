@@ -34,11 +34,26 @@ import type {
 } from './canvasRenderSurface.js';
 import officeMonitorBackdropUrl from '../../assets/office-monitor-backdrop.avif';
 import {
+  supportsDrawElementImage,
+  transformToCss,
+} from '../../pure/htmlInCanvas.js';
+import {
+  chatComposeRegion,
   logicalHeight,
   logicalWidth,
   monitorLayouts,
   TOPOLOGY_MAP_HEIGHT,
 } from './canvasLayout.js';
+
+interface DrawElementContext {
+  drawElementImage(
+    element: Element,
+    dx: number,
+    dy: number,
+    dwidth?: number,
+    dheight?: number
+  ): unknown;
+}
 
 export {
   centerEditorOverlayRegion,
@@ -81,11 +96,23 @@ export class CanvasRenderer {
   private topologyHealthCache = new Map<string, TopologyHealthCacheEntry>();
   private metricsScrollY = 0;
   private metricsScrollMax = 0;
+  private readonly htmlInCanvasEnabled: boolean;
+  private chatInput: HTMLInputElement | null = null;
 
   constructor(private canvas: HTMLCanvasElement) {
     const ctx = canvas.getContext('2d');
     if (!ctx) throw new Error('2d canvas is required');
     this.ctx = ctx;
+    this.htmlInCanvasEnabled = supportsDrawElementImage(ctx);
+    if (this.htmlInCanvasEnabled) {
+      // IME 変換中など「DOM 側だけが変化した」ケースを拾い、ゲームループ外でも
+      // 再描画を要求する(既存の lastRendered 再描画機構を再利用)。
+      this.canvas.addEventListener('paint', () => {
+        if (this.lastRendered) {
+          this.draw(this.lastRendered.state, this.lastRendered.scenario);
+        }
+      });
+    }
     this.canvas.width = logicalWidth;
     this.canvas.height = logicalHeight;
     this.staticCanvas = document.createElement('canvas');
@@ -116,6 +143,15 @@ export class CanvasRenderer {
       roomBackdropLoaded: this.roomBackdropLoaded,
       topologyHealthCache: this.topologyHealthCache,
     };
+  }
+
+  /** HTML-in-Canvas 有効時に canvas 内へ埋め込むチャット入力欄を登録する。 */
+  setChatInput(input: HTMLInputElement | null) {
+    this.chatInput = input;
+  }
+
+  get embedsHtml() {
+    return this.htmlInCanvasEnabled;
   }
 
   scrollMetricsPanel(deltaY: number) {
@@ -204,12 +240,45 @@ export class CanvasRenderer {
       if (state.world.expandedMonitor) {
         drawExpandedMonitorOverlay(surface, state, scenario, viewModel);
       }
+      this.drawEmbeddedElements(state);
       drawCursor(surface, state);
     } finally {
       ctx.restore();
     }
     this.metricsScrollY = surface.metricsScrollY;
     this.metricsScrollMax = surface.metricsScrollMax;
+  }
+
+  /**
+   * HTML-in-Canvas 有効時、チャット入力欄(本物の <input>)を canvas 上の
+   * compose 領域に描画し、戻り値 transform を DOM 要素へ適用してヒットテスト
+   * 位置を描画位置に一致させる。チャットタブ表示中のみ。非対応時は何もしない
+   * (従来の自前描画にフォールバック)。
+   */
+  private drawEmbeddedElements(state: GameRenderState) {
+    const input = this.chatInput;
+    if (!this.htmlInCanvasEnabled || !input) return;
+    if (state.monitors.right.activePanelTab !== 'chat') {
+      input.style.transform = 'translateY(-9999px)';
+      return;
+    }
+    const region = chatComposeRegion(
+      state.monitors.right.activePanelTab,
+      state.world.expandedMonitor
+    );
+    try {
+      const ctx = this.ctx as unknown as DrawElementContext;
+      const transform = ctx.drawElementImage(
+        input,
+        region.x,
+        region.y,
+        region.width,
+        region.height
+      );
+      input.style.transform = transformToCss(transform);
+    } catch {
+      // 実験的 API のため描画に失敗しても致命的にしない。
+    }
   }
 
   private drawStaticLayer() {

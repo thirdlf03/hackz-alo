@@ -22,6 +22,7 @@ import {containsPoint, toLogicalCanvasPoint} from './appUtils.js';
 export function useCanvasInteraction(options: {
   screen: Screen;
   canvasRef: {current: HTMLCanvasElement | null};
+  chatInputRef?: {current: HTMLInputElement | null};
   rendererRef: {current: {scrollMetricsPanel(deltaY: number): void} | null};
   gameStateRef: {current: GameRenderState | undefined};
   sessionRef: {current: {sessionId: string; replayId: string} | undefined};
@@ -41,6 +42,7 @@ export function useCanvasInteraction(options: {
   const {
     screen,
     canvasRef,
+    chatInputRef,
     rendererRef,
     gameStateRef,
     sessionRef,
@@ -207,7 +209,15 @@ export function useCanvasInteraction(options: {
       }
 
       if (action.type === 'chat_compose') {
-        patchGameStateRef((current) => activateChatCompose(current));
+        // HTML-in-Canvas 有効時は本物の <input> が compose 位置に実在するため
+        // focus() を移すだけでよい(onFocus が activateChatCompose を呼ぶ)。
+        // 非対応時は従来の疑似フォーカス状態を立てる。
+        const embedded = chatInputRef?.current;
+        if (embedded) {
+          embedded.focus();
+        } else {
+          patchGameStateRef((current) => activateChatCompose(current));
+        }
         void emitter.emit({
           replayId,
           type: 'ui_panel_open',
