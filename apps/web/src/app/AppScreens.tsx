@@ -23,6 +23,7 @@ import {
 } from './appTypes.js';
 import {PerfOverlay} from './PerfOverlay.js';
 import {AiAssistPanel} from './AiAssistPanel.js';
+import {ModelDownloadButton} from './ModelDownloadButton.js';
 
 export type {FinishMode, ScenarioSummary, Screen} from './appTypes.js';
 
@@ -186,6 +187,7 @@ export function SelectScreen(props: {
           );
         })}
       </div>
+      <ModelDownloadButton />
     </section>
   );
 }
