@@ -287,7 +287,7 @@ test('pickHighlightWindows caps count and honors custom options', () => {
   assert.equal(custom[0].endMs, 10_500);
 });
 
-test('pickHighlightWindows falls back to command_detected and drops out-of-range', () => {
+test('pickHighlightWindows falls back to command_detected and clamps out-of-range to the tail', () => {
   const windows = pickHighlightWindows(
     [
       event('c1', 'command_detected', 5000, 'systemctl restart nginx'),
@@ -296,9 +296,13 @@ test('pickHighlightWindows falls back to command_detected and drops out-of-range
     ],
     60_000
   );
-  assert.equal(windows.length, 1);
+  // 録画が動画尺より先に終わっていても、イベントは末尾へクランプして拾う
+  assert.equal(windows.length, 2);
   assert.equal(windows[0].id, 'highlight-c1');
   assert.equal(windows[0].label, 'systemctl restart nginx');
+  assert.equal(windows[1].eventAtMs, 60_000);
+  assert.equal(windows[1].endMs, 60_000);
+  assert.equal(windows[1].startMs, 56_000);
 
   assert.deepEqual(
     pickHighlightWindows([event('m1', 'monitor_update', 2000)], 60_000),

@@ -540,12 +540,15 @@ export function pickHighlightWindows(
   if (pool.length === 0) {
     pool = events.filter((event) => event.type === 'command_detected');
   }
+  // 録画が動画尺より先に終わっている場合(イベント時刻 > 動画尺)も
+  // 末尾へクランプして拾う。クランプされた複数イベントは下のマージで
+  // 1 つの「録画末尾」窓にまとまる。
   const sorted = pool
-    .filter(
-      (event) =>
-        Number.isFinite(event.at_ms) &&
-        event.at_ms >= 0 &&
-        event.at_ms <= videoDurationMs
+    .filter((event) => Number.isFinite(event.at_ms) && event.at_ms >= 0)
+    .map((event) =>
+      event.at_ms <= videoDurationMs
+        ? event
+        : {...event, at_ms: videoDurationMs}
     )
     .toSorted((a, b) => a.at_ms - b.at_ms);
   const windows: HighlightWindow[] = [];
