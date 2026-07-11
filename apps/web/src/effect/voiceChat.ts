@@ -40,8 +40,14 @@ export class VoiceChatManager {
   constructor(private options: VoiceChatManagerOptions) {}
 
   async start(): Promise<void> {
+    // AEC/NS/AGC はゲーム音・スピーカー再生と干渉して送信が欠けることがある。
+    // エコーは内蔵スピーカーの音響回り込みが主因になりやすいのでヘッドホン推奨。
     this.localStream = await navigator.mediaDevices.getUserMedia({
-      audio: {echoCancellation: true, noiseSuppression: true},
+      audio: {
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: false,
+      },
     });
     if (this.stopped) {
       this.releaseLocalStream();

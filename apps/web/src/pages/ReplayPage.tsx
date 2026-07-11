@@ -1,9 +1,6 @@
 import {useEffect, useMemo, useRef, useState} from 'preact/hooks';
 import {createApiClient} from '../api/client.js';
-import {
-  ReplayFilmstrip,
-  ReplayHighlightReel,
-} from '../app/ReplayHighlights.js';
+import {ReplayFilmstrip, ReplayHighlightReel} from '../app/ReplayHighlights.js';
 import {
   isWebCodecsSupported,
   ReplayFrameExtractor,
@@ -55,7 +52,7 @@ export function ReplayPage({replayId, timeline}: Props) {
     Array<{id: string; at_ms: number; body: string}>
   >([]);
   const [tab, setTab] = useState<
-    'timeline' | 'commands' | 'alerts' | 'runbooks' | 'comments'
+    'timeline' | 'commands' | 'alerts' | 'runbooks' | 'comments' | 'highlights'
   >('timeline');
   const [currentTime, setCurrentTime] = useState(0);
   const [activeTimelineId, setActiveTimelineId] = useState<string>();
@@ -205,6 +202,8 @@ export function ReplayPage({replayId, timeline}: Props) {
   const commands = events.filter((event) => event.type === 'command_detected');
   const alerts = events.filter((event) => event.type === 'alert');
   const runbooks = events.filter((event) => event.type === 'runbook_open');
+  const showHighlightsTab =
+    Boolean(frameExtractor) && highlightWindows.length > 0;
   const isTimelineLoading =
     !meta && events.length === 0 && timeline.length === 0 && !loadError;
   const displayDurationMs =
@@ -212,6 +211,12 @@ export function ReplayPage({replayId, timeline}: Props) {
       ? Math.round(effectiveVideoDuration * 1000)
       : (meta?.duration_ms ?? 0);
   const durationLabel = meta ? formatDuration(displayDurationMs) : '計算中…';
+
+  useEffect(() => {
+    if (tab === 'highlights' && !showHighlightsTab) {
+      setTab('timeline');
+    }
+  }, [tab, showHighlightsTab]);
 
   function timelineVideoSeconds(gameSeconds: number) {
     return timelineDisplaySeconds(
@@ -287,6 +292,7 @@ export function ReplayPage({replayId, timeline}: Props) {
     alerts: 'replay-tab-alerts',
     runbooks: 'replay-tab-runbooks',
     comments: 'replay-tab-comments',
+    highlights: 'replay-tab-highlights',
   } as const;
   const panelIds = {
     timeline: 'replay-panel-timeline',
@@ -294,10 +300,34 @@ export function ReplayPage({replayId, timeline}: Props) {
     alerts: 'replay-panel-alerts',
     runbooks: 'replay-panel-runbooks',
     comments: 'replay-panel-comments',
+    highlights: 'replay-panel-highlights',
   } as const;
 
   return (
     <section class='replay-layout expanded' aria-label='リプレイ詳細'>
+      <header class='replay-share-bar' aria-label='リプレイ概要と共有'>
+        <div class='replay-meta'>
+          <span>結果: {meta?.result ?? '-'}</span>
+          <span>難易度: {meta?.difficulty ?? '-'}</span>
+          <span>対応時間: {durationLabel}</span>
+        </div>
+        <button
+          type='button'
+          aria-label='共有リンクをコピー'
+          onClick={() => {
+            void copyShareLink();
+          }}
+        >
+          共有リンクをコピー
+        </button>
+      </header>
+      {shareWarning && (
+        <p class='visibility-warning' role='alert'>
+          ターミナル入力や チャット
+          の内容が含まれる可能性があります。共有前に内容を確認してください。
+        </p>
+      )}
+      {shareStatus && <p class='replay-meta'>{shareStatus}</p>}
       <div class='replay-main'>
         {videoSrc ? (
           <video
@@ -334,59 +364,51 @@ export function ReplayPage({replayId, timeline}: Props) {
             }}
           />
         )}
-        {frameExtractor && highlightWindows.length > 0 && (
-          <ReplayHighlightReel
-            highlights={highlightWindows}
-            extractor={frameExtractor}
-            onWatchInMain={(seconds) => {
-              seekVideoSeconds(seconds);
-            }}
-          />
-        )}
-        <div class='replay-meta'>
-          <span>結果: {meta?.result ?? '-'}</span>
-          <span>難易度: {meta?.difficulty ?? '-'}</span>
-          <span>対応時間: {durationLabel}</span>
-        </div>
-        <button
-          type='button'
-          aria-label='共有リンクをコピー'
-          onClick={() => {
-            void copyShareLink();
-          }}
-        >
-          共有リンクをコピー
-        </button>
-        {shareWarning && (
-          <p class='visibility-warning' role='alert'>
-            ターミナル入力や チャット
-            の内容が含まれる可能性があります。共有前に内容を確認してください。
-          </p>
-        )}
-        {shareStatus && <p class='replay-meta'>{shareStatus}</p>}
       </div>
       <aside class='replay-side'>
         <div class='replay-tabs' role='tablist' aria-label='リプレイ情報'>
           {(
-            ['timeline', 'commands', 'alerts', 'runbooks', 'comments'] as const
-          ).map((item) => (
-            <button
-              key={item}
-              id={tabIds[item]}
-              type='button'
-              role='tab'
-              class={tab === item ? 'active' : ''}
-              aria-selected={tab === item}
-              aria-controls={panelIds[item]}
-              onClick={() => {
-                setTab(item);
-              }}
-            >
-              {tabLabel(item)}
-            </button>
-          ))}
+            [
+              'timeline',
+              'commands',
+              'alerts',
+              'runbooks',
+              'comments',
+              'highlights',
+            ] as const
+          )
+            .filter((item) => item !== 'highlights' || showHighlightsTab)
+            .map((item) => (
+              <button
+                key={item}
+                id={tabIds[item]}
+                type='button'
+                role='tab'
+                class={tab === item ? 'active' : ''}
+                aria-selected={tab === item}
+                aria-controls={panelIds[item]}
+                onClick={() => {
+                  setTab(item);
+                }}
+              >
+                {tabLabel(item, highlightWindows.length)}
+              </button>
+            ))}
         </div>
         <div class='replay-panel-scroll' tabIndex={0}>
+          {tab === 'highlights' && showHighlightsTab && frameExtractor && (
+            <div
+              id={panelIds.highlights}
+              role='tabpanel'
+              aria-labelledby={tabIds.highlights}
+            >
+              <ReplayHighlightReel
+                highlights={highlightWindows}
+                extractor={frameExtractor}
+                onWatchInMain={seekVideoSeconds}
+              />
+            </div>
+          )}
           {tab === 'timeline' &&
             (isTimelineLoading ? (
               <p
@@ -586,11 +608,19 @@ function sleep(ms: number) {
 }
 
 function tabLabel(
-  tab: 'timeline' | 'commands' | 'alerts' | 'runbooks' | 'comments'
+  tab:
+    | 'timeline'
+    | 'commands'
+    | 'alerts'
+    | 'runbooks'
+    | 'comments'
+    | 'highlights',
+  highlightCount = 0
 ) {
   if (tab === 'timeline') return 'タイムライン';
   if (tab === 'commands') return 'コマンド';
   if (tab === 'alerts') return 'アラート';
   if (tab === 'comments') return 'コメント';
+  if (tab === 'highlights') return `ハイライト (${highlightCount})`;
   return 'Runbook';
 }

@@ -161,7 +161,12 @@ export function ReplayHighlightReel({
         closeFrames(framesRef.current);
         framesRef.current = frames;
         setStatus(frames.length > 0 ? 'ready' : 'empty');
-        drawBitmap(canvasRef.current, frames[0]?.bitmap);
+        const firstBitmap = frames[0]?.bitmap;
+        if (firstBitmap && canvasRef.current) {
+          canvasRef.current.width = firstBitmap.width;
+          canvasRef.current.height = firstBitmap.height;
+        }
+        drawBitmap(canvasRef.current, firstBitmap);
       })
       .catch(() => {
         if (!cancelled) setStatus('empty');

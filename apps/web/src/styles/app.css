@@ -653,6 +653,20 @@ canvas:focus-visible {
   outline-offset: var(--focus-ring-offset);
 }
 
+.replay-share-bar {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.replay-layout > .visibility-warning,
+.replay-layout > .replay-meta {
+  grid-column: 1 / -1;
+}
+
 .replay-meta {
   display: flex;
   flex-wrap: wrap;
@@ -669,7 +683,7 @@ canvas:focus-visible {
 }
 
 .replay-tabs button,
-.replay-main > button,
+.replay-share-bar button,
 .replay-comments button {
   min-height: var(--touch-min);
   min-width: var(--touch-min);
@@ -679,6 +693,18 @@ canvas:focus-visible {
   color: var(--text-link);
   background: var(--surface-input);
   cursor: pointer;
+}
+
+.replay-share-bar button {
+  border-color: var(--border-success);
+  background: var(--accent-primary);
+  color: var(--text-on-accent);
+  font-weight: 700;
+}
+
+.replay-share-bar button:hover:not(:disabled) {
+  border-color: var(--border-success);
+  background: var(--accent-primary);
 }
 
 .replay-tabs button {
@@ -1677,150 +1703,151 @@ canvas:focus-visible {
 
 .play-pip-toolbar button.active {
   border-color: var(--border-focus, #7aa2ff);
-  /* --- AI postmortem panel --- */
+}
 
-  .postmortem-panel {
-    margin: 20px 0;
-    padding: 16px;
-    /* --- WebCodecs replay: filmstrip & highlights --- */
-    .replay-filmstrip {
-      display: flex;
-      gap: 8px;
-      overflow-x: auto;
-      padding-bottom: 4px;
-      scrollbar-gutter: stable;
-    }
+/* --- AI postmortem panel --- */
 
-    .replay-filmstrip-item {
-      flex: 0 0 auto;
-      display: grid;
-      gap: 4px;
-      justify-items: center;
-      padding: 4px;
-      border: 1px solid var(--border-subtle);
-      border-radius: 6px;
-      background: var(--surface-input);
-      color: var(--text-link);
-      cursor: pointer;
-    }
+.postmortem-panel {
+  margin: 20px 0;
+  padding: 16px;
+}
 
-    .replay-filmstrip-item canvas {
-      display: block;
-      width: 160px;
-      height: 90px;
-      background: #000;
-      border-radius: 4px;
-    }
+/* --- WebCodecs replay: filmstrip & highlights --- */
+.replay-filmstrip {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  scrollbar-gutter: stable;
+}
 
-    .replay-filmstrip-time {
-      font-size: var(--font-caption);
-      color: var(--text-secondary);
-    }
+.replay-filmstrip-item {
+  flex: 0 0 auto;
+  display: grid;
+  gap: 4px;
+  justify-items: center;
+  padding: 4px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  background: var(--surface-input);
+  color: var(--text-link);
+  cursor: pointer;
+}
 
-    .replay-highlights {
-      display: grid;
-      gap: 10px;
-      padding: 12px;
-      border: 1px solid var(--border-subtle);
-      border-radius: 8px;
-      background: var(--surface-input);
-    }
+.replay-filmstrip-item canvas {
+  display: block;
+  width: 160px;
+  height: 90px;
+  background: #000;
+  border-radius: 4px;
+}
 
-    .postmortem-panel h2 {
-      margin: 0 0 8px;
-      font-size: 20px;
-    }
+.replay-filmstrip-time {
+  font-size: var(--font-caption);
+  color: var(--text-secondary);
+}
 
-    .postmortem-hint {
-      margin: 0 0 10px;
-      color: var(--text-secondary);
-      font-size: var(--font-caption);
-      line-height: var(--line-height-body);
-    }
+.replay-highlights {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--surface-input);
+}
 
-    .postmortem-actions {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-    }
+.postmortem-panel h2 {
+  margin: 0 0 8px;
+  font-size: 20px;
+}
 
-    .postmortem-copy {
-      background: var(--surface-button);
-    }
+.postmortem-hint {
+  margin: 0 0 10px;
+  color: var(--text-secondary);
+  font-size: var(--font-caption);
+  line-height: var(--line-height-body);
+}
 
-    .postmortem-output {
-      margin: 10px 0 0;
-      border: 1px solid var(--border-subtle);
-      border-radius: 8px;
-      background: var(--surface-raised);
-      padding: 10px 12px;
-      color: var(--text-primary);
-      font-size: var(--font-caption);
-      font-family: inherit;
-      line-height: var(--line-height-body);
-      white-space: pre-wrap;
-      overflow-wrap: anywhere;
-      max-height: 320px;
-      overflow-y: auto;
+.postmortem-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
 
-      .replay-highlights h3 {
-        margin: 0;
-        font-size: 1rem;
-        color: var(--text-primary);
-      }
+.postmortem-copy {
+  background: var(--surface-button);
+}
 
-      .replay-highlight-canvas {
-        display: block;
-        width: 100%;
-        max-width: 480px;
-        aspect-ratio: 16 / 9;
-        background: #000;
-        border: 1px solid var(--border-subtle);
-        border-radius: 6px;
-      }
+.postmortem-output {
+  margin: 10px 0 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--surface-raised);
+  padding: 10px 12px;
+  color: var(--text-primary);
+  font-size: var(--font-caption);
+  font-family: inherit;
+  line-height: var(--line-height-body);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 320px;
+  overflow-y: auto;
+}
 
-      .replay-highlight-controls {
-        display: flex;
-        flex-wrap: wrap;
-        align-items: center;
-        gap: 8px;
-      }
+.replay-highlights h3 {
+  margin: 0;
+  font-size: 1rem;
+  color: var(--text-primary);
+}
 
-      .replay-highlight-controls button,
-      .replay-highlight-list button {
-        min-height: var(--touch-min);
-        border: 1px solid var(--border-subtle);
-        border-radius: 6px;
-        padding: 6px 12px;
-        color: var(--text-link);
-        background: var(--surface-input);
-        cursor: pointer;
-      }
+.replay-highlight-canvas {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  aspect-ratio: 16 / 9;
+  background: #000;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+}
 
-      .replay-highlight-caption {
-        color: var(--text-secondary);
-        font-size: var(--font-caption);
-      }
+.replay-highlight-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
 
-      .replay-highlight-list {
-        margin: 0;
-        padding: 0;
-        list-style: none;
-        display: grid;
-        gap: 6px;
-      }
+.replay-highlight-controls button,
+.replay-highlight-list button {
+  min-height: var(--touch-min);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  padding: 6px 12px;
+  color: var(--text-link);
+  background: var(--surface-input);
+  cursor: pointer;
+}
 
-      .replay-highlight-list button {
-        width: 100%;
-        text-align: left;
-      }
+.replay-highlight-caption {
+  color: var(--text-secondary);
+  font-size: var(--font-caption);
+}
 
-      .replay-highlight-list button.active {
-        background: var(--accent-tab);
-        border-color: var(--border-active-tab);
-        color: var(--text-primary);
-      }
+.replay-highlight-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 6px;
+}
 
-    }
-  }
+.replay-highlight-list button {
+  width: 100%;
+  text-align: left;
+}
+
+.replay-highlight-list button.active {
+  background: var(--accent-tab);
+  border-color: var(--border-active-tab);
+  color: var(--text-primary);
 }
