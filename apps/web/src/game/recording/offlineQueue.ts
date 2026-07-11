@@ -71,10 +71,10 @@ export class OfflineUploadQueue {
           await this.delete(item.id);
           this.retryDelayMs = BASE_RETRY_MS;
         } catch (error) {
-          if (isReplayChunkConflict(error)) {
-            // The server already has a different chunk stored for this
-            // seq. Retrying the same bytes can never succeed, so drop it
-            // instead of jamming the queue with an infinite retry loop.
+          if (shouldDiscardOfflineUploadError(error)) {
+            // Conflicts and permanent auth/not-found failures can never
+            // succeed on retry. Drop stale items so they do not jam uploads
+            // for the current replay.
             await this.delete(item.id);
             this.degraded = true;
             continue;
@@ -164,8 +164,18 @@ export class OfflineUploadQueue {
   }
 }
 
-function isReplayChunkConflict(error: unknown) {
-  return error instanceof ApiResultError && error.code === 'conflict';
+export function shouldDiscardOfflineUploadError(error: unknown) {
+  return (
+    error instanceof ApiResultError &&
+    shouldDiscardOfflineUploadFailure(error.status, error.code)
+  );
+}
+
+export function shouldDiscardOfflineUploadFailure(
+  status: number,
+  code: string
+) {
+  return code === 'conflict' || [401, 403, 404].includes(status);
 }
 
 function estimateItemBytes(item: QueueItem) {

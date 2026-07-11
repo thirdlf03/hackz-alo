@@ -1,4 +1,7 @@
-import type {AssistAvailability} from '../pure/aiAssist.js';
+import {
+  progressEventRatio,
+  type AssistAvailability,
+} from '../pure/aiAssist.js';
 import {POSTMORTEM_SHARED_CONTEXT} from '../pure/postmortem.js';
 
 type StreamingResult = ReadableStream<string> & AsyncIterable<string>;
@@ -113,7 +116,8 @@ function monitorOption(onDownloadProgress?: (loaded: number) => void): {
   return {
     monitor(monitor: EventTarget) {
       monitor.addEventListener('downloadprogress', (event) => {
-        onDownloadProgress?.((event as ProgressEvent).loaded);
+        const ratio = progressEventRatio(event as ProgressEvent);
+        if (ratio !== undefined) onDownloadProgress?.(ratio);
       });
     },
   };

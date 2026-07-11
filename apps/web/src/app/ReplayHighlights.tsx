@@ -119,50 +119,6 @@ export function ReplayFilmstrip({
   );
 }
 
-interface ReplayFramePreviewProps {
-  extractor: ReplayFrameExtractor;
-  timestampMs: number;
-  label: string;
-}
-
-/** Frame preview of the exact moment for a hovered / focused timeline entry. */
-export function ReplayFramePreview({
-  extractor,
-  timestampMs,
-  label,
-}: ReplayFramePreviewProps) {
-  const [bitmap, setBitmap] = useState<ImageBitmap>();
-
-  useEffect(() => {
-    let cancelled = false;
-    setBitmap(undefined);
-    extractor
-      .extractFrameAt(timestampMs)
-      .then((result) => {
-        if (!cancelled) setBitmap(result);
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, [extractor, timestampMs]);
-
-  return (
-    <figure
-      class='replay-frame-preview'
-      role='img'
-      aria-label={`${label} のフレームプレビュー`}
-    >
-      <BitmapCanvas
-        bitmap={bitmap}
-        width={filmstripWidth}
-        height={filmstripHeight}
-      />
-      <figcaption>{label}</figcaption>
-    </figure>
-  );
-}
-
 type HighlightReelStatus = 'loading' | 'ready' | 'empty';
 
 interface ReplayHighlightReelProps {

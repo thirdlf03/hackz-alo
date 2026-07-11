@@ -50,6 +50,15 @@ export async function listFeaturedReplays(env: Bindings) {
   return rows.results;
 }
 
+const TERMINAL_RECORDING_STATUSES = new Set([
+  'idle',
+  'ready',
+  'recording_error',
+  'upload_degraded',
+  'finalization_failed',
+  'unsupported_browser',
+]);
+
 export async function markReplayFinished(
   env: Bindings,
   input: {
@@ -61,12 +70,12 @@ export async function markReplayFinished(
   }
 ) {
   const existing = await env.DB.prepare(
-    'select finished_at from replays where id = ?'
+    'select finished_at, recording_status from replays where id = ?'
   )
     .bind(input.replayId)
-    .first<{finished_at: string | null}>();
+    .first<{finished_at: string | null; recording_status: string}>();
   const now = new Date().toISOString();
-  if (existing?.finished_at) {
+  if (existing && TERMINAL_RECORDING_STATUSES.has(existing.recording_status)) {
     return;
   }
   await env.DB.prepare(

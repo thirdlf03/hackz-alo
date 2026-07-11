@@ -3,34 +3,54 @@ import {test} from 'node:test';
 import {tsImport} from 'tsx/esm/api';
 
 const {
+  ASSIST_SNAPSHOT_MAX_WIDTH,
+  ASSIST_SYSTEM_PROMPT,
   buildAssistPrompt,
+  clampDownloadRatio,
   computeSnapshotSize,
   describeAssistAvailability,
   describeModelDownloadStatus,
   formatDownloadProgress,
+  progressEventRatio,
 } = await tsImport('../../apps/web/src/pure/aiAssist.ts', import.meta.url);
 
-test('computeSnapshotSize downscales wide canvases and keeps aspect ratio', () => {
-  assert.deepEqual(computeSnapshotSize(1920, 1080, 1024), {
-    width: 1024,
-    height: 576,
+test('computeSnapshotSize preserves the native in-game canvas resolution', () => {
+  assert.equal(ASSIST_SNAPSHOT_MAX_WIDTH, 1920);
+  assert.deepEqual(computeSnapshotSize(1920, 1080), {
+    width: 1920,
+    height: 1080,
   });
 });
 
 test('computeSnapshotSize keeps small canvases untouched', () => {
-  assert.deepEqual(computeSnapshotSize(800, 450, 1024), {
+  assert.deepEqual(computeSnapshotSize(800, 450), {
     width: 800,
     height: 450,
   });
 });
 
 test('computeSnapshotSize guards degenerate dimensions', () => {
-  assert.deepEqual(computeSnapshotSize(0, 0, 1024), {width: 1, height: 1});
-  assert.deepEqual(computeSnapshotSize(-10, 5, 1024), {width: 1, height: 1});
-  assert.deepEqual(computeSnapshotSize(200_000, 1, 1024), {
-    width: 1024,
+  assert.deepEqual(computeSnapshotSize(0, 0), {width: 1, height: 1});
+  assert.deepEqual(computeSnapshotSize(-10, 5), {width: 1, height: 1});
+  assert.deepEqual(computeSnapshotSize(200_000, 1), {
+    width: 1920,
     height: 1,
   });
+});
+
+test('computeSnapshotSize safely downscales canvases above the maximum', () => {
+  assert.deepEqual(computeSnapshotSize(3840, 2160), {
+    width: 1920,
+    height: 1080,
+  });
+});
+
+test('system prompt grounds answers in the attached in-game canvas', () => {
+  assert.match(ASSIST_SYSTEM_PROMPT, /1920x1080/);
+  assert.match(ASSIST_SYSTEM_PROMPT, /最新の添付画像/);
+  assert.match(ASSIST_SYSTEM_PROMPT, /タスク一覧/);
+  assert.match(ASSIST_SYSTEM_PROMPT, /Incident Log/);
+  assert.match(ASSIST_SYSTEM_PROMPT, /推測/);
 });
 
 test('buildAssistPrompt trims input and rejects empty questions', () => {
@@ -83,6 +103,13 @@ test('describeModelDownloadStatus reports downloading without progress', () => {
   );
 });
 
+test('describeModelDownloadStatus omits fake 0% at download start', () => {
+  assert.equal(
+    describeModelDownloadStatus('downloading', 0),
+    'AIモデルをダウンロードしています…'
+  );
+});
+
 test('describeModelDownloadStatus reports downloading with progress', () => {
   assert.equal(
     describeModelDownloadStatus('downloading', 0.5),
@@ -90,7 +117,44 @@ test('describeModelDownloadStatus reports downloading with progress', () => {
   );
 });
 
+test('describeModelDownloadStatus reports preparing after download completes', () => {
+  assert.equal(
+    describeModelDownloadStatus('downloading', 1),
+    'AIモデルを準備しています…'
+  );
+});
+
 test('describeModelDownloadStatus returns empty string for unsupported states', () => {
   assert.equal(describeModelDownloadStatus('unsupported'), '');
   assert.equal(describeModelDownloadStatus('unavailable'), '');
+});
+
+test('clampDownloadRatio clamps values into 0-1', () => {
+  assert.equal(clampDownloadRatio(0.5), 0.5);
+  assert.equal(clampDownloadRatio(-1), 0);
+  assert.equal(clampDownloadRatio(1.5), 1);
+  assert.equal(clampDownloadRatio(Number.NaN), 0);
+  assert.equal(clampDownloadRatio(Number.POSITIVE_INFINITY), 0);
+});
+
+test('progressEventRatio treats loaded as 0-1 fraction when total is 1 or missing', () => {
+  assert.equal(progressEventRatio({loaded: 0.42}), 0.42);
+  assert.equal(progressEventRatio({loaded: 0.42, total: 1}), 0.42);
+  assert.equal(progressEventRatio({loaded: 1, total: 1}), 1);
+  assert.equal(progressEventRatio({loaded: 0}), 0);
+});
+
+test('progressEventRatio uses loaded/total when total > 1 (byte-style)', () => {
+  assert.equal(progressEventRatio({loaded: 50, total: 100}), 0.5);
+  assert.equal(progressEventRatio({loaded: 100, total: 100}), 1);
+  assert.equal(progressEventRatio({loaded: 0, total: 100}), 0);
+});
+
+test('progressEventRatio returns undefined for missing or non-finite loaded', () => {
+  assert.equal(progressEventRatio({}), undefined);
+  assert.equal(progressEventRatio({loaded: Number.NaN}), undefined);
+  assert.equal(
+    progressEventRatio({loaded: Number.POSITIVE_INFINITY}),
+    undefined
+  );
 });

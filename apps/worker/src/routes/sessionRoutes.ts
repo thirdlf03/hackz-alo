@@ -17,6 +17,7 @@ import {generateIceServers} from '../effect/cloudflareTurn.js';
 import {sendPagerNotification} from '../effect/pagerPush.js';
 import {buildPagerNotificationPayload} from '../pure/pagerNotification.js';
 import {upsertPagerSubscription} from '../repositories/pagerSubscriptionRepository.js';
+import {createSessionProxyRequest} from '../http/sessionProxyRequest.js';
 
 const difficulties = new Set<Difficulty>([
   'beginner',
@@ -519,16 +520,7 @@ async function proxySession(c: WorkerContext, action: string, body?: unknown) {
   const stub = getSessionDoStub(c.env.SESSION_DO, sessionId);
   const target = new URL(c.req.url);
   target.pathname = `/internal/sessions/${sessionId}/${action}`;
-  const request =
-    body === undefined
-      ? new Request(new Request(target, c.req.raw), {
-          headers: traceHeaders(c.req.raw.headers),
-        })
-      : new Request(target, {
-          method: c.req.method === 'GET' ? 'POST' : c.req.method,
-          headers: traceHeaders({'content-type': 'application/json'}),
-          body: JSON.stringify(body),
-        });
+  const request = createSessionProxyRequest(c.req.raw, target, body);
   return stub.fetch(request);
 }
 

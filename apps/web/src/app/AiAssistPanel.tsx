@@ -12,6 +12,7 @@ import {
   createAssistantSession,
   type AssistantSession,
 } from '../effect/promptAssistant.js';
+import {ModelDownloadProgress} from './ModelDownloadProgress.js';
 
 export function AiAssistPanel(props: {
   canvasRef: {current: HTMLCanvasElement | null};
@@ -99,6 +100,9 @@ export function AiAssistPanel(props: {
           ? `${describeAssistAvailability(availability)} ${formatDownloadProgress(downloadProgress)}`
           : describeAssistAvailability(availability)}
       </p>
+      {availability === 'downloading' && (
+        <ModelDownloadProgress progress={downloadProgress} />
+      )}
       <form
         class='team-composer'
         onSubmit={(event) => {

@@ -11,6 +11,7 @@ export interface ReplayRecord {
   ending_id?: string | null;
   featured?: number;
   browser_info_json?: string | null;
+  recording_status?: string;
 }
 
 export interface ReplayComment {

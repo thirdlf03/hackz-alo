@@ -18,6 +18,7 @@ import {
 import type {ReplayEventEmitter} from '../game/events/emitReplayEvent.js';
 import {createEmptyTerminalMirror} from '../game/terminal/mirror.js';
 import {playAlertBeep} from '../game/recording/audio.js';
+import {resumeSharedAudioContext} from '../game/recording/audioMixer.js';
 import {collectStateTransitions} from '../game/events/sessionEvents.js';
 import type {ApiClientSurface} from '../api/client.js';
 import type {
@@ -458,6 +459,9 @@ export function useSessionRuntime(options: {
     ) {
       return;
     }
+    // user gesture 内で同期的に resume することで、録画開始までに
+    // AudioContext が 'running' になっている可能性を最大化する。
+    resumeSharedAudioContext();
     localStorage.setItem(CONSENT_KEY, '1');
     localStorage.setItem(SAVE_RECORDING_KEY, saveRecording ? '1' : '0');
     setHasRecordingConsent(true);

@@ -7,26 +7,61 @@
 
 let audioContext: AudioContext | undefined;
 let recordingDestination: MediaStreamAudioDestinationNode | undefined;
+let recordingKeepAliveOscillator: OscillatorNode | undefined;
 
 export function getSharedAudioContext(): AudioContext {
   if (!audioContext) audioContext = new AudioContext();
   return audioContext;
 }
 
+/**
+ * user gesture 内で生成された AudioContext は Chrome では 'running' で
+ * 始まるため、gesture のコールスタック内から呼ぶこの関数で生成まで行う。
+ */
 export function resumeSharedAudioContext() {
-  const ctx = audioContext;
-  if (ctx && ctx.state === 'suspended') void ctx.resume();
+  const ctx = getSharedAudioContext();
+  if (ctx.state === 'suspended') void ctx.resume();
+}
+
+/**
+ * suspended な AudioContext の MediaStreamDestination トラックは無音停止し
+ * MediaRecorder 全体をストールさせるため、running のときだけ合成対象にする。
+ */
+export function canMixRecordingAudio(state: AudioContextState): boolean {
+  return state === 'running';
+}
+
+/**
+ * Chrome は MediaStreamDestination に実ソースが無いと audio track が
+ * "silent but unmuted" になり、MediaRecorder が dataavailable を出さなくなる。
+ * gain=0 の oscillator を常時接続してトラックを生かし続ける。
+ */
+function ensureRecordingDestination(ctx: AudioContext) {
+  recordingDestination ??= ctx.createMediaStreamDestination();
+  if (recordingKeepAliveOscillator) return recordingDestination;
+  const gain = ctx.createGain();
+  gain.gain.value = 0;
+  const oscillator = ctx.createOscillator();
+  oscillator.connect(gain);
+  gain.connect(recordingDestination);
+  oscillator.start();
+  recordingKeepAliveOscillator = oscillator;
+  return recordingDestination;
 }
 
 /**
  * 録画へ合成する MediaStream。最初の呼び出しで destination を生成する。
- * 入力が何も接続されていない間は無音トラックとして振る舞う。
+ * AudioContext が running でない場合は undefined を返し、resume を試みる
+ * (録画は映像のみで開始される)。
  */
 export function getRecordingAudioStream(): MediaStream | undefined {
   try {
     const ctx = getSharedAudioContext();
-    recordingDestination ??= ctx.createMediaStreamDestination();
-    return recordingDestination.stream;
+    if (!canMixRecordingAudio(ctx.state)) {
+      if (ctx.state === 'suspended') void ctx.resume();
+      return undefined;
+    }
+    return ensureRecordingDestination(ctx).stream;
   } catch {
     return undefined;
   }
@@ -51,9 +86,9 @@ export function connectNodeToRecordingMix(node: AudioNode) {
 export function addStreamToRecordingMix(stream: MediaStream): () => void {
   try {
     const ctx = getSharedAudioContext();
-    recordingDestination ??= ctx.createMediaStreamDestination();
+    const destination = ensureRecordingDestination(ctx);
     const source = ctx.createMediaStreamSource(stream);
-    source.connect(recordingDestination);
+    source.connect(destination);
     return () => {
       try {
         source.disconnect();

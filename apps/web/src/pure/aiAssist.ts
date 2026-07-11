@@ -5,13 +5,14 @@ export type AssistAvailability =
   | 'downloading'
   | 'available';
 
-export const ASSIST_SNAPSHOT_MAX_WIDTH = 1024;
+export const ASSIST_SNAPSHOT_MAX_WIDTH = 1920;
 
 export const ASSIST_SYSTEM_PROMPT = [
   'あなたはインシデント対応訓練ゲームの相談役です。',
-  '添付されるのはプレイヤーのゲーム画面(監視ダッシュボード、トポロジー図、ターミナル、タスク一覧など)のスクリーンショットです。',
-  '画面から読み取れる事実を根拠に、障害対応の次の一手を短く日本語で助言してください。',
-  '答えを断定できないときは、画面のどこを確認すべきかを提案してください。',
+  '最新の添付画像だけを現在の画面状態を示す証拠として扱ってください。画像は1920x1080のゲーム内キャンバスだけで、監視メトリクス、トポロジー、ターミナル、ランブック、ゲーム内チャットが表示されます。',
+  'ゲーム画面の外側のDOMにあるTasks（タスク一覧）とIncident Logは添付画像に含まれません。見えているものとして言及しないでください。',
+  '回答では、画像内で実際に見えるラベル、数値、ステータス、コマンドやメッセージを具体的な根拠として示し、障害対応の次の一手を短く日本語で助言してください。',
+  '文字や領域が読めない場合は推測で補わず、読めないことを明示して、画像内のどこを確認すべきか提案してください。',
 ].join('\n');
 
 export function computeSnapshotSize(
@@ -55,8 +56,25 @@ export function describeAssistAvailability(
   }
 }
 
+export function clampDownloadRatio(loaded: number): number {
+  return Number.isFinite(loaded) ? Math.min(Math.max(loaded, 0), 1) : 0;
+}
+
+export function progressEventRatio(event: {
+  loaded?: number;
+  total?: number;
+}): number | undefined {
+  const loaded = event.loaded;
+  if (loaded === undefined || !Number.isFinite(loaded)) return undefined;
+  const total = event.total;
+  if (total !== undefined && Number.isFinite(total) && total > 1) {
+    return clampDownloadRatio(loaded / total);
+  }
+  return clampDownloadRatio(loaded);
+}
+
 export function formatDownloadProgress(loaded: number): string {
-  const ratio = Number.isFinite(loaded) ? Math.min(Math.max(loaded, 0), 1) : 0;
+  const ratio = clampDownloadRatio(loaded);
   return `${String(Math.round(ratio * 100))}%`;
 }
 
@@ -68,9 +86,13 @@ export function describeModelDownloadStatus(
     case 'available':
       return 'AIモデルはダウンロード済みです';
     case 'downloading':
-      return downloadProgress === undefined
-        ? 'AIモデルをダウンロードしています…'
-        : `AIモデルをダウンロードしています… ${formatDownloadProgress(downloadProgress)}`;
+      if (downloadProgress === undefined || downloadProgress <= 0) {
+        return 'AIモデルをダウンロードしています…';
+      }
+      if (downloadProgress >= 1) {
+        return 'AIモデルを準備しています…';
+      }
+      return `AIモデルをダウンロードしています… ${formatDownloadProgress(downloadProgress)}`;
     case 'downloadable':
       return 'プレイ中のAI Assistで使うAIモデルを、端末内で事前にダウンロードできます。';
     default:

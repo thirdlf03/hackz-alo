@@ -301,6 +301,13 @@ button:disabled {
   font-size: var(--font-caption);
 }
 
+.model-download-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-self: start;
+}
+
 .model-download-button {
   justify-self: start;
   min-height: var(--touch-min);
@@ -322,6 +329,59 @@ button:disabled {
   margin: 0;
   color: var(--text-error);
   font-size: var(--font-caption);
+}
+
+.model-download-progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.model-download-progress-track {
+  flex: 1;
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--surface-button);
+}
+
+.model-download-progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent-primary);
+  transition: width 0.2s ease-out;
+}
+
+.model-download-progress-fill--indeterminate {
+  width: 30%;
+  animation: model-download-progress-slide 1.2s ease-in-out infinite;
+}
+
+.model-download-progress-label {
+  min-width: 3ch;
+  color: var(--text-secondary);
+  font-family:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono',
+    monospace;
+  font-size: var(--font-caption);
+}
+
+@keyframes model-download-progress-slide {
+  0% {
+    transform: translateX(-100%);
+  }
+  50% {
+    transform: translateX(233%);
+  }
+  100% {
+    transform: translateX(-100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .model-download-progress-fill--indeterminate {
+    animation: none;
+  }
 }
 
 .settings-row {
@@ -1761,38 +1821,6 @@ canvas:focus-visible {
         color: var(--text-primary);
       }
 
-      .replay-frame-preview-slot {
-        min-height: 128px;
-        margin-bottom: 10px;
-        padding: 8px;
-        border: 1px solid var(--border-subtle);
-        border-radius: 6px;
-        background: var(--surface-input);
-        display: grid;
-        align-items: center;
-      }
-
-      .replay-frame-preview {
-        margin: 0;
-        display: grid;
-        gap: 6px;
-        justify-items: start;
-      }
-
-      .replay-frame-preview canvas {
-        display: block;
-        width: 160px;
-        height: 90px;
-        background: #000;
-        border-radius: 4px;
-      }
-
-      .replay-frame-preview figcaption,
-      .replay-frame-preview-empty {
-        margin: 0;
-        color: var(--text-secondary);
-        font-size: var(--font-caption);
-      }
     }
   }
 }

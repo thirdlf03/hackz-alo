@@ -139,6 +139,64 @@ test('HttpClient uses replay read token from page URL when no write token exists
   delete globalThis.window;
 });
 
+test('HttpClient reads the latest browser write token across client instances', async () => {
+  const calls = [];
+  globalThis.sessionStorage = memorySessionStorage();
+  globalThis.fetch = async (path, init) => {
+    calls.push({
+      path,
+      authorization: new Headers(init?.headers).get('authorization'),
+    });
+    return jsonResponse({ok: true, data: {}});
+  };
+
+  const first = new HttpClient();
+  const second = new HttpClient();
+  first.setWriteToken('old-writer-token');
+  second.setWriteToken('new-writer-token');
+
+  await first.get('/api/sessions/sess_1/clock');
+
+  assert.equal(calls[0]?.authorization, 'Bearer new-writer-token');
+  delete globalThis.sessionStorage;
+});
+
+test('HttpClient scopes URL read token to read access for the linked replay', async () => {
+  const calls = [];
+  globalThis.sessionStorage = memorySessionStorage();
+  globalThis.window = {
+    location: {search: '?replay=repl_shared&readToken=reader-token'},
+  };
+  globalThis.fetch = async (path, init) => {
+    calls.push({
+      path,
+      authorization: new Headers(init?.headers).get('authorization'),
+    });
+    return jsonResponse({ok: true, data: {}});
+  };
+
+  const http = new HttpClient();
+  http.setWriteToken('writer-token');
+  await http.get('/api/replays/repl_shared');
+  await http.post('/api/replays/repl_shared/comments', {atMs: 0, body: 'ok'});
+  await http.post('/api/replays/repl_shared/share-links', {});
+  await http.get('/api/replays/repl_other');
+  await http.get('/api/sessions/sess_1/clock');
+
+  assert.deepEqual(
+    calls.map((call) => call.authorization),
+    [
+      'Bearer reader-token',
+      'Bearer reader-token',
+      'Bearer writer-token',
+      'Bearer writer-token',
+      'Bearer writer-token',
+    ]
+  );
+  delete globalThis.window;
+  delete globalThis.sessionStorage;
+});
+
 test('HttpClient injects traceparent when browser perf is enabled', async () => {
   resetBrowserPerfForTests();
   initBrowserPerf({enabled: true, exporter: 'memory'});

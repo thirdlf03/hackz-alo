@@ -9,6 +9,7 @@ import type {ApiClientSurface} from '../api/client.js';
 import {CanvasRecorder} from '../game/recording/recorder.js';
 import {getRecordingAudioStream} from '../game/recording/audioMixer.js';
 import {RecordingFinalizer} from '../game/recording/finalizer.js';
+import {isMissingReplayVideoFinalizeError} from '../game/recording/finalizationPolicy.js';
 import {
   installOfflineFlush,
   OfflineUploadQueue,
@@ -191,12 +192,20 @@ export function useCanvasRecording(options: {
       );
       // finalize must not depend on finalizerRef: leaving play unmounts the
       // recorder effect and clears that ref before finishRecording resumes.
-      const finalized = await options.api
+      const finalizeOutcome = await options.api
         .finalizeReplayVideo(session.replayId)
-        .then((result) => result.status === 'ready')
-        .catch(() => false);
+        .then((result) => {
+          if (result.status === 'ready') return 'ready' as const;
+          if (result.status === 'missing') return 'missing' as const;
+          return 'pending' as const;
+        })
+        .catch((error: unknown) => {
+          return isMissingReplayVideoFinalizeError(error)
+            ? ('missing' as const)
+            : ('pending' as const);
+        });
       finalizerRef.current = null;
-      if (!finalized) {
+      if (finalizeOutcome === 'pending') {
         const headOk = await options.api.replayVideoExists(session.replayId);
         if (!headOk) {
           await options.api

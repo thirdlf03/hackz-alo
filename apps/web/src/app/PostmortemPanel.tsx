@@ -19,6 +19,7 @@ import {
   writeSection,
 } from '../effect/postmortemAi.js';
 import type {IndexedReplayEvent} from '../replay/replayMediaUtils.js';
+import {ModelDownloadProgress} from './ModelDownloadProgress.js';
 
 interface PostmortemSections {
   timeline?: string;
@@ -139,7 +140,12 @@ export function PostmortemPanel(props: {
       let timeline = '';
       if (canRun(summarizerAvailability)) {
         setStep('タイムラインを要約しています…');
-        markDownloading();
+        if (
+          summarizerAvailability === 'downloadable' ||
+          summarizerAvailability === 'downloading'
+        ) {
+          markDownloading();
+        }
         timeline = await summarizeTimeline(source, {
           onChunk: (chunk) => {
             setSections((current) => ({
@@ -215,6 +221,9 @@ export function PostmortemPanel(props: {
       <p class='ai-assist-status' role='status'>
         {busy && step ? step : statusLabel}
       </p>
+      {downloadProgress !== undefined && availability !== 'available' && (
+        <ModelDownloadProgress progress={downloadProgress} />
+      )}
       {!busy && availability === 'downloadable' && (
         <p class='postmortem-hint'>
           生成ボタンを押すと、必要なAIモデルを端末内にダウンロードしてから草案を作成します。

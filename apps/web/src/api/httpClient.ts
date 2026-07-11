@@ -63,10 +63,9 @@ export class HttpClient {
   }
 
   getWriteToken() {
-    if (this.writeToken) return this.writeToken;
-    if (typeof sessionStorage === 'undefined') return undefined;
-    const stored = sessionStorage.getItem(WRITE_TOKEN_STORAGE_KEY);
-    this.writeToken = stored ?? undefined;
+    if (typeof sessionStorage === 'undefined') return this.writeToken;
+    this.writeToken =
+      sessionStorage.getItem(WRITE_TOKEN_STORAGE_KEY) ?? undefined;
     return this.writeToken;
   }
 
@@ -153,7 +152,7 @@ export class HttpClient {
   }
 
   private withAuth(init: RequestInit = {}, path = '') {
-    const token = this.tokenForPath(path);
+    const token = this.tokenForPath(path, init.method);
     if (!token) {
       return init;
     }
@@ -164,7 +163,7 @@ export class HttpClient {
     return {...init, headers};
   }
 
-  private tokenForPath(path: string) {
+  private tokenForPath(path: string, method = 'GET') {
     if (path === '/api/sessions') return undefined;
     const normalizedPath = path.split('?')[0] ?? path;
     const protectsReplay =
@@ -173,17 +172,46 @@ export class HttpClient {
     const protectsSession = normalizedPath.startsWith('/api/sessions/');
     if (!protectsReplay && !protectsSession) return undefined;
 
-    const writeToken = this.getWriteToken();
-    if (writeToken) return writeToken;
-    return protectsReplay ? this.readTokenFromLocation() : undefined;
+    if (protectsReplay && this.isReplayReadRequest(normalizedPath, method)) {
+      const replayId = this.replayIdFromPath(normalizedPath);
+      const readToken = this.readTokenFromLocation(replayId);
+      if (readToken) return readToken;
+    }
+    return this.getWriteToken();
   }
 
-  private readTokenFromLocation() {
+  private readTokenFromLocation(requestedReplayId?: string) {
     if (typeof window === 'undefined') return undefined;
-    const token = new URLSearchParams(window.location.search)
-      .get(READ_TOKEN_QUERY_PARAM)
-      ?.trim();
+    const params = new URLSearchParams(window.location.search);
+    const linkedReplayId = params.get('replay')?.trim();
+    if (
+      linkedReplayId &&
+      requestedReplayId &&
+      linkedReplayId !== requestedReplayId
+    ) {
+      return undefined;
+    }
+    const token = params.get(READ_TOKEN_QUERY_PARAM)?.trim();
     return token && token.length > 0 ? token : undefined;
+  }
+
+  private isReplayReadRequest(path: string, method: string) {
+    const normalizedMethod = method.toUpperCase();
+    return (
+      normalizedMethod === 'GET' ||
+      normalizedMethod === 'HEAD' ||
+      (normalizedMethod === 'POST' && path.endsWith('/comments'))
+    );
+  }
+
+  private replayIdFromPath(path: string) {
+    const encodedReplayId = path.split('/')[3];
+    if (!encodedReplayId) return undefined;
+    try {
+      return decodeURIComponent(encodedReplayId);
+    } catch {
+      return undefined;
+    }
   }
 
   private startRequestSpan(

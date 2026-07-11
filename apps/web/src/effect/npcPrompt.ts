@@ -1,4 +1,7 @@
-import type {AssistAvailability} from '../pure/aiAssist.js';
+import {
+  progressEventRatio,
+  type AssistAvailability,
+} from '../pure/aiAssist.js';
 import {NPC_SYSTEM_PROMPT} from '../pure/npcColleague.js';
 
 interface LanguageModelMessage {
@@ -73,7 +76,8 @@ export async function createNpcSession(
     expectedOutputs: EXPECTED_OUTPUTS,
     monitor(monitor) {
       monitor.addEventListener('downloadprogress', (event) => {
-        onDownloadProgress?.((event as ProgressEvent).loaded);
+        const ratio = progressEventRatio(event as ProgressEvent);
+        if (ratio !== undefined) onDownloadProgress?.(ratio);
       });
     },
   });
