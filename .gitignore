@@ -12,3 +12,6 @@ perf-reports/
 .DS_Store
 apps/web/.env.local
 apps/worker/.dev.vars
+
+# デザインモック置き場(参照資料、lint 対象外)
+Web アプリのデザイン刷新/

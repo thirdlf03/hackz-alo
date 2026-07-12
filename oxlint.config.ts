@@ -41,7 +41,9 @@ export default defineConfig({
     'apps/web/public/**',
     'playwright.config.ts',
     'playwright.perf.config.ts',
+    'playwright.vrt.config.ts',
     'packages/scenarios/data/**',
+    'Web*',
   ],
   overrides: [
     {
