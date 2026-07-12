@@ -69,10 +69,11 @@ export function ResultPage({
   const durationMs = meta?.video_duration_ms ?? meta?.duration_ms ?? 0;
   const durationLabel = formatDuration(durationMs);
   const isDismissed = meta?.result !== 'resolved';
-  const resultLabel = isDismissed ? '解雇！' : '成功';
   const endingLabel = meta?.ending_id
     ? formatEnding(meta.ending_id)
     : undefined;
+  const successStamp = endingLabel ?? '無事退勤';
+  const dismissStamp = '解雇';
   const resultTone = resolveResultTone(meta?.result, meta?.ending_id);
   const flavorText = buildFlavorText(
     meta?.result,
@@ -99,7 +100,7 @@ export function ResultPage({
       aria-labelledby='result-heading'
     >
       <p class={`eyebrow${isDismissed ? ' eyebrow-dismissed' : ''}`}>
-        {isDismissed ? '解雇通知' : 'Mission Report'}
+        {isDismissed ? 'NOTICE OF TERMINATION' : 'SHIFT REPORT'}
       </p>
       <h1 id='result-heading'>{scenarioTitle}</h1>
       {error && (
@@ -112,7 +113,7 @@ export function ResultPage({
         {isDismissed ? (
           <>
             <p class='result-stamp' role='status'>
-              {resultLabel}
+              {dismissStamp}
             </p>
             <p class='result-dismissal-subline'>{dismissalSubline}</p>
             <p class='result-flavor result-flavor-dismissed'>{flavorText}</p>
@@ -124,14 +125,12 @@ export function ResultPage({
           </>
         ) : (
           <>
-            <p class={`result-badge result-badge-${resultTone}`}>
-              {resultLabel}
-            </p>
-            <p class='result-hero-meta'>
-              {endingLabel ? <span>{endingLabel}</span> : null}
-              {endingLabel ? <span aria-hidden='true'> · </span> : null}
-              <span>{durationLabel}</span>
-            </p>
+            <div class='result-hero-headline'>
+              <p class={`result-badge result-badge-${resultTone}`}>
+                {successStamp}
+              </p>
+              <span class='result-hero-duration'>{durationLabel}</span>
+            </div>
             <p class='result-flavor'>{flavorText}</p>
           </>
         )}
@@ -197,18 +196,24 @@ export function ResultPage({
         </button>
         <button
           type='button'
-          class='result-action-secondary'
+          class={
+            isDismissed ? 'result-action-primary' : 'result-action-secondary'
+          }
           onClick={onRetry}
           disabled={isRetrying}
         >
-          {isRetrying ? '開始中…' : '再挑戦'}
+          {isRetrying
+            ? '開始中…'
+            : isDismissed
+              ? '▸ CONTINUE? 再挑戦'
+              : '再挑戦'}
         </button>
         <button
           type='button'
           class='result-action-secondary'
           onClick={onOpenHotwash}
         >
-          Hotwash
+          ふりかえり
         </button>
         <button
           type='button'
@@ -216,7 +221,7 @@ export function ResultPage({
           onClick={onOpenReplay}
           disabled={!canOpenReplay}
         >
-          Replay
+          {canOpenReplay ? 'リプレイを見る' : 'リプレイ準備中…'}
         </button>
       </div>
     </section>

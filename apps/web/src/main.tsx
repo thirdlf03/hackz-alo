@@ -4,6 +4,7 @@ import {
   turnstileRequired,
 } from './effect/turnstileClient.js';
 import {App} from './app/App.js';
+import './styles/fonts.css';
 import './styles/tokens.css';
 import './styles/app.css';
 

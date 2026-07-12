@@ -116,3 +116,8 @@ pnpm exec wrangler secret put VAPID_SUBJECT -c apps/worker/wrangler.toml   # mai
 ```
 
 ローカル開発では `apps/worker/.dev.vars` に同名のキーを設定する(`.dev.vars.example` 参照)。未設定の場合、`GET /api/push/public-key` は `{publicKey: null}` を返し、クライアントはページャー UI を表示しない。
+
+## フォントクレジット
+
+`apps/web/public/fonts` に同梱: DotGothic16 (© Fontworks) / IBM Plex Sans JP, IBM Plex Mono (© IBM Corp.)。
+いずれも [SIL Open Font License 1.1](https://scripts.sil.org/OFL) の下でセルフホストしている(各フォントディレクトリの `OFL.txt` 参照)。

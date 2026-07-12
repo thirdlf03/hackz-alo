@@ -1,4 +1,9 @@
-import type {GameRenderState, MetricsSource} from '@incident/shared';
+import type {
+  GameRenderState,
+  MetricsSnapshot,
+  MetricsSource,
+} from '@incident/shared';
+import type {CanvasRenderSurface} from './canvasRenderSurface.js';
 import {
   clamp,
   drawSparkline,
@@ -8,8 +13,41 @@ import {
   type MetricsHealthSummary,
 } from './canvasDrawUtils.js';
 import {buildMetricSections} from '../../pure/metricsSections.js';
-import {METRICS_SCROLL_TOP, monitorContentHeight} from './canvasLayout.js';
+import {
+  METRICS_SCROLL_TOP,
+  monitorContentHeight,
+  PANEL_HEADER_TEXT_RIGHT_MARGIN,
+  PANEL_PADDING,
+} from './canvasLayout.js';
 import {gamePalette as palette, uiFont, monoFont} from './gamePalette.js';
+
+/** Chrome header row for the METRICS panel: mono label + live status,
+ * matching the 6a-5 mock's "METRICS ... ● CRITICAL" header line. */
+export function drawMetricsPanelHeader(
+  surface: CanvasRenderSurface,
+  rect: {x: number; y: number; width: number},
+  headerHeight: number,
+  metrics: MetricsSnapshot
+) {
+  if (headerHeight <= 0) return;
+  const ctx = surface.ctx;
+  const health = summarizeMetricsHealth(metrics);
+  const midY = rect.y + headerHeight / 2 + 6;
+
+  ctx.fillStyle = palette.textSecondary;
+  ctx.font = monoFont(16);
+  ctx.fillText('METRICS', rect.x + PANEL_PADDING, midY);
+
+  const statusText = `● ${health.label}`;
+  ctx.font = monoFont(15, 'bold');
+  const statusWidth = ctx.measureText(statusText).width;
+  ctx.fillStyle = health.color;
+  ctx.fillText(
+    statusText,
+    rect.x + rect.width - PANEL_HEADER_TEXT_RIGHT_MARGIN - statusWidth,
+    midY
+  );
+}
 
 export interface MetricsPanelScroll {
   scrollY: number;

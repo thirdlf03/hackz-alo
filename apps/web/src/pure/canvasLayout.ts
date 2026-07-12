@@ -6,8 +6,8 @@ export const terminalContentWidth = 496;
 /** Upper slice of the metrics monitor reserved for the service topology map. */
 export const TOPOLOGY_MAP_HEIGHT = 240;
 
-const runbookContentX = 1332;
-const runbookContentY = 204;
+const runbookContentX = 1342;
+const runbookContentY = 262;
 
 export const RUNBOOK_TAB_GAP = 8;
 export const RUNBOOK_TAB_PAD_X = 16;
@@ -17,7 +17,7 @@ const RUNBOOK_TAB_HIT_PAD = 8;
 const RUNBOOK_CONTENT_GAP = 28;
 
 export const RIGHT_PANEL_PRIMARY_TABS = [
-  {id: 'runbook' as const, label: 'Runbook', width: 108},
+  {id: 'runbook' as const, label: '手順書', width: 108},
   {id: 'chat' as const, label: 'チャット', width: 88},
 ];
 export const RIGHT_PANEL_PRIMARY_TAB_HEIGHT = 40;
@@ -26,7 +26,7 @@ const RIGHT_PANEL_TAB_ROW_GAP = 8;
 const RIGHT_PANEL_COMPOSE_HEIGHT = 44;
 const RIGHT_PANEL_COMPOSE_PADDING = 16;
 const CENTER_TOOL_TAB_WIDTH = 118;
-const CENTER_TOOL_TAB_HEIGHT = 34;
+const CENTER_TOOL_TAB_HEIGHT = 28;
 const CENTER_TOOL_TAB_GAP = 8;
 export const METRICS_SCROLL_TOP = 56;
 
@@ -75,30 +75,87 @@ export function measureRunbookTabWidth(
   );
 }
 
+// --- 6a-5 flat terminal layout -------------------------------------------
+//
+// The play screen is a single flat "night-shift arcade" terminal: a solid
+// alert band up top, three unequal-width flat panels (METRICS / TERMINAL /
+// EDITOR / RUNBOOK / チャット), and the command dock at the bottom. There is
+// no desk, monitor bezel, or perspective — every rect below is the visible
+// panel edge itself.
+
+/** Inner padding applied inside every flat panel border. */
+export const PANEL_PADDING = 12;
+/** Height of the chrome header band reserved above METRICS/TERMINAL content.
+ * The RUNBOOK panel has no reserved chrome header: its own Runbook/チャット
+ * tab row (drawn as regular content) already serves as its header. */
+export const PANEL_HEADER_HEIGHT = 36;
+const PANEL_MAGNIFY_SIZE = 28;
+const PANEL_MAGNIFY_GAP = 8;
+/** Right-edge margin panel headers must respect to stay clear of the
+ * per-panel magnify (expand) affordance. */
+export const PANEL_HEADER_TEXT_RIGHT_MARGIN =
+  PANEL_PADDING + PANEL_MAGNIFY_SIZE + PANEL_MAGNIFY_GAP;
+
+export function monitorHeaderHeight(id: MonitorId): number {
+  return id === 'runbook' ? 0 : PANEL_HEADER_HEIGHT;
+}
+
+/** Transient inline warning shown above the alert band when a command is rejected. */
+export const commandWarningRect = {
+  x: 70,
+  y: 118,
+  width: logicalWidth - 140,
+  height: 52,
+} as const;
+
+/** The single, unmissable incident banner at the top of the play area. */
+export const alertBandRect = {
+  x: 70,
+  y: 178,
+  width: 1780,
+  height: 56,
+} as const;
+
+const MAIN_AREA_GAP = 16;
+const MAIN_AREA_TOP = alertBandRect.y + alertBandRect.height + MAIN_AREA_GAP;
+const MAIN_AREA_HEIGHT = 588;
+const MAIN_AREA_X = alertBandRect.x;
+const MAIN_AREA_WIDTH = alertBandRect.width;
+
+// Column widths: METRICS and RUNBOOK are pinned to the virtual content size
+// (496 + 2*PANEL_PADDING) so their content renders at native 1:1 scale (no
+// sub-floor text shrinkage); TERMINAL/EDITOR gets the remaining width as the
+// primary, "operable" column — directionally matching the 0.85 / 1.5 / 0.75
+// mock ratio (TERMINAL clearly the widest) without dropping panel text below
+// the WCAG floor enforced by uiFont/monoFont.
+const SIDE_COLUMN_WIDTH = monitorContentWidth + PANEL_PADDING * 2;
+const TERMINAL_COLUMN_WIDTH =
+  MAIN_AREA_WIDTH - SIDE_COLUMN_WIDTH * 2 - MAIN_AREA_GAP * 2;
+
 export const monitorLayouts = [
   {
     id: 'metrics' as const,
-    x: 70,
-    y: 140,
-    width: 540,
-    height: 620,
+    x: MAIN_AREA_X,
+    y: MAIN_AREA_TOP,
+    width: SIDE_COLUMN_WIDTH,
+    height: MAIN_AREA_HEIGHT,
     title: 'METRICS',
   },
   {
     id: 'terminal' as const,
-    x: 690,
-    y: 140,
-    width: 540,
-    height: 620,
+    x: MAIN_AREA_X + SIDE_COLUMN_WIDTH + MAIN_AREA_GAP,
+    y: MAIN_AREA_TOP,
+    width: TERMINAL_COLUMN_WIDTH,
+    height: MAIN_AREA_HEIGHT,
     title: 'TERMINAL',
   },
   {
     id: 'runbook' as const,
-    x: 1310,
-    y: 140,
-    width: 540,
-    height: 620,
-    title: 'RUNBOOK / チャット',
+    x: MAIN_AREA_X + MAIN_AREA_WIDTH - SIDE_COLUMN_WIDTH,
+    y: MAIN_AREA_TOP,
+    width: SIDE_COLUMN_WIDTH,
+    height: MAIN_AREA_HEIGHT,
+    title: '手順書 / チャット',
   },
 ] as const;
 
@@ -119,50 +176,45 @@ export const expandedMonitorLayout = {
   height: 780,
 } as const;
 
-export function monitorContentRegion(monitor: {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}) {
+export function monitorContentRegion(
+  monitor: {x: number; y: number; width: number; height: number},
+  headerHeight = 0
+) {
   return {
-    x: monitor.x + 22,
-    y: monitor.y + 64,
-    width: monitor.width - 44,
-    height: monitor.height - 80,
+    x: monitor.x + PANEL_PADDING,
+    y: monitor.y + headerHeight + PANEL_PADDING,
+    width: monitor.width - PANEL_PADDING * 2,
+    height: monitor.height - headerHeight - PANEL_PADDING * 2,
   };
 }
 
 function runbookContentTransform(expandedRunbook: boolean) {
-  const monitor = monitorLayout('runbook');
-  const frameX = expandedRunbook ? expandedMonitorLayout.x : monitor.x;
-  const frameY = expandedRunbook ? expandedMonitorLayout.y : monitor.y;
-  const frameWidth = expandedRunbook
-    ? expandedMonitorLayout.width
-    : monitor.width;
-  const frameHeight = expandedRunbook
-    ? expandedMonitorLayout.height
-    : monitor.height;
-  const contentWidth = frameWidth - 44;
-  const contentHeight = frameHeight - 80;
+  const monitor = expandedRunbook
+    ? expandedMonitorLayout
+    : monitorLayout('runbook');
+  const content = monitorContentRegion(monitor, monitorHeaderHeight('runbook'));
   const scale = Math.min(
-    contentWidth / monitorContentWidth,
-    contentHeight / monitorContentHeight
+    content.width / monitorContentWidth,
+    content.height / monitorContentHeight
   );
   return {
-    x: frameX + 22,
-    y: frameY + 64,
+    x: content.x,
+    y: content.y,
     scale,
   };
 }
 
-export const monitorMagnifyRegions = monitorLayouts.map((monitor) => ({
-  id: monitor.id,
-  x: monitor.x + monitor.width - 50,
-  y: monitor.y + 4,
-  width: 44,
-  height: 44,
-}));
+export const monitorMagnifyRegions = monitorLayouts.map((monitor) => {
+  const rowHeight =
+    monitorHeaderHeight(monitor.id) || RIGHT_PANEL_PRIMARY_TAB_HEIGHT;
+  return {
+    id: monitor.id,
+    x: monitor.x + monitor.width - PANEL_PADDING - PANEL_MAGNIFY_SIZE,
+    y: monitor.y + (rowHeight - PANEL_MAGNIFY_SIZE) / 2,
+    width: PANEL_MAGNIFY_SIZE,
+    height: PANEL_MAGNIFY_SIZE,
+  };
+});
 
 export const notificationBellRegion = {
   x: 1508,
@@ -193,8 +245,9 @@ export const navigationOverlayRect = {
 
 export function centerToolTabRegions() {
   const monitor = monitorLayout('terminal');
-  const y = monitor.y + 10;
-  const firstX = monitor.x + 22;
+  const headerHeight = monitorHeaderHeight('terminal');
+  const y = monitor.y + (headerHeight - CENTER_TOOL_TAB_HEIGHT) / 2;
+  const firstX = monitor.x + PANEL_PADDING;
   return [
     {
       id: 'terminal' as const,
@@ -227,7 +280,10 @@ export function centerToolAt(
 
 export function centerEditorOverlayRegion(expanded = false) {
   const monitor = expanded ? expandedMonitorLayout : monitorLayout('terminal');
-  const content = monitorContentRegion(monitor);
+  const content = monitorContentRegion(
+    monitor,
+    monitorHeaderHeight('terminal')
+  );
   const scale = Math.min(
     content.width / monitorContentWidth,
     content.height / monitorContentHeight
@@ -244,7 +300,7 @@ export function centerEditorOverlayRegion(expanded = false) {
 
 export function metricsPanelScrollRegion(expanded = false) {
   const monitor = expanded ? expandedMonitorLayout : monitorLayout('metrics');
-  const content = monitorContentRegion(monitor);
+  const content = monitorContentRegion(monitor, monitorHeaderHeight('metrics'));
   const scale = Math.min(
     content.width / monitorContentWidth,
     content.height / monitorContentHeight

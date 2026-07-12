@@ -5,8 +5,10 @@ import {
   containsCanvasPoint,
   expandedMonitorLayout,
   inputDockRects,
-  monitorContentHeight,
+  monitorContentRegion,
   monitorContentWidth,
+  monitorContentHeight,
+  monitorHeaderHeight,
   monitorLayout,
   monitorMagnifyAt,
   navigationOverlayRect,
@@ -141,16 +143,16 @@ export function editorFileAt(
   }
   const expanded = state.world.expandedMonitor === 'terminal';
   const monitor = expanded ? expandedMonitorLayout : monitorLayout('terminal');
-  const contentX = monitor.x + 22;
-  const contentY = monitor.y + 64;
-  const contentWidth = monitor.width - 44;
-  const contentHeight = monitor.height - 80;
-  const scale = Math.min(
-    contentWidth / monitorContentWidth,
-    contentHeight / monitorContentHeight
+  const content = monitorContentRegion(
+    monitor,
+    monitorHeaderHeight('terminal')
   );
-  const localX = (x - contentX) / scale;
-  const localY = (y - contentY) / scale;
+  const scale = Math.min(
+    content.width / monitorContentWidth,
+    content.height / monitorContentHeight
+  );
+  const localX = (x - content.x) / scale;
+  const localY = (y - content.y) / scale;
   const fileListTop = 66;
   if (
     localX < 0 ||

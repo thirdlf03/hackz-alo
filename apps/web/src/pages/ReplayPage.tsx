@@ -307,19 +307,32 @@ export function ReplayPage({replayId, timeline}: Props) {
     <section class='replay-layout expanded' aria-label='リプレイ詳細'>
       <header class='replay-share-bar' aria-label='リプレイ概要と共有'>
         <div class='replay-meta'>
-          <span>結果: {meta?.result ?? '-'}</span>
+          <span>
+            結果:{' '}
+            <span class='replay-meta-value replay-meta-result'>
+              {meta?.result ?? '-'}
+            </span>
+          </span>
           <span>難易度: {meta?.difficulty ?? '-'}</span>
-          <span>対応時間: {durationLabel}</span>
+          <span>
+            対応時間:{' '}
+            <span class='replay-meta-value replay-meta-duration'>
+              {durationLabel}
+            </span>
+          </span>
         </div>
-        <button
-          type='button'
-          aria-label='共有リンクをコピー'
-          onClick={() => {
-            void copyShareLink();
-          }}
-        >
-          共有リンクをコピー
-        </button>
+        <div class='replay-share-actions'>
+          <span class='replay-share-note'>共有前に映り込みを確認</span>
+          <button
+            type='button'
+            aria-label='共有リンクをコピー'
+            onClick={() => {
+              void copyShareLink();
+            }}
+          >
+            共有リンクをコピー
+          </button>
+        </div>
       </header>
       {shareWarning && (
         <p class='visibility-warning' role='alert'>
@@ -444,11 +457,17 @@ export function ReplayPage({replayId, timeline}: Props) {
                             seekVideoSeconds(seekSeconds, event.id);
                           }}
                         >
-                          {formatSeconds(videoSeconds)} {event.label}
+                          <span class='timeline-time'>
+                            {formatSeconds(videoSeconds)}
+                          </span>
+                          <span class='timeline-label'>{event.label}</span>
                         </button>
                       ) : (
                         <span>
-                          {formatSeconds(videoSeconds)} {event.label}
+                          <span class='timeline-time'>
+                            {formatSeconds(videoSeconds)}
+                          </span>
+                          <span class='timeline-label'>{event.label}</span>
                         </span>
                       )}
                     </li>

@@ -4,6 +4,17 @@ import {
   type Locator,
   type Page,
 } from '@playwright/test';
+import {
+  centerToolTabRegions,
+  inputDockRects,
+  logicalHeight,
+  logicalWidth,
+  monitorContentRegion,
+  monitorContentWidth,
+  monitorContentHeight,
+  monitorHeaderHeight,
+  monitorLayout,
+} from '../../apps/web/src/pure/canvasLayout.js';
 
 const CANVAS_LABEL = '録画対象のゲーム画面';
 const CONSENT_CHECKBOX = /録画し、振り返りに使うことに同意する/;
@@ -11,15 +22,12 @@ const SAVE_CHECKBOX = /録画データをサーバーに保存する/;
 const DEFAULT_SCENARIO = /API が寝落ち/;
 const DEMO_SCENARIO = /デモ: 1分復旧ドリル/;
 
-const DESIGN_WIDTH = 1920;
-const DESIGN_HEIGHT = 1080;
-const RETIRE_RECT = {x: 1370, y: 878, width: 140, height: 96};
-const RESOLVE_RECT = {x: 1530, y: 878, width: 160, height: 96};
-const COMMAND_INPUT_RECT = {x: 70, y: 878, width: 1280, height: 96};
-const TERMINAL_MONITOR = {x: 690, y: 140, width: 540, height: 620};
-const CENTER_TOOL_TAB_WIDTH = 118;
-const CENTER_TOOL_TAB_HEIGHT = 34;
-const CENTER_TOOL_TAB_GAP = 8;
+const DESIGN_WIDTH = logicalWidth;
+const DESIGN_HEIGHT = logicalHeight;
+const RETIRE_RECT = inputDockRects.retire;
+const RESOLVE_RECT = inputDockRects.button;
+const COMMAND_INPUT_RECT = inputDockRects.input;
+const TERMINAL_MONITOR = monitorLayout('terminal');
 
 export interface CapturedSession {
   sessionId: string;
@@ -56,10 +64,12 @@ export async function openScenarioBriefing(
   });
   await expect(continueToBriefingButton).toBeEnabled({timeout: 90_000});
   await continueToBriefingButton.click();
-  await expect(page.getByRole('button', {name: '開始'})).toBeVisible({
+  await expect(page.getByRole('button', {name: /シフト開始/})).toBeVisible({
     timeout: 90_000,
   });
-  await expect(page.getByRole('button', {name: '開始中…'})).toHaveCount(0);
+  await expect(page.getByRole('button', {name: 'シフト開始中…'})).toHaveCount(
+    0
+  );
   return payload.data as CapturedSession;
 }
 
@@ -97,7 +107,7 @@ export async function startGameFromBriefing(page: Page) {
         response.ok(),
       {timeout: 90_000}
     ),
-    page.getByRole('button', {name: '開始'}).click(),
+    page.getByRole('button', {name: /シフト開始/}).click(),
   ]);
 
   const canvas = page.getByLabel(CANVAS_LABEL);
@@ -181,26 +191,28 @@ export async function retireFromGame(page: Page) {
 
 export async function clickCenterTool(page: Page, tool: 'terminal' | 'editor') {
   const canvas = await focusGameCanvas(page);
-  const tabIndex = tool === 'terminal' ? 0 : 1;
-  const tabX =
-    TERMINAL_MONITOR.x +
-    22 +
-    tabIndex * (CENTER_TOOL_TAB_WIDTH + CENTER_TOOL_TAB_GAP) +
-    CENTER_TOOL_TAB_WIDTH / 2;
-  const tabY = TERMINAL_MONITOR.y + 10 + CENTER_TOOL_TAB_HEIGHT / 2;
-  await clickCanvasLogicalPoint(canvas, tabX, tabY);
+  const tab = centerToolTabRegions().find((item) => item.id === tool);
+  if (!tab) throw new Error(`unknown center tool: ${tool}`);
+  await clickCanvasLogicalPoint(
+    canvas,
+    tab.x + tab.width / 2,
+    tab.y + tab.height / 2
+  );
 }
 
 export async function clickEditorFile(page: Page, index = 0) {
   const canvas = await focusGameCanvas(page);
-  const contentX = TERMINAL_MONITOR.x + 22;
-  const contentY = TERMINAL_MONITOR.y + 64;
-  const contentWidth = TERMINAL_MONITOR.width - 44;
-  const contentHeight = TERMINAL_MONITOR.height - 80;
-  const scale = Math.min(contentWidth / 496, contentHeight / 540);
+  const content = monitorContentRegion(
+    TERMINAL_MONITOR,
+    monitorHeaderHeight('terminal')
+  );
+  const scale = Math.min(
+    content.width / monitorContentWidth,
+    content.height / monitorContentHeight
+  );
   const fileListTop = 66;
-  const x = contentX + 20 * scale;
-  const y = contentY + (fileListTop + 8 + index * 28 + 4) * scale;
+  const x = content.x + 20 * scale;
+  const y = content.y + (fileListTop + 8 + index * 28 + 4) * scale;
   await clickCanvasLogicalPoint(canvas, x, y);
 }
 
@@ -229,25 +241,28 @@ export async function waitForTerminalCommand(
 
 export async function waitForResolveSuccess(page: Page) {
   await expect(page.locator('#result-heading')).toBeVisible({timeout: 30_000});
-  await expect(page.getByText('成功', {exact: true})).toBeVisible();
+  await expect(page.getByText('無事退勤', {exact: true})).toBeVisible();
   await expect(page.getByRole('heading', {name: 'ハイライト'})).toBeVisible();
 }
 
 export async function waitForFalseResolveResult(page: Page) {
   await expect(page.locator('#result-heading')).toBeVisible({timeout: 30_000});
-  await expect(page.locator('.result-stamp')).toHaveText('解雇！');
+  await expect(page.locator('.result-stamp')).toHaveText('解雇');
   await expect(page.getByText('未復旧のまま宣言')).toBeVisible();
 }
 
 export async function waitForRetireResult(page: Page) {
   await expect(page.locator('#result-heading')).toBeVisible({timeout: 30_000});
-  await expect(page.locator('.result-stamp')).toHaveText('解雇！');
+  await expect(page.locator('.result-stamp')).toHaveText('解雇');
   await expect(page.getByRole('heading', {name: 'ハイライト'})).toBeVisible();
   await expect(page.getByRole('button', {name: '再挑戦'})).toBeVisible();
 }
 
 export async function waitForReplayButton(page: Page) {
-  const replay = page.getByRole('button', {name: 'Replay', exact: true});
+  const replay = page.getByRole('button', {
+    name: 'リプレイを見る',
+    exact: true,
+  });
   await expect(replay).toBeVisible({timeout: 30_000});
   await expect(replay).toBeEnabled({timeout: 30_000});
   return replay;

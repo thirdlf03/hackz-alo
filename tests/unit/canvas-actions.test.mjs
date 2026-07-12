@@ -7,7 +7,12 @@ const {
   expandedMonitorLayout,
   inputDockRects,
   measureRunbookTabWidth,
+  monitorContentRegion,
+  monitorContentWidth,
+  monitorContentHeight,
+  monitorHeaderHeight,
   monitorLayout,
+  monitorMagnifyRegions,
   navigationOverlayRect,
   notificationBellRegion,
   runbookTabRegion,
@@ -131,15 +136,13 @@ test('resolveCanvasAction absorbs expanded monitor interior and closes from outs
 });
 
 test('resolveCanvasAction maps monitor magnify and chat compose targets', () => {
-  const terminal = monitorLayout('terminal');
   const state = createPlayState();
+  const terminalMagnify = monitorMagnifyRegions.find(
+    (region) => region.id === 'terminal'
+  );
 
   assert.deepEqual(
-    resolveCanvasAction(
-      {x: terminal.x + terminal.width - 28, y: terminal.y + 24},
-      state,
-      baseScenario()
-    ),
+    resolveCanvasAction(pointIn(terminalMagnify), state, baseScenario()),
     {type: 'toggle_expanded_monitor', monitor: 'terminal'}
   );
 
@@ -210,14 +213,17 @@ test('resolveCanvasAction deactivates chat compose on outside clicks', () => {
 
 function editorFilePoint(index, expanded = false) {
   const monitor = expanded ? expandedMonitorLayout : monitorLayout('terminal');
-  const contentX = monitor.x + 22;
-  const contentY = monitor.y + 64;
-  const contentWidth = monitor.width - 44;
-  const contentHeight = monitor.height - 80;
-  const scale = Math.min(contentWidth / 496, contentHeight / 540);
+  const content = monitorContentRegion(
+    monitor,
+    monitorHeaderHeight('terminal')
+  );
+  const scale = Math.min(
+    content.width / monitorContentWidth,
+    content.height / monitorContentHeight
+  );
   return {
-    x: contentX + 20 * scale,
-    y: contentY + (66 + 8 + index * 28 + 4) * scale,
+    x: content.x + 20 * scale,
+    y: content.y + (66 + 8 + index * 28 + 4) * scale,
   };
 }
 

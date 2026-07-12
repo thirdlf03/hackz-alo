@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#0a0e14" />
+    <meta name="theme-color" content="#050705" />
     <!--
       HTML-in-Canvas Origin Trial (trial: HTMLInCanvas, Chrome 148-150).
       本番オリジンごとに発行したトークンを content に埋める。トークン未設定でも
@@ -13,6 +13,48 @@
     -->
     <!-- <meta http-equiv="origin-trial" content="REPLACE_WITH_HTML_IN_CANVAS_TOKEN" /> -->
     <title>障害対応訓練</title>
+    <!--
+      初期描画で確実に使う最小限のフォントスライスのみ preload する。
+      本文=IBM Plex Sans JP(latin + かな主要スライス jp119)、
+      端末=IBM Plex Mono(latin)、見出し=DotGothic16(latin + かな主要スライス jp119)。
+      jp119 は fonts.css の unicode-range にひらがな(U+3040-309F)と
+      カタカナ(U+30A0-30FF)を含む共通スライス。
+    -->
+    <link
+      rel="preload"
+      as="font"
+      type="font/woff2"
+      href="/fonts/ibm-plex-sans-jp/ibm-plex-sans-jp-400-latin.woff2"
+      crossorigin
+    />
+    <link
+      rel="preload"
+      as="font"
+      type="font/woff2"
+      href="/fonts/ibm-plex-sans-jp/ibm-plex-sans-jp-400-jp119.woff2"
+      crossorigin
+    />
+    <link
+      rel="preload"
+      as="font"
+      type="font/woff2"
+      href="/fonts/ibm-plex-mono/ibm-plex-mono-400-latin.woff2"
+      crossorigin
+    />
+    <link
+      rel="preload"
+      as="font"
+      type="font/woff2"
+      href="/fonts/dotgothic16/dotgothic16-400-latin.woff2"
+      crossorigin
+    />
+    <link
+      rel="preload"
+      as="font"
+      type="font/woff2"
+      href="/fonts/dotgothic16/dotgothic16-400-jp119.woff2"
+      crossorigin
+    />
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="apple-touch-icon" href="/icons/icon-192.png" />
   </head>

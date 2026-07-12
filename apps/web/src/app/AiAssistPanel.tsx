@@ -92,9 +92,6 @@ export function AiAssistPanel(props: {
 
   return (
     <section class='ai-assist' aria-label='オンデバイスAIアシスタント'>
-      <h2>
-        AI Assist <span class='ai-assist-badge'>on-device</span>
-      </h2>
       <p class='ai-assist-status' role='status'>
         {availability === 'downloading' && downloadProgress !== undefined
           ? `${describeAssistAvailability(availability)} ${formatDownloadProgress(downloadProgress)}`

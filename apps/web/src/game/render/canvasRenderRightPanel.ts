@@ -24,6 +24,18 @@ export function drawRightPanel(
   const layout = rightPanelLayout(activePanelTab, runbooks.length > 0);
 
   drawPrimaryPanelTabs(surface, state, layout.primaryTop, viewModel);
+  surface.ctx.strokeStyle = palette.borderPanel;
+  surface.ctx.lineWidth = 1;
+  surface.ctx.beginPath();
+  surface.ctx.moveTo(
+    0,
+    layout.primaryTop + RIGHT_PANEL_PRIMARY_TAB_HEIGHT + 10
+  );
+  surface.ctx.lineTo(
+    470,
+    layout.primaryTop + RIGHT_PANEL_PRIMARY_TAB_HEIGHT + 10
+  );
+  surface.ctx.stroke();
 
   if (activePanelTab === 'runbook') {
     drawRunbookDocumentTabs(surface, state, runbooks, layout.secondaryTop);

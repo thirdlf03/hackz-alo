@@ -3,6 +3,7 @@ import type {
   AfterActionReport,
   Difficulty,
   ExerciseSnapshot,
+  ExerciseTaskStatus,
   GameRenderState,
   IncidentLogEntryKind,
   ParticipantRole,
@@ -16,7 +17,7 @@ import {
   updateEditorPanel,
 } from '../game/state/gameState.js';
 import {centerEditorOverlayRegion} from '../game/render/canvasLayout.js';
-import {formatTime} from '../pure/canvasFormat.js';
+import {formatNarrativeClock, formatTime} from '../pure/canvasFormat.js';
 import {areParticipantsReadyToStart} from '../pure/participantsReady.js';
 import {canContributeRecords} from '../pure/rolePermissions.js';
 import {ReplayPage} from '../pages/ReplayPage.js';
@@ -34,6 +35,7 @@ import {SpeechIncidentLogPanel} from './SpeechIncidentLogPanel.js';
 import {ModelDownloadButton} from './ModelDownloadButton.js';
 import {describeAssistAvailability} from '../pure/aiAssist.js';
 import {describeVoiceStatus} from '../pure/voiceChat.js';
+import {INCIDENT_LOG_KIND_LABELS} from '../pure/speechPhrases.js';
 import {PIP_MONITOR_LABELS, type PipMonitorId} from '../pure/pipMonitor.js';
 import type {VoiceChatControls} from './useVoiceChat.js';
 import type {NpcColleagueControls} from './useNpcColleague.js';
@@ -51,6 +53,7 @@ const difficultyOptions: Array<{
   label: string;
   tone: string;
   summary: string;
+  warning?: string;
 }> = [
   {
     difficulty: 'beginner',
@@ -69,6 +72,7 @@ const difficultyOptions: Array<{
     label: '上級',
     tone: 'red',
     summary: '少ない手掛かりから仮説を立てて完走する訓練',
+    warning: '※仮眠不可',
   },
 ];
 
@@ -129,7 +133,8 @@ export function TopBar(props: {
           }
         }}
       >
-        障害対応訓練
+        ▚▞ 障害対応訓練
+        <span class='blink-cursor' aria-hidden='true' />
       </strong>
       {props.screen === 'play' && (
         <GameSpeedControl
@@ -146,7 +151,7 @@ export function TopBar(props: {
           }}
           disabled={navigationDisabled}
         >
-          Scenario
+          シナリオ
         </button>
         {props.canNavigateToReplay && (
           <button
@@ -154,7 +159,7 @@ export function TopBar(props: {
             aria-label='リプレイ詳細を開く'
             onClick={props.onOpenReplay}
           >
-            Replay
+            リプレイ
           </button>
         )}
       </div>
@@ -170,12 +175,15 @@ export function SelectScreen(props: {
   return (
     <section class='select-screen'>
       <div class='select-header'>
-        <p class='eyebrow'>Incident Drill</p>
-        <h1>難易度を選ぶ</h1>
-        <p>難易度ごとにシナリオを選んで訓練を開始します。</p>
+        <p class='eyebrow'>INCIDENT DRILL</p>
+        <h1>今夜のシフトを選ぶ</h1>
+        <p>
+          電話が鳴る前に、監視とログの読み方を体に入れておこう。難易度ごとにシナリオを選んで訓練開始。
+        </p>
       </div>
       <div class='difficulty-grid'>
-        {difficultyOptions.map((option) => {
+        {difficultyOptions.map((option, index) => {
+          const level = index + 1;
           const count = props.scenarios.filter(
             (item) => item.difficulty === option.difficulty
           ).length;
@@ -186,7 +194,7 @@ export function SelectScreen(props: {
               class={`difficulty-card ${option.tone}`}
               type='button'
               disabled={disabled}
-              aria-label={`${option.label}、${String(count)} シナリオ。${option.summary}${disabled ? '（シナリオなし）' : ''}`}
+              aria-label={`${option.label}、${String(count)} シナリオ。${option.summary}${option.warning ?? ''}${disabled ? '（シナリオなし）' : ''}`}
               title={
                 disabled ? 'この難易度にはシナリオがありません' : undefined
               }
@@ -194,9 +202,24 @@ export function SelectScreen(props: {
                 props.onSelectDifficulty(option.difficulty);
               }}
             >
-              <span class='difficulty-label'>{option.label}</span>
+              <span class='difficulty-card-top'>
+                <span class='difficulty-label'>
+                  LEVEL {level} ── {option.label}
+                </span>
+                <span class='difficulty-level-dots' aria-hidden='true'>
+                  {[0, 1, 2].map((dot) => (
+                    <span key={dot} class={dot < level ? 'lit' : ''} />
+                  ))}
+                </span>
+              </span>
               <strong>{count} シナリオ</strong>
-              <small>{option.summary}</small>
+              <small>
+                {option.summary}
+                {option.warning && (
+                  <span class='difficulty-warn'> {option.warning}</span>
+                )}
+              </small>
+              <span class='difficulty-cta'>▸ PRESS START</span>
             </button>
           );
         })}
@@ -213,6 +236,10 @@ export function ScenarioListScreen(props: {
   onBack: () => void;
   onStartScenario: (scenarioId: string) => void;
 }) {
+  const level =
+    difficultyOptions.findIndex(
+      (option) => option.difficulty === props.selectedDifficulty
+    ) + 1;
   return (
     <section
       class='panel scenario-list-panel'
@@ -224,11 +251,19 @@ export function ScenarioListScreen(props: {
         aria-label='難易度選択に戻る'
         onClick={props.onBack}
       >
-        ← 戻る
+        ← 難易度選択に戻る
       </button>
-      <h1 id='scenario-list-heading'>
-        {formatDifficulty(props.selectedDifficulty)}シナリオ
-      </h1>
+      <div class='scenario-list-heading-row'>
+        <h1 id='scenario-list-heading'>
+          {formatDifficulty(props.selectedDifficulty)}シナリオ
+        </h1>
+        <span class='scenario-list-meta'>
+          LEVEL {level} / 全{props.scenarios.length}件
+        </span>
+      </div>
+      <p class='scenario-list-lead'>
+        どれも実際に起きた夜がモデル。選ぶと環境の準備が始まる。
+      </p>
       <div class='scenario-list'>
         {props.scenarios.map((item) => (
           <button
@@ -240,13 +275,16 @@ export function ScenarioListScreen(props: {
               props.onStartScenario(item.id);
             }}
           >
+            <span class='scenario-card-marker' aria-hidden='true'>
+              {item.id === TUTORIAL_SCENARIO_ID ? '►' : ''}
+            </span>
             <span class='scenario-card-main'>
               <strong>{item.title}</strong>
               {item.id === TUTORIAL_SCENARIO_ID && (
                 <span class='tutorial-badge'>チュートリアル</span>
               )}
             </span>
-            <span>{item.timeLimitMinutes}分</span>
+            <span class='scenario-card-time'>{item.timeLimitMinutes}分</span>
           </button>
         ))}
       </div>
@@ -270,17 +308,21 @@ export function BriefingScreen(props: {
   onRegisterPager: () => void;
   onStartPlay: () => void;
 }) {
+  const level =
+    difficultyOptions.findIndex(
+      (option) => option.difficulty === props.scenario.difficulty
+    ) + 1;
   return (
     <section class='panel briefing-panel' aria-labelledby='briefing-heading'>
       <button
         type='button'
         class='panel-back-button'
-        aria-label='シナリオ選択に戻る'
         disabled={props.isStarting}
         onClick={props.onBack}
       >
-        ← 戻る
+        ← シナリオ選択に戻る
       </button>
+      <p class='eyebrow'>BRIEFING — LEVEL {level}</p>
       <h1 id='briefing-heading'>{props.scenario.title}</h1>
       <ul>
         {props.scenario.briefing.map((line) => (
@@ -338,6 +380,7 @@ export function BriefingScreen(props: {
       {props.isHost ? (
         <button
           type='button'
+          class='briefing-start-button'
           onClick={props.onStartPlay}
           disabled={
             props.isStarting || !props.sandboxReady || !props.recordingConsent
@@ -345,9 +388,9 @@ export function BriefingScreen(props: {
           aria-describedby='briefing-consent-note'
         >
           {props.isStarting
-            ? '開始中…'
+            ? 'シフト開始中…'
             : props.sandboxReady
-              ? '開始'
+              ? '▸ シフト開始'
               : '環境準備中…'}
         </button>
       ) : (
@@ -369,6 +412,14 @@ export const participantRoleLabels: Record<ParticipantRole, string> = {
 const participantRoles = Object.keys(
   participantRoleLabels
 ) as ParticipantRole[];
+
+/** タスク一覧の状態マーカー(6a サイドバー: 完了 ✓ / 進行中 ▸ など)。 */
+const taskStatusMarkers: Record<ExerciseTaskStatus, string> = {
+  open: '·',
+  in_progress: '▸',
+  done: '✓',
+  blocked: '!',
+};
 
 export function LobbyScreen(props: {
   scenario: ScenarioDefinition;
@@ -409,8 +460,11 @@ export function LobbyScreen(props: {
 
   return (
     <section class='panel lobby-panel' aria-labelledby='lobby-heading'>
-      <p class='eyebrow'>Exercise Room</p>
+      <p class='eyebrow'>WAITING ROOM</p>
       <h1 id='lobby-heading'>{props.scenario.title}</h1>
+      <p class='lobby-lead'>
+        全員そろったら開始。ひとりでも遊べるが、夜勤は仲間がいたほうが心強い。
+      </p>
       <div class='lobby-invite'>
         <button
           type='button'
@@ -465,13 +519,27 @@ export function LobbyScreen(props: {
           >
             <strong>{participant.displayName}</strong>
             <span>{participantRoleLabels[participant.role]}</span>
-            <span>{participant.ready ? 'Ready' : '待機中'}</span>
+            <span
+              class={
+                !participant.online
+                  ? 'participant-status'
+                  : participant.ready
+                    ? 'participant-status ready'
+                    : 'participant-status waiting'
+              }
+            >
+              {!participant.online
+                ? 'オフライン'
+                : participant.ready
+                  ? 'READY ✓'
+                  : '待機中…'}
+            </span>
           </div>
         ))}
       </div>
       <div class='lobby-actions'>
         <button type='button' onClick={props.onReady} disabled={ready}>
-          {ready ? 'Ready' : 'Ready'}
+          {ready ? 'READY 済み' : 'READY'}
         </button>
         {props.isHost ? (
           <button
@@ -623,6 +691,7 @@ export function PlayScreen(props: {
             />
           )}
         </canvas>
+        <PlayStatusBar gameState={props.gameState} />
         <PerfOverlay />
         <MonitorPipToolbar pip={props.pip} />
       </div>
@@ -665,44 +734,103 @@ function TeamExercisePanel(props: {
   const incidentLog = props.exercise?.incidentLog.slice(-6) ?? [];
   return (
     <aside class='team-panel' aria-label='訓練ルーム'>
-      <section>
-        <h2>Team</h2>
+      <section aria-label='オンコール名簿'>
+        <h2>ON-CALL</h2>
         <div class='team-participants'>
           {participants.map((participant) => (
             <span
               key={participant.participantId}
               class={participant.online ? '' : 'offline'}
             >
-              {participant.displayName} /{' '}
-              {participantRoleLabels[participant.role]}
+              <span class='team-participant-dot' aria-hidden='true'>
+                {participant.online ? '●' : '○'}
+              </span>{' '}
+              {participant.displayName}{' '}
+              <span class='team-participant-role'>
+                {participantRoleLabels[participant.role]}
+                {!participant.online && ' · 離席'}
+              </span>
             </span>
           ))}
         </div>
+        <WarRoomVoicePanel voice={props.voice} />
       </section>
-      <WarRoomVoicePanel voice={props.voice} />
-      <NpcColleaguePanel npc={props.npc} onCreateTask={props.onCreateTask} />
       {!props.canContribute && (
         <p class='team-readonly-note' role='status'>
           Observer は閲覧専用です
         </p>
       )}
+      <section class='npc-panel' aria-label='AI NPC 後輩ソラ'>
+        <h2>ASSIST — ソラ (AI)</h2>
+        <NpcColleaguePanel npc={props.npc} onCreateTask={props.onCreateTask} />
+        <AiAssistPanel canvasRef={props.canvasRef} />
+      </section>
       <section>
-        <h2>Tasks</h2>
+        <h2>TASKS</h2>
+        <ol class='team-list'>
+          {tasks.slice(-6).map((task) => (
+            <li key={task.id} class={`team-task team-task-${task.status}`}>
+              <span class='team-task-marker' aria-hidden='true'>
+                {taskStatusMarkers[task.status]}
+              </span>
+              <span class='team-task-title'>{task.title}</span>
+            </li>
+          ))}
+        </ol>
         <TaskComposer
           disabled={!props.canContribute}
           onCreateTask={props.onCreateTask}
         />
+      </section>
+      <section>
+        <h2>INJECTS</h2>
         <ol class='team-list'>
-          {tasks.slice(-6).map((task) => (
-            <li key={task.id}>
-              <strong>{task.title}</strong>
-              <span>{task.status}</span>
+          {(props.exercise?.injects ?? []).map((inject) => (
+            <li key={inject.id} class='team-inject'>
+              <span class='team-inject-title'>
+                {inject.title}
+                {inject.roleHint && (
+                  <span class='inject-role-badge'>
+                    {participantRoleLabels[inject.roleHint]}
+                  </span>
+                )}
+              </span>
+              <span class='team-inject-body'>
+                {inject.fired ? '発火済み' : inject.body}
+              </span>
+              {!inject.fired && (
+                <span class='team-inject-actions'>
+                  {inject.atMs !== undefined && (
+                    <span class='team-inject-time'>
+                      {formatTime(inject.atMs)} 自動発火
+                    </span>
+                  )}
+                  <button
+                    type='button'
+                    onClick={() => {
+                      props.onFireInject(inject.id);
+                    }}
+                  >
+                    今すぐ発火
+                  </button>
+                </span>
+              )}
             </li>
           ))}
         </ol>
       </section>
       <section>
-        <h2>Incident Log</h2>
+        <h2>NOTES / INCIDENT LOG</h2>
+        <ol class='team-list'>
+          {incidentLog.map((entry) => (
+            <li key={entry.id} class='team-log-entry'>
+              <span class='team-log-kind'>
+                {INCIDENT_LOG_KIND_LABELS[entry.kind]}
+              </span>{' '}
+              <span class='team-log-body'>{entry.body}</span>
+            </li>
+          ))}
+        </ol>
         <LogComposer
           disabled={!props.canContribute}
           onAppendIncidentLog={props.onAppendIncidentLog}
@@ -715,53 +843,34 @@ function TeamExercisePanel(props: {
             props.onAppendIncidentLog(body, kind);
           }}
         />
-        <ol class='team-list'>
-          {incidentLog.map((entry) => (
-            <li key={entry.id}>
-              <strong>{entry.kind}</strong>
-              <span>{entry.body}</span>
-            </li>
-          ))}
-        </ol>
       </section>
-      <section>
-        <h2>Injects</h2>
-        <ol class='team-list'>
-          {(props.exercise?.injects ?? []).map((inject) => (
-            <li key={inject.id}>
-              <strong>{inject.title}</strong>
-              {(Boolean(inject.roleHint) ||
-                (inject.atMs !== undefined && !inject.fired)) && (
-                <span class='inject-badges'>
-                  {inject.roleHint && (
-                    <span class='inject-role-badge'>
-                      {participantRoleLabels[inject.roleHint]}
-                    </span>
-                  )}
-                  {inject.atMs !== undefined && !inject.fired && (
-                    <span class='inject-auto-badge'>
-                      {formatTime(inject.atMs)} に自動発火予定
-                    </span>
-                  )}
-                </span>
-              )}
-              <span>{inject.fired ? 'fired' : inject.body}</span>
-              {!inject.fired && (
-                <button
-                  type='button'
-                  onClick={() => {
-                    props.onFireInject(inject.id);
-                  }}
-                >
-                  Fire
-                </button>
-              )}
-            </li>
-          ))}
-        </ol>
-      </section>
-      <AiAssistPanel canvasRef={props.canvasRef} />
     </aside>
+  );
+}
+
+/** プレイ中の canvas 左上に重ねるステージ名・ゲーム内時計・経過表示。
+ * gameState が届く前(接続直後)は何も表示しない。 */
+function PlayStatusBar(props: {gameState: GameRenderState | undefined}) {
+  const state = props.gameState;
+  if (!state) return null;
+  const level =
+    difficultyOptions.findIndex(
+      (option) => option.difficulty === state.session.difficulty
+    ) + 1;
+  const recording = state.recording.status === 'recording';
+  return (
+    <div class='play-status-bar'>
+      <span class='play-status-stage'>
+        STAGE: {state.session.scenarioTitle} ── LV.{level}
+      </span>
+      <span class='play-status-session'>
+        {recording && <span class='play-status-rec-dot' aria-hidden='true' />}
+        SESSION {formatTime(state.clock.elapsedMs)}
+      </span>
+      <span class='play-status-clock'>
+        {formatNarrativeClock(state.world.narrativeHour)}
+      </span>
+    </div>
   );
 }
 
@@ -770,6 +879,7 @@ function MonitorPipToolbar(props: {pip: MonitorPipControls}) {
   const monitors: PipMonitorId[] = ['metrics', 'chat'];
   return (
     <div class='play-pip-toolbar' role='group' aria-label='モニターの取り外し'>
+      <span class='play-pip-toolbar-label'>PiP:</span>
       {monitors.map((monitorId) => {
         const detached = props.pip.detached.includes(monitorId);
         return (
@@ -793,6 +903,7 @@ function MonitorPipToolbar(props: {pip: MonitorPipControls}) {
           </button>
         );
       })}
+      <span class='play-pip-toolbar-hint'>— 常時最前面の小窓にミラー表示</span>
     </div>
   );
 }
@@ -804,9 +915,6 @@ function WarRoomVoicePanel(props: {voice: VoiceChatControls}) {
   const joining = voice.status === 'requesting_mic';
   return (
     <section class='voice-panel' aria-label='ウォールーム音声'>
-      <h2>
-        War Room 音声 <span class='ai-assist-badge'>WebRTC</span>
-      </h2>
       <p class='voice-status' role='status'>
         {describeVoiceStatus(voice.status, voice.peerIds.length, voice.muted)}
       </p>
@@ -863,10 +971,7 @@ function NpcColleaguePanel(props: {
   const unavailable =
     npc.availability === 'unsupported' || npc.availability === 'unavailable';
   return (
-    <section class='npc-panel' aria-label='AI NPC 後輩ソラ'>
-      <h2>
-        後輩ソラ <span class='ai-assist-badge'>on-device NPC</span>
-      </h2>
+    <>
       {unavailable || npc.availability === undefined ? (
         <p class='npc-status' role='status'>
           {npc.availability === undefined
@@ -894,10 +999,11 @@ function NpcColleaguePanel(props: {
           </p>
           {npc.suggestedTask && (
             <div class='npc-suggestion' role='group' aria-label='後輩の提案'>
-              <p>提案: {npc.suggestedTask}</p>
+              <p class='npc-suggestion-quote'>「{npc.suggestedTask}」</p>
               <div class='npc-suggestion-actions'>
                 <button
                   type='button'
+                  class='primary'
                   onClick={() => {
                     if (npc.suggestedTask) {
                       props.onCreateTask(npc.suggestedTask);
@@ -909,6 +1015,7 @@ function NpcColleaguePanel(props: {
                 </button>
                 <button
                   type='button'
+                  class='ghost'
                   onClick={() => {
                     npc.dismissSuggestedTask();
                   }}
@@ -920,7 +1027,7 @@ function NpcColleaguePanel(props: {
           )}
         </>
       )}
-    </section>
+    </>
   );
 }
 
@@ -949,8 +1056,8 @@ function TaskComposer(props: {
         placeholder='タスク追加'
         disabled={props.disabled}
       />
-      <button type='submit' disabled={props.disabled}>
-        追加
+      <button type='submit' aria-label='タスクを追加' disabled={props.disabled}>
+        +
       </button>
     </form>
   );
@@ -1006,8 +1113,11 @@ export function HotwashScreen(props: {
   );
   return (
     <section class='panel hotwash-panel' aria-labelledby='hotwash-heading'>
-      <p class='eyebrow'>Hotwash</p>
+      <p class='eyebrow'>HOTWASH — 夜勤明けの5分</p>
       <h1 id='hotwash-heading'>ふりかえり</h1>
+      <p class='hotwash-lead'>
+        記憶が新しいうちに3つだけ書き残す。次の夜の自分が助かる。
+      </p>
       {!canContribute && (
         <p class='team-readonly-note' role='status'>
           Observer は閲覧専用です
@@ -1040,13 +1150,14 @@ export function HotwashScreen(props: {
           <textarea name='improve' required disabled={!canContribute} />
         </label>
         <label>
-          Follow-up
+          フォローアップ
           <textarea name='followUp' required disabled={!canContribute} />
         </label>
         <button type='submit' disabled={!canContribute}>
           提出
         </button>
       </form>
+      <p class='hotwash-team-heading'>チームの記録</p>
       <div class='participant-list'>
         {(props.exercise?.hotwashNotes ?? []).map((note) => (
           <div key={note.id} class='participant-row'>
@@ -1057,10 +1168,12 @@ export function HotwashScreen(props: {
         ))}
       </div>
       <section class='aar-summary'>
-        <h2>AAR</h2>
-        <button type='button' onClick={props.onGenerateAar}>
-          AAR 生成
-        </button>
+        <div class='aar-summary-header'>
+          <h2>AAR</h2>
+          <button type='button' onClick={props.onGenerateAar}>
+            AAR 生成
+          </button>
+        </div>
         {props.report && (
           <dl>
             <div>
@@ -1085,7 +1198,7 @@ export function HotwashScreen(props: {
         )}
       </section>
       <button type='button' onClick={props.onOpenReplay}>
-        Replay
+        リプレイを見る
       </button>
     </section>
   );

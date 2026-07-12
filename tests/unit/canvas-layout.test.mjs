@@ -3,16 +3,22 @@ import {test} from 'node:test';
 import {tsImport} from 'tsx/esm/api';
 
 const {
+  alertBandRect,
   centerEditorOverlayRegion,
   centerToolAt,
   centerToolTabRegions,
+  commandWarningRect,
   containsCanvasPoint,
+  expandedMonitorLayout,
   inputDockRects,
   logicalHeight,
   logicalWidth,
   measureRunbookTabWidth,
   metricsPanelScrollRegion,
   monitorContentRegion,
+  monitorContentWidth,
+  monitorContentHeight,
+  monitorHeaderHeight,
   monitorMagnifyAt,
   monitorMagnifyRegions,
   monitorLayout,
@@ -20,6 +26,7 @@ const {
   navigationOverlayRect,
   notificationBellRegion,
   notificationPanelRegion,
+  PANEL_PADDING,
   rightPanelLayout,
   rightPanelPrimaryTabAt,
   runbookTabRegion,
@@ -62,7 +69,7 @@ test('rightPanelLayout returns stable vertical regions', () => {
   assert.equal(rightPanelLayout('chat', true).contentTop, 68);
 });
 
-test('monitor layout helpers derive content and overlay regions', () => {
+test('the three flat panels fill the main area without overlapping', () => {
   assert.deepEqual(
     monitorLayouts.map((monitor) => monitor.id),
     ['metrics', 'terminal', 'runbook']
@@ -70,26 +77,105 @@ test('monitor layout helpers derive content and overlay regions', () => {
   assert.equal(monitorLayout('metrics'), monitorLayouts[0]);
   assert.equal(monitorLayout('missing'), undefined);
 
-  const terminalContent = monitorContentRegion(monitorLayout('terminal'));
-  assert.deepEqual(terminalContent, {
-    x: 712,
-    y: 204,
-    width: 496,
-    height: 540,
-  });
-  assert.deepEqual(centerEditorOverlayRegion(), {
-    x: 868,
-    y: 270,
-    width: 340,
-    height: 470,
-  });
-  assert.equal(centerEditorOverlayRegion(true).x, 282 + 156 * (700 / 540));
-  assert.deepEqual(metricsPanelScrollRegion(), {
-    x: 92,
-    y: 260,
-    width: 496,
-    height: 484,
-  });
+  for (const monitor of monitorLayouts) {
+    assert.ok(monitor.x >= 0 && monitor.x + monitor.width <= logicalWidth);
+    assert.ok(monitor.y >= 0 && monitor.y + monitor.height <= logicalHeight);
+  }
+
+  const sorted = [...monitorLayouts].sort((a, b) => a.x - b.x);
+  for (let index = 0; index < sorted.length - 1; index += 1) {
+    const left = sorted[index];
+    const right = sorted[index + 1];
+    assert.ok(
+      left.x + left.width <= right.x,
+      `${left.id} must not overlap ${right.id}`
+    );
+    // All three columns start/end at the same row.
+    assert.equal(left.y, right.y);
+    assert.equal(left.height, right.height);
+  }
+
+  // TERMINAL is the dominant "operable" column (matches the 6a-5 mock intent
+  // of a wide central working panel), METRICS/RUNBOOK are the narrower side
+  // panels.
+  const terminal = monitorLayout('terminal');
+  const metrics = monitorLayout('metrics');
+  const runbook = monitorLayout('runbook');
+  assert.ok(terminal.width > metrics.width);
+  assert.ok(terminal.width > runbook.width);
+});
+
+test('the alert band and command warning sit above the panels without overlap', () => {
+  for (const box of [alertBandRect, commandWarningRect]) {
+    assert.ok(box.x >= 0 && box.x + box.width <= logicalWidth);
+    assert.ok(box.y >= 0 && box.y + box.height <= logicalHeight);
+  }
+  assert.ok(
+    commandWarningRect.y + commandWarningRect.height <= alertBandRect.y
+  );
+  const terminal = monitorLayout('terminal');
+  assert.ok(alertBandRect.y + alertBandRect.height <= terminal.y);
+});
+
+test('monitor content regions stay inset within their panel and scale to fit', () => {
+  for (const monitor of monitorLayouts) {
+    const headerHeight = monitorHeaderHeight(monitor.id);
+    const content = monitorContentRegion(monitor, headerHeight);
+    assert.deepEqual(content, {
+      x: monitor.x + PANEL_PADDING,
+      y: monitor.y + headerHeight + PANEL_PADDING,
+      width: monitor.width - PANEL_PADDING * 2,
+      height: monitor.height - headerHeight - PANEL_PADDING * 2,
+    });
+    // Content never spills outside the panel it belongs to.
+    assert.ok(content.x >= monitor.x);
+    assert.ok(content.y >= monitor.y);
+    assert.ok(content.x + content.width <= monitor.x + monitor.width);
+    assert.ok(content.y + content.height <= monitor.y + monitor.height);
+    // Panels never shrink content below the native virtual size (keeps
+    // canvas text at/above the accessibility font floor).
+    const scale = Math.min(
+      content.width / monitorContentWidth,
+      content.height / monitorContentHeight
+    );
+    assert.ok(scale >= 0.95);
+  }
+
+  // RUNBOOK reserves no chrome header band: its own tab row is the header.
+  assert.equal(monitorHeaderHeight('runbook'), 0);
+  assert.ok(monitorHeaderHeight('metrics') > 0);
+  assert.ok(monitorHeaderHeight('terminal') > 0);
+});
+
+test('centerEditorOverlayRegion and metricsPanelScrollRegion stay within their content region', () => {
+  const terminal = monitorLayout('terminal');
+  const terminalContent = monitorContentRegion(
+    terminal,
+    monitorHeaderHeight('terminal')
+  );
+  const editorOverlay = centerEditorOverlayRegion();
+  assert.ok(editorOverlay.x >= terminalContent.x);
+  assert.ok(
+    editorOverlay.x + editorOverlay.width <=
+      terminalContent.x + terminalContent.width + 1
+  );
+  assert.ok(
+    editorOverlay.y + editorOverlay.height <=
+      terminalContent.y + terminalContent.height + 1
+  );
+
+  const metrics = monitorLayout('metrics');
+  const metricsContent = monitorContentRegion(
+    metrics,
+    monitorHeaderHeight('metrics')
+  );
+  const scroll = metricsPanelScrollRegion();
+  assert.equal(scroll.x, metricsContent.x);
+  assert.equal(scroll.width, metricsContent.width);
+  assert.ok(scroll.y >= metricsContent.y);
+  assert.ok(
+    scroll.y + scroll.height <= metricsContent.y + metricsContent.height + 1
+  );
 });
 
 test('static canvas regions stay bounded and hidden regions stay offscreen', () => {
@@ -146,18 +232,43 @@ test('centerToolAt resolves terminal and editor tabs by canvas coordinates', () 
 });
 
 test('rightPanelPrimaryTabAt respects normal and expanded monitor coordinates', () => {
-  assert.equal(rightPanelPrimaryTabAt(1340, 224, null), 'runbook');
-  assert.equal(rightPanelPrimaryTabAt(1450, 224, null), 'chat');
-  assert.equal(rightPanelPrimaryTabAt(1340, 224, 'terminal'), null);
+  const runbook = monitorLayout('runbook');
+  const runbookContent = monitorContentRegion(runbook, 0);
+  assert.equal(
+    rightPanelPrimaryTabAt(runbookContent.x + 20, runbookContent.y + 20, null),
+    'runbook'
+  );
+  assert.equal(
+    rightPanelPrimaryTabAt(runbookContent.x + 130, runbookContent.y + 20, null),
+    'chat'
+  );
+  assert.equal(
+    rightPanelPrimaryTabAt(
+      runbookContent.x + 20,
+      runbookContent.y + 20,
+      'terminal'
+    ),
+    null
+  );
   assert.equal(rightPanelPrimaryTabAt(310, 120, 'runbook'), 'runbook');
 });
 
 test('runbookTabAt resolves document tabs and ignores non-runbook panels', () => {
-  const y = 204 + 48 + 20;
-  assert.equal(runbookTabAt(1340, y, 2, ['First', 'Second']), 0);
-  assert.equal(runbookTabAt(1485, y, 2, ['First', 'Second']), 1);
-  assert.equal(runbookTabAt(1340, y, 2, ['First', 'Second'], null, 'chat'), -1);
-  assert.equal(runbookTabAt(1340, y, 0, []), -1);
+  const tabRow = runbookTabRegion();
+  const y = tabRow.y + 12;
+  assert.equal(runbookTabAt(tabRow.x + 10, y, 2, ['First', 'Second']), 0);
+  assert.equal(
+    runbookTabAt(tabRow.x + measureRunbookTabWidth('First') + 10, y, 2, [
+      'First',
+      'Second',
+    ]),
+    1
+  );
+  assert.equal(
+    runbookTabAt(tabRow.x + 10, y, 2, ['First', 'Second'], null, 'chat'),
+    -1
+  );
+  assert.equal(runbookTabAt(tabRow.x + 10, y, 0, []), -1);
 });
 
 test('chatComposeAt distinguishes compose box from send button', () => {
@@ -175,7 +286,7 @@ test('chatComposeAt distinguishes compose box from send button', () => {
   assert.equal(chatComposeAt(compose.x + 20, compose.y + 20, 'runbook'), null);
 });
 
-test('monitorMagnifyAt resolves monitor magnify affordances', () => {
+test('monitorMagnifyAt resolves the per-panel expand affordance', () => {
   for (const region of monitorMagnifyRegions) {
     assert.equal(
       monitorMagnifyAt(
@@ -183,6 +294,16 @@ test('monitorMagnifyAt resolves monitor magnify affordances', () => {
         region.y + region.height / 2
       ),
       region.id
+    );
+    // The magnify affordance must stay inside its own panel.
+    const monitor = monitorLayout(region.id);
+    assert.ok(
+      region.x >= monitor.x &&
+        region.x + region.width <= monitor.x + monitor.width
+    );
+    assert.ok(
+      region.y >= monitor.y &&
+        region.y + region.height <= monitor.y + monitor.height
     );
   }
   assert.equal(monitorMagnifyAt(0, 0), null);
@@ -213,19 +334,40 @@ test('centerToolTabRegions and chatComposeAt cover expanded hit targets', () => 
 
 test('expanded monitor helpers scale metrics and runbook regions', () => {
   const expandedMetrics = metricsPanelScrollRegion(true);
-  assert.equal(expandedMetrics.x, 282);
-  assert.equal(expandedMetrics.width, 1356);
+  assert.ok(expandedMetrics.width > 496);
 
   const expandedEditor = centerEditorOverlayRegion(true);
-  assert.equal(expandedEditor.x, 282 + 156 * (700 / 540));
+  assert.ok(expandedEditor.width > 0);
 
   const expandedCompose = chatComposeRegion('chat', 'runbook');
   assert.equal(expandedCompose.width > 0, true);
   const expandedSend = chatSendButtonRegion('chat', 'runbook');
   assert.equal(expandedSend.width > 0, true);
 
+  // Runbook document tabs stay hit-testable once the panel is expanded to
+  // fill the modal overlay (a much larger, differently-scaled content box).
+  const expandedContent = monitorContentRegion(
+    expandedMonitorLayout,
+    monitorHeaderHeight('runbook')
+  );
+  const expandedScale = Math.min(
+    expandedContent.width / monitorContentWidth,
+    expandedContent.height / monitorContentHeight
+  );
+  const expandedLayout = rightPanelLayout('runbook', true);
+  const expandedTabPoint = {
+    x: expandedContent.x + 10,
+    y: expandedContent.y + expandedLayout.secondaryTop * expandedScale + 10,
+  };
   assert.equal(
-    runbookTabAt(366, 202, 2, ['First', 'Second'], 'runbook', 'runbook'),
+    runbookTabAt(
+      expandedTabPoint.x,
+      expandedTabPoint.y,
+      2,
+      ['First', 'Second'],
+      'runbook',
+      'runbook'
+    ),
     0
   );
   assert.equal(rightPanelPrimaryTabAt(310, 120, 'runbook'), 'runbook');

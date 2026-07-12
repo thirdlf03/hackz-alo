@@ -1,12 +1,12 @@
 export const metricPalette = {
-  metricHealthy: '#4ade80',
-  metricWarn: '#fbbf24',
-  metricCritical: '#f87171',
-  statusCritical: '#f87171',
-  statusWarn: '#fbbf24',
-  statusInfo: '#5ec8ff',
-  accentPurple: '#c4b5fd',
-  accentPink: '#f9a8d4',
+  metricHealthy: '#7cfc9a',
+  metricWarn: '#ffcf5c',
+  metricCritical: '#ff6b6b',
+  statusCritical: '#ff6b6b',
+  statusWarn: '#ffcf5c',
+  statusInfo: '#8aa892',
+  accentPurple: '#b7f2c3',
+  accentPink: '#8aa892',
 } as const;
 
 export type MetricTone = 'healthy' | 'warn' | 'critical';

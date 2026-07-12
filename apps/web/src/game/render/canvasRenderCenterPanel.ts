@@ -15,6 +15,7 @@ import {gamePalette as palette, uiFont, monoFont} from './gamePalette.js';
 import {
   centerToolTabRegions,
   monitorLayout,
+  PANEL_HEADER_TEXT_RIGHT_MARGIN,
   terminalContentWidth,
 } from './canvasLayout.js';
 
@@ -134,6 +135,9 @@ export function drawEditorPanel(
       surface.ctx.fillStyle = palette.bgButtonSecondary;
       roundRect(surface.ctx, 6, fileY - 16, fileListWidth - 12, 24, 4);
       surface.ctx.fill();
+      surface.ctx.strokeStyle = palette.borderDefault;
+      surface.ctx.lineWidth = 1;
+      surface.ctx.stroke();
     }
     surface.ctx.fillStyle = active
       ? palette.textPrimary
@@ -216,20 +220,20 @@ export function drawCenterToolTabs(
     surface.ctx.fillStyle = active
       ? palette.bgButtonPrimary
       : palette.bgTerminal;
-    roundRect(surface.ctx, tab.x, tab.y, tab.width, tab.height, 5);
+    roundRect(surface.ctx, tab.x, tab.y, tab.width, tab.height, 4);
     surface.ctx.fill();
     surface.ctx.strokeStyle = active
       ? palette.borderFocus
       : palette.borderMuted;
     surface.ctx.lineWidth = 2;
     surface.ctx.stroke();
-    surface.ctx.fillStyle = active ? palette.textPrimary : palette.textLink;
-    surface.ctx.font = monoFont(18);
+    surface.ctx.fillStyle = active ? palette.textOnPrimary : palette.textLink;
+    surface.ctx.font = monoFont(15);
     centeredText(
       surface.ctx,
       tab.label,
       tab.x,
-      tab.y + 1,
+      tab.y - 6,
       tab.width,
       tab.height
     );
@@ -250,9 +254,16 @@ export function drawCenterToolTabs(
       surface.ctx.fill();
     }
   }
+
+  const workspaceLabel = '/workspace';
+  surface.ctx.font = monoFont(15);
+  const workspaceWidth = surface.ctx.measureText(workspaceLabel).width;
   surface.ctx.fillStyle = palette.textMuted;
-  surface.ctx.font = uiFont(13);
-  surface.ctx.fillText('TAB', monitor.x + 22, monitor.y - 2);
+  surface.ctx.fillText(
+    workspaceLabel,
+    monitor.x + monitor.width - PANEL_HEADER_TEXT_RIGHT_MARGIN - workspaceWidth,
+    monitor.y + 22
+  );
 }
 
 export function layoutTerminalLines(

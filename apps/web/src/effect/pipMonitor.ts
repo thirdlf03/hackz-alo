@@ -40,7 +40,7 @@ export async function openMonitorPip(options: {
   const doc = pipWindow.document;
   doc.title = options.title;
   doc.body.style.margin = '0';
-  doc.body.style.background = '#05070d';
+  doc.body.style.background = '#050705';
   doc.body.style.display = 'grid';
   doc.body.style.placeItems = 'center';
   const mirror = doc.createElement('canvas');

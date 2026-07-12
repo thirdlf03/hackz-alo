@@ -148,9 +148,6 @@ export function SpeechIncidentLogPanel(props: {
 
   return (
     <section class='speech-log' aria-label='音声インシデントログ'>
-      <h2>
-        音声ログ <span class='speech-log-badge'>voice</span>
-      </h2>
       <p class='speech-log-status' role='status'>
         {micDenied
           ? 'マイクが未許可です。ブラウザの設定で許可してください。'

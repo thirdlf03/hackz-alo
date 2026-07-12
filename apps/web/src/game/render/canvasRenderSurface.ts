@@ -11,8 +11,6 @@ export interface CanvasRenderSurface {
   terminalLineCache: Map<string, {spans: AnsiSpan[]; plain: string}>;
   metricsScrollY: number;
   metricsScrollMax: number;
-  roomBackdrop: HTMLImageElement;
-  roomBackdropLoaded: boolean;
   /** Previous health + revive-flash deadline per topology node id. */
   topologyHealthCache: Map<string, TopologyHealthCacheEntry>;
 }

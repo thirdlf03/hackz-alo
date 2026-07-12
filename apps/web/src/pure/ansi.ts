@@ -7,22 +7,22 @@ export interface AnsiSpan {
 
 /** Keep in sync with gamePalette.ts */
 const ANSI_COLORS: Record<number, string> = {
-  30: '#9aa8b8',
-  31: '#f87171',
-  32: '#4ade80',
-  33: '#fbbf24',
-  34: '#9ecbff',
-  35: '#c4b5fd',
-  36: '#5ec8ff',
-  37: '#f0f4f8',
-  90: '#c5d0dc',
-  91: '#f87171',
-  92: '#a8f5c4',
-  93: '#ffe08a',
-  94: '#9ecbff',
-  95: '#c4b5fd',
-  96: '#5ec8ff',
-  97: '#f0f4f8',
+  30: '#5e7a66',
+  31: '#ff6b6b',
+  32: '#7cfc9a',
+  33: '#ffcf5c',
+  34: '#8aa892',
+  35: '#d8f3dc',
+  36: '#b7f2c3',
+  37: '#d8f3dc',
+  90: '#8aa892',
+  91: '#ff9a9a',
+  92: '#dcffe4',
+  93: '#ffcf5c',
+  94: '#8aa892',
+  95: '#d8f3dc',
+  96: '#b7f2c3',
+  97: '#dcffe4',
 };
 
 const ANSI_ESCAPE_PATTERN = new RegExp(String.raw`\u001b\[[0-9;]*m`, 'g');

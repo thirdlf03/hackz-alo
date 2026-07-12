@@ -152,8 +152,8 @@ test('host advancing the exercise phase carries the guest along into briefing an
 
   // The lobby -> briefing gate requires every online, non-observer
   // participant to be ready once there is more than one of them.
-  await pageA.getByRole('button', {name: 'Ready'}).click();
-  await pageB.getByRole('button', {name: 'Ready'}).click();
+  await pageA.getByRole('button', {name: 'READY', exact: true}).click();
+  await pageB.getByRole('button', {name: 'READY', exact: true}).click();
 
   // Only the host (session creator) gets the phase-advance control; the
   // guest sees a waiting message instead (host_required gate on the server).
@@ -170,7 +170,7 @@ test('host advancing the exercise phase carries the guest along into briefing an
   await expect(
     pageB.getByText('ホストの開始を待っています…', {exact: true})
   ).toBeVisible({timeout: 30_000});
-  await expect(pageA.getByRole('button', {name: '開始'})).toBeVisible({
+  await expect(pageA.getByRole('button', {name: /シフト開始/})).toBeVisible({
     timeout: 90_000,
   });
 
@@ -186,7 +186,7 @@ test('host advancing the exercise phase carries the guest along into briefing an
         response.ok(),
       {timeout: 90_000}
     ),
-    pageA.getByRole('button', {name: '開始'}).click(),
+    pageA.getByRole('button', {name: /シフト開始/}).click(),
   ]);
 
   await expect(pageA.getByLabel('録画対象のゲーム画面')).toBeVisible({

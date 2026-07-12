@@ -18,13 +18,13 @@ import {
   drawExpandedMonitorOverlay,
   drawMetricsPanelOnSurface,
 } from './canvasRenderOverlay.js';
+import {drawMetricsPanelHeader} from './canvasRenderMetrics.js';
 import {drawNotifications} from './canvasRenderNotifications.js';
 import {
+  drawFlatPanel,
   drawMonitor,
   drawMonitorMagnifyIcons,
-  drawMonitorFrame,
-  drawRoom,
-  withMonitorPose,
+  drawScreenBackground,
 } from './canvasRenderScene.js';
 import {drawTopologyMap} from './canvasRenderTopology.js';
 import type {AnsiSpan} from '../terminal/ansi.js';
@@ -32,7 +32,6 @@ import type {
   CanvasRenderSurface,
   TopologyHealthCacheEntry,
 } from './canvasRenderSurface.js';
-import officeMonitorBackdropUrl from '../../assets/office-monitor-backdrop.avif';
 import {
   supportsDrawElementImage,
   transformToCss,
@@ -41,6 +40,8 @@ import {
   chatComposeRegion,
   logicalHeight,
   logicalWidth,
+  monitorHeaderHeight,
+  monitorLayout,
   monitorLayouts,
   TOPOLOGY_MAP_HEIGHT,
 } from './canvasLayout.js';
@@ -83,8 +84,6 @@ export class CanvasRenderer {
   private ctx: CanvasRenderingContext2D;
   private staticCanvas: HTMLCanvasElement;
   private staticCtx: CanvasRenderingContext2D;
-  private roomBackdrop: HTMLImageElement;
-  private roomBackdropLoaded = false;
   private lastRendered?: {
     state: GameRenderState;
     scenario?: ScenarioDefinition;
@@ -121,15 +120,6 @@ export class CanvasRenderer {
     const staticCtx = this.staticCanvas.getContext('2d');
     if (!staticCtx) throw new Error('2d canvas is required');
     this.staticCtx = staticCtx;
-    this.roomBackdrop = new Image();
-    this.roomBackdrop.onload = () => {
-      this.roomBackdropLoaded = true;
-      this.drawStaticLayer();
-      if (this.lastRendered) {
-        this.draw(this.lastRendered.state, this.lastRendered.scenario);
-      }
-    };
-    this.roomBackdrop.src = officeMonitorBackdropUrl;
     this.drawStaticLayer();
   }
 
@@ -139,8 +129,6 @@ export class CanvasRenderer {
       terminalLineCache: this.terminalLineCache,
       metricsScrollY: this.metricsScrollY,
       metricsScrollMax: this.metricsScrollMax,
-      roomBackdrop: this.roomBackdrop,
-      roomBackdropLoaded: this.roomBackdropLoaded,
       topologyHealthCache: this.topologyHealthCache,
     };
   }
@@ -185,50 +173,55 @@ export class CanvasRenderer {
       ctx.drawImage(this.staticCanvas, 0, 0);
       drawHeader(surface, state);
       for (const monitor of monitorLayouts) {
-        withMonitorPose(surface, monitor, () => {
-          drawMonitor(
-            surface,
-            monitor.x,
-            monitor.y,
-            monitor.width,
-            monitor.height,
-            monitor.title,
-            (content) => {
-              if (monitor.id === 'metrics') {
-                if (scenario?.topology) {
-                  drawTopologyMap(
-                    surface,
-                    scenario.topology,
-                    state.monitors.left.serviceHealth,
-                    nowMs,
-                    content.width,
-                    TOPOLOGY_MAP_HEIGHT
-                  );
-                  ctx.save();
-                  ctx.translate(0, TOPOLOGY_MAP_HEIGHT);
-                  drawMetricsPanelOnSurface(
-                    surface,
-                    state.monitors.left,
-                    content.height - TOPOLOGY_MAP_HEIGHT
-                  );
-                  ctx.restore();
-                } else {
-                  drawMetricsPanelOnSurface(
-                    surface,
-                    state.monitors.left,
-                    content.height
-                  );
-                }
-              } else if (monitor.id === 'terminal') {
-                drawCenterPanel(surface, state, content.width);
+        const headerHeight = monitorHeaderHeight(monitor.id);
+        drawMonitor(
+          surface,
+          monitor.x,
+          monitor.y,
+          monitor.width,
+          monitor.height,
+          headerHeight,
+          (content) => {
+            if (monitor.id === 'metrics') {
+              if (scenario?.topology) {
+                drawTopologyMap(
+                  surface,
+                  scenario.topology,
+                  state.monitors.left.serviceHealth,
+                  nowMs,
+                  content.width,
+                  TOPOLOGY_MAP_HEIGHT
+                );
+                ctx.save();
+                ctx.translate(0, TOPOLOGY_MAP_HEIGHT);
+                drawMetricsPanelOnSurface(
+                  surface,
+                  state.monitors.left,
+                  content.height - TOPOLOGY_MAP_HEIGHT
+                );
+                ctx.restore();
               } else {
-                drawRightPanel(surface, state, viewModel);
+                drawMetricsPanelOnSurface(
+                  surface,
+                  state.monitors.left,
+                  content.height
+                );
               }
+            } else if (monitor.id === 'terminal') {
+              drawCenterPanel(surface, state, content.width);
+            } else {
+              drawRightPanel(surface, state, viewModel);
             }
-          );
-        });
+          }
+        );
       }
       drawCenterToolTabs(surface, state);
+      drawMetricsPanelHeader(
+        surface,
+        monitorLayout('metrics'),
+        monitorHeaderHeight('metrics'),
+        state.monitors.left.metrics
+      );
       drawMonitorMagnifyIcons(surface);
       drawAlerts(surface, state);
       if (state.warning && state.warning.flashMs > 0) {
@@ -287,18 +280,14 @@ export class CanvasRenderer {
     const surface = this.surface(this.staticCtx);
     try {
       this.ctx.clearRect(0, 0, logicalWidth, logicalHeight);
-      drawRoom(surface);
+      drawScreenBackground(surface);
       for (const monitor of monitorLayouts) {
-        withMonitorPose(surface, monitor, () => {
-          drawMonitorFrame(
-            surface,
-            monitor.x,
-            monitor.y,
-            monitor.width,
-            monitor.height,
-            monitor.title
-          );
-        });
+        drawFlatPanel(
+          surface,
+          monitor.id,
+          monitor,
+          monitorHeaderHeight(monitor.id)
+        );
       }
     } finally {
       this.ctx = previous;

@@ -101,6 +101,13 @@ export function useTerminalBridge(options: {
         options.participantId
       );
     try {
+      // xterm のセル幅実測(measureTerminalCellWidth)がフォント読込前に走ると
+      // 実際の描画幅とズレるため、TerminalSession 生成/セル幅計測の前に
+      // フォントの読み込みを待つ。document.fonts が存在しない環境(SSR/テスト)
+      // では何もしない。
+      if (typeof document !== 'undefined') {
+        await document.fonts.load('18px "IBM Plex Mono"').catch(() => {});
+      }
       const {cols, rows} = defaultTerminalDimensions();
       if (canAttachOperate) {
         await options.api.resizeTerminal(
