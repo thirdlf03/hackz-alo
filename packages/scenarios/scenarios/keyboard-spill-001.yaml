@@ -7,9 +7,10 @@ service:
   name: やまびこ API
   healthUrl: http://localhost:8080/health
 briefing:
-  - 冷蔵庫のお酒を飲みながら対応すると、キーボードに飲み物をこぼす事故が起きる。
-  - ターミナル入力にノイズが混ざる。keyboard.spill マーカーを片付ける。
-  - API 自体は生きていることが多い。落ち着いてコマンドを打ち直す。
+  - 冷蔵庫のお酒を飲みながら作業していたら、キーボードに飲み物をこぼしてしまった。
+  - その拍子に何かのキー操作が暴発し、スクリプトが実行されてしまったらしい。以降、API への
+    リクエストが妙に多い。
+  - API 自体は生きていることが多い。何が起きているかを切り分けてから対処する。
 startup:
   - id: api
     command: PORT=8080 node /workspace/services/yamabiko-api/server.mjs
@@ -38,17 +39,21 @@ topology:
 triggers:
   - id: spill
     atMs: 50000
-    type: keyboard_spill
-    params:
-      noise: べちゃっxべちゃっ
+    type: runaway_loadgen
+    params: {}
 alerts:
+  - id: traffic-spike
+    atMs: 58000
+    severity: warning
+    message: RPS is trending well above baseline
+    source: monitor
   - id: input-noise
-    atMs: 65000
+    atMs: 68000
     severity: warning
     message: Terminal input anomaly detected
     source: scenario
   - id: fridge-cam
-    atMs: 80000
+    atMs: 82000
     severity: info
     message: 'Fridge camera: beverage level dropping'
     source: monitor
@@ -56,28 +61,38 @@ successConditions:
   - type: http_status
     url: http://localhost:8080/health
     status: 200
-  - type: marker_absent
-    path: /workspace/run/keyboard.spill
+  - type: process_absent
+    processId: loadgen
 runbooks:
   - id: runbook.spill
-    title: キーボードこぼし対応
-    body: 1. cat /workspace/run/keyboard.spill で状況確認\n2. rm /workspace/run/keyboard.spill /workspace/run/terminal.noise\n3. ターミナルを一度クリアしてコマンドを打ち直す\n4. curl localhost:8080/health でサービス確認
+    title: 高頻度リクエストの切り分け
+    body: |-
+      1. メトリクス画面で RPS / レイテンシに異常が出ていないか確認する
+      2. /workspace/logs/access.log や app.log を見て、リクエストの様子を確認する
+      3. ps や pgrep でアクセスを送り続けているプロセスを特定する
+      4. 特定できたら該当プロセスを止める
+      5. curl localhost:8080/health でサービスを確認する
 chatMessages:
   - id: boss-dont-drink
     atMs: 90000
     from: 上司
     body: 対応中は飲まないで。キーボード洗って。
 navigationSteps:
-  - id: nav-terminal
+  - id: nav-start
     atMs: 0
-    hint: ターミナルに変な文字が混ざっていないか見る
-    panel: terminal
-  - id: nav-spill
+    hint: 開始直後はまず通常運転かどうか、メトリクス全体をざっと見ておく
+    panel: metrics
+  - id: nav-traffic
     atMs: 55000
-    hint: keyboard.spill マーカーを確認する
+    hint: RPS やレイテンシに普段と違う動きが出ていないか確認する
+    panel: metrics
+  - id: nav-log
+    atMs: 70000
+    hint: access.log や app.log で、何が起きているか手がかりを探す
     panel: terminal
-    suggestedCommand: cat /workspace/run/keyboard.spill
-  - id: nav-runbook
-    atMs: 75000
-    hint: キーボードこぼし Runbook を開く
-    panel: runbook
+    suggestedCommand: tail -n 50 /workspace/logs/access.log
+  - id: nav-process
+    atMs: 90000
+    hint: 見覚えのないプロセスがいないか ps で確認し、怪しいものを pgrep -f <名前> で特定して止める
+    panel: terminal
+    suggestedCommand: ps aux | grep node

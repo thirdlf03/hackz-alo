@@ -9,13 +9,6 @@ export function shellPathSegment(value: string) {
   return value;
 }
 
-export function normalizeWorkspaceMarkerPath(value: string) {
-  if (!isWorkspacePath(value)) {
-    throw new Error('marker path must stay inside /workspace');
-  }
-  return value;
-}
-
 export function normalizeEditableWorkspacePath(value: string) {
   if (!isWorkspacePath(value)) {
     throw new Error('path must stay inside /workspace');

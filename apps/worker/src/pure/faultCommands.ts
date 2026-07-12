@@ -37,9 +37,6 @@ export const faultCommandBuilders: Record<string, FaultCommandBuilder> = {
   db_pool_exhaust: (params) =>
     `${FAULT_INJECTOR} db_pool_exhaust ${String(coerceNumber(params.connections ?? params.maxConnections, 40))}`,
 
-  memory_leak: (params) =>
-    `${FAULT_INJECTOR} memory_leak ${String(coerceNumber(params.targetPercent, 92))}`,
-
   dns_misconfig: () => `${FAULT_INJECTOR} dns_misconfig`,
 
   monitor_blind: (params) =>
@@ -54,8 +51,12 @@ export const faultCommandBuilders: Record<string, FaultCommandBuilder> = {
   cable_jumprope: (params) =>
     `${FAULT_INJECTOR} cable_jumprope ${shellArg(coerceString(params.processId, 'fake-db'))}`,
 
-  keyboard_spill: (params) =>
-    `${FAULT_INJECTOR} keyboard_spill ${shellArg(coerceString(params.noise, 'べちゃっxべちゃっ'))}`,
+  runaway_loadgen: (params) => {
+    const targetUrl = params.targetUrl;
+    return typeof targetUrl === 'string' && targetUrl !== ''
+      ? `${FAULT_INJECTOR} runaway_loadgen ${shellArg(targetUrl)}`
+      : `${FAULT_INJECTOR} runaway_loadgen`;
+  },
 
   alert_spam: (params) =>
     `${FAULT_INJECTOR} alert_spam ${String(coerceNumber(params.count, 24))}`,

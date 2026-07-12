@@ -62,7 +62,6 @@
       "atMs": 50000,
       "type": "port_conflict",
       "params": {
-        "processId": "api",
         "port": 8080
       }
     }

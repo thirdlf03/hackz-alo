@@ -68,7 +68,7 @@ runbooks:
       2. API 自体の問題か、依存先(DB)の問題かを分ける
          yamactl status api / yamactl status fake-db
       3. 依存先が死んでいたら復旧する(yamactl restart fake-db)
-      4. /workspace/run に現場の痕跡が残っていることがある。報告に添える
+      4. app.log に現場の痕跡が残っていることがある。報告に添える
       5. health で復旧確認する
 chatMessages:
   - id: infra-joke

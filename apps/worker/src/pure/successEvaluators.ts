@@ -1,22 +1,21 @@
 import type {SuccessCondition} from '@incident/shared';
-import {
-  normalizeWorkspaceMarkerPath,
-  shellArg,
-  shellPathSegment,
-} from './pathSafety.js';
+import {shellArg, shellPathSegment} from './pathSafety.js';
 
 export type SuccessConditionCommandBuilder = (
   condition: SuccessCondition
 ) => string;
 
 /**
- * Real process patterns per startup id. process_running checks the live
- * process table instead of a marker file, so a killed or crashed process
- * fails the condition even when no marker exists.
+ * Real process patterns per startup id / sandbox daemon id. process_running
+ * and process_absent check the live process table instead of a marker file,
+ * so a killed, crashed, or still-running process is judged on real state.
  */
 const PROCESS_PATTERNS: Record<string, string> = {
   api: 'yamabiko-api/server\\.mjs',
   'fake-db': 'fake-db/server\\.mjs',
+  'monitor-agent': 'monitor-agent/agent\\.mjs',
+  'alert-flood-daemon': 'alert-flood-daemon\\.mjs',
+  loadgen: 'loadgen\\.mjs',
 };
 
 export const successConditionBuilders: Record<
@@ -40,9 +39,13 @@ export const successConditionBuilders: Record<
     return `test ! -f /workspace/run/${shellPathSegment(condition.processId)}.down`;
   },
 
-  marker_absent: (condition) => {
-    if (condition.type !== 'marker_absent') return invalidCondition(condition);
-    return `test ! -e ${shellArg(normalizeWorkspaceMarkerPath(condition.path))}`;
+  process_absent: (condition) => {
+    if (condition.type !== 'process_absent') return invalidCondition(condition);
+    const pattern = PROCESS_PATTERNS[condition.processId];
+    if (pattern) {
+      return `! pgrep -f ${shellArg(pattern)} > /dev/null`;
+    }
+    return `test -f /workspace/run/${shellPathSegment(condition.processId)}.down`;
   },
 
   disk_usage_below: (condition) => {

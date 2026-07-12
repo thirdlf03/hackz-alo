@@ -46,7 +46,7 @@ alerts:
   - id: http-500
     atMs: 90000
     severity: critical
-    message: HTTP 500 rate is above threshold
+    message: Health check connection refused
     source: scenario
   - id: health-check-failed
     atMs: 110000
@@ -62,7 +62,7 @@ successConditions:
 runbooks:
   - id: runbook.process
     title: API プロセス停止時の初動
-    body: 1. 左の監視画面で HTTP 5xx と SERVICE HEALTH を確認する\n2. tail -n 50 /workspace/logs/app.log を確認する\n3. yamactl status api でプロセス状態を確認する\n4. yamactl restart api で暫定復旧する\n5. curl localhost:8080/health で復旧確認する
+    body: 1. 左の監視画面で HTTP 5xx と SERVICE HEALTH を確認し、何が起きているか把握する\n2. tail -n 50 /workspace/logs/app.log でプロセスが落ちた形跡がないか確認する\n3. yamactl status api でプロセスの生死を確認する(動いているのに応答しない場合はハングを疑う)\n4. プロセスが落ちていれば yamactl restart api で暫定復旧する\n5. curl localhost:8080/health で復旧確認する
 chatMessages:
   - id: boss-restart
     atMs: 120000

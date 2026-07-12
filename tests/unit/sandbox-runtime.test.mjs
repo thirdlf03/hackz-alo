@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {execFile} from 'node:child_process';
 import {once} from 'node:events';
 import {mkdir, mkdtemp, readFile, rm, stat, writeFile} from 'node:fs/promises';
+import {existsSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
 import net from 'node:net';
 import os from 'node:os';
@@ -37,8 +38,16 @@ import {
   appendTrafficSample,
   RequestMetricsTracker,
   readLogVolume,
+  readSystemMetrics,
   readTrafficMetrics,
 } from '../../sandbox/services/metrics/collector.mjs';
+import {
+  agentFilePath,
+  monitoringConfigPath,
+  sampleOnce,
+  startMonitorAgent,
+} from '../../sandbox/services/monitor-agent/agent.mjs';
+import {floodOnce} from '../../sandbox/services/tools/alert-flood-daemon.mjs';
 
 const execFileAsync = promisify(execFile);
 
@@ -106,8 +115,8 @@ test('fault injector kills real processes and leaves narrative evidence', async 
     signal: 'KILL',
   });
   assert.match(
-    await readFile(path.join(workspace, 'run', 'janitor.power.pulled'), 'utf8'),
-    /"culprit":"janitor"/
+    await readFile(path.join(workspace, 'logs', 'app.log'), 'utf8'),
+    /power loss on rack B\? janitor was seen unplugging things/
   );
 
   assert.match(
@@ -119,37 +128,19 @@ test('fault injector kills real processes and leaves narrative evidence', async 
     signal: 'KILL',
   });
   assert.match(
-    await readFile(path.join(workspace, 'run', 'network.jumprope'), 'utf8'),
-    /"sport":"jumprope"/
+    await readFile(path.join(workspace, 'logs', 'app.log'), 'utf8'),
+    /jump-rope contest/
   );
-
-  assert.match(
-    await injectFault('keyboard_spill', ['sticky-keys'], {workspace}),
-    /keyboard_spill injected/
-  );
-  assert.match(
-    await readFile(path.join(workspace, 'run', 'keyboard.spill'), 'utf8'),
-    /sticky-keys/
-  );
-
-  assert.match(
-    await injectFault('alert_spam', ['6'], {workspace}),
-    /alert_spam injected \(6\)/
-  );
-  const spam = JSON.parse(
-    await readFile(path.join(workspace, 'run', 'alert.spam.json'), 'utf8')
-  );
-  assert.equal(spam.count, 6);
-  assert.equal(spam.alerts.length, 6);
 
   assert.match(
     await injectFault('runbook_gaslight', ['気合い'], {workspace}),
     /runbook_gaslight injected/
   );
-  const gaslight = JSON.parse(
-    await readFile(path.join(workspace, 'run', 'runbook.gaslight.json'), 'utf8')
+  const gaslightedRunbook = await readFile(
+    path.join(workspace, 'docs', 'runbooks', 'service-recovery.md'),
+    'utf8'
   );
-  assert.equal(gaslight.replacement, '気合い');
+  assert.match(gaslightedRunbook, /気合い/);
 });
 
 test('fault injector spawns real culprit processes for pool and port faults', async (t) => {
@@ -189,6 +180,45 @@ test('fault injector spawns real culprit processes for pool and port faults', as
   });
   assert.equal(spawns.at(-1).script, 'services/tools/legacy-metrics-agent.mjs');
   assert.equal(spawns.at(-1).env.PORT, '8080');
+
+  assert.match(
+    await injectFault('alert_spam', ['6'], {
+      workspace,
+      killProcess,
+      spawnProcess,
+    }),
+    /alert_spam injected \(daemon spawned, burst 6\)/
+  );
+  assert.equal(spawns.at(-1).script, 'services/tools/alert-flood-daemon.mjs');
+  assert.deepEqual(spawns.at(-1).args, ['6']);
+
+  assert.match(
+    await injectFault('runaway_loadgen', [], {
+      workspace,
+      killProcess,
+      spawnProcess,
+    }),
+    /runaway_loadgen injected/
+  );
+  assert.equal(spawns.at(-1).script, 'services/tools/loadgen.mjs');
+  assert.deepEqual(spawns.at(-1).args, ['http://127.0.0.1:8080/orders']);
+
+  assert.match(
+    await injectFault('monitor_blind', [], {
+      workspace,
+      killProcess,
+      spawnProcess,
+    }),
+    /monitor_blind injected/
+  );
+  assert.deepEqual(kills.at(-1), {
+    pattern: 'monitor-agent/agent.mjs',
+    signal: 'KILL',
+  });
+  assert.match(
+    await readFile(path.join(workspace, 'logs', 'app.log'), 'utf8'),
+    /monitor-agent process exited unexpectedly/
+  );
 });
 
 test('connection hog holds exactly the requested number of connections', async (t) => {
@@ -585,6 +615,67 @@ test('getMetrics uses request tracker and service state files', async (t) => {
   assert.equal(metrics.dbConnections, 3);
   assert.equal(metrics.http5xxRate, 2 / 3);
   assert.equal(metrics.latencyP95Ms, 180);
+});
+
+test('readSystemMetrics reads CPU/memory directly by default (source: direct)', async (t) => {
+  const workspace = await tempWorkspace();
+  t.after(() => rm(workspace, {recursive: true, force: true}));
+
+  const metrics = await readSystemMetrics(workspace);
+  assert.equal(typeof metrics.cpu, 'number');
+  assert.equal(typeof metrics.memory, 'number');
+  assert.equal(typeof metrics.disk, 'number');
+});
+
+test('monitor-agent switches the workspace to agent-sourced metrics, and killing it goes blind', async (t) => {
+  const workspace = await tempWorkspace();
+  t.after(() => rm(workspace, {recursive: true, force: true}));
+
+  await sampleOnce(workspace);
+  // sampleOnce alone (no agent started) must not flip the monitoring source
+  assert.equal(existsSync(monitoringConfigPath(workspace)), false);
+
+  const stopAgent = await startMonitorAgent(workspace);
+  t.after(() => stopAgent());
+
+  const config = JSON.parse(
+    await readFile(monitoringConfigPath(workspace), 'utf8')
+  );
+  assert.equal(config.source, 'agent');
+
+  const agentPayload = JSON.parse(
+    await readFile(agentFilePath(workspace), 'utf8')
+  );
+  assert.equal(typeof agentPayload.cpu, 'number');
+  assert.equal(typeof agentPayload.memory, 'number');
+  assert.equal(typeof agentPayload.at, 'number');
+
+  const live = await readSystemMetrics(workspace);
+  assert.equal(typeof live.cpu, 'number');
+  assert.equal(typeof live.memory, 'number');
+
+  // simulate monitor_blind: the agent process is gone, so its data goes stale
+  stopAgent();
+  await writeFile(
+    agentFilePath(workspace),
+    JSON.stringify({cpu: 10, memory: 10, at: Date.now() - 60_000})
+  );
+  const blind = await readSystemMetrics(workspace);
+  assert.equal(blind.cpu, null);
+  assert.equal(blind.memory, null);
+});
+
+test('alert-flood-daemon appends noise alert bursts to app.log', async (t) => {
+  const workspace = await tempWorkspace();
+  t.after(() => rm(workspace, {recursive: true, force: true}));
+
+  await floodOnce(workspace, 3, 0);
+  const log = await readFile(path.join(workspace, 'logs', 'app.log'), 'utf8');
+  const lines = log.split('\n').filter(Boolean);
+  assert.equal(lines.length, 3);
+  for (const line of lines) {
+    assert.match(line, /^noise alert: \[(CRITICAL|WARN)\]/);
+  }
 });
 
 test('fake-db answers queries, tracks clients, and rejects beyond max connections', async (t) => {

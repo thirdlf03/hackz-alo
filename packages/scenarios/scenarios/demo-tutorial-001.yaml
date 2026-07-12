@@ -45,7 +45,7 @@ alerts:
   - id: http-500
     atMs: 15000
     severity: critical
-    message: HTTP 500 rate is above threshold
+    message: Health check connection refused
     source: scenario
   - id: health-check-failed
     atMs: 20000

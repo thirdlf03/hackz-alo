@@ -7,7 +7,7 @@ service:
   name: やまびこ API
   healthUrl: http://localhost:8080/health
 briefing:
-  - ログ肥大化は disk full より前に latency を悪化させる。
+  - ログのクォータが 90% を超えると、disk full の閾値に達する前に /health が 500 を返し始める。
   - du と tail で犯人ログを特定する。
 startup:
   - id: api
@@ -62,7 +62,7 @@ successConditions:
 runbooks:
   - id: runbook.log-bloat
     title: ログ肥大化
-    body: 1. du -sh /workspace/logs/*\n2. 不要ログを削除\n3. curl localhost:8080/health
+    body: 1. Disk メトリクスとログクォータの超過を疑う。disk full の一歩手前の閾値で先に /health が落ちる\n2. du -sh /workspace/logs/* でどのログが肥大化しているか特定する\n3. 中身を確認し、不要なログを削除または退避する\n4. curl localhost:8080/health で復旧を確認する
 chatMessages: []
 navigationSteps:
   - id: nav-disk

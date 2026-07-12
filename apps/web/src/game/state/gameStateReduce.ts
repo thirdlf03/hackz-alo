@@ -46,9 +46,11 @@ export function reduceGameState(
       };
     }
     case 'set_active_runbook': {
-      const runbook = visibleRunbooks(action.scenario, state.clock.elapsedMs)[
-        action.index
-      ];
+      const runbook = visibleRunbooks(
+        action.scenario,
+        state.clock.elapsedMs,
+        state.monitors.right.runbookFileContents
+      )[action.index];
       if (!runbook) return state;
       const openedRunbookIds = state.openedRunbookIds.includes(runbook.id)
         ? state.openedRunbookIds

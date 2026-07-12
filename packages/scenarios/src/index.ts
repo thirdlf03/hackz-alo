@@ -6,6 +6,8 @@ import diskFull from '../data/disk-full-001.json' with {type: 'json'};
 import kodamaBatch from '../data/kodama-batch-001.json' with {type: 'json'};
 import dbPool from '../data/db-pool-001.json' with {type: 'json'};
 import badDeploy from '../data/bad-deploy-001.json' with {type: 'json'};
+import apiHang from '../data/api-hang-001.json' with {type: 'json'};
+import portConflict from '../data/port-conflict-001.json' with {type: 'json'};
 import logBloat from '../data/log-bloat-001.json' with {type: 'json'};
 import diskRestartLoop from '../data/disk-restart-loop-001.json' with {type: 'json'};
 import monitorBlind from '../data/monitor-blind-001.json' with {type: 'json'};
@@ -24,6 +26,8 @@ export const scenarios = [
   kodamaBatch,
   dbPool,
   badDeploy,
+  apiHang,
+  portConflict,
   logBloat,
   diskRestartLoop,
   monitorBlind,

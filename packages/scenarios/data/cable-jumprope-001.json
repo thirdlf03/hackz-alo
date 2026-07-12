@@ -101,7 +101,7 @@
     {
       "id": "runbook.jumprope",
       "title": "依存先の切り分け",
-      "body": "1. curl localhost:8080/health で API の応答を見る(500 の reason を読む)\n2. API 自体の問題か、依存先(DB)の問題かを分ける\n   yamactl status api / yamactl status fake-db\n3. 依存先が死んでいたら復旧する(yamactl restart fake-db)\n4. /workspace/run に現場の痕跡が残っていることがある。報告に添える\n5. health で復旧確認する"
+      "body": "1. curl localhost:8080/health で API の応答を見る(500 の reason を読む)\n2. API 自体の問題か、依存先(DB)の問題かを分ける\n   yamactl status api / yamactl status fake-db\n3. 依存先が死んでいたら復旧する(yamactl restart fake-db)\n4. app.log に現場の痕跡が残っていることがある。報告に添える\n5. health で復旧確認する"
     }
   ],
   "chatMessages": [

@@ -9,9 +9,9 @@
     "healthUrl": "http://localhost:8080/health"
   },
   "briefing": [
-    "掃除のおばちゃんが電源を抜き、アラートが鳴り、Runbook まで改ざんされる。",
-    "複数のマーカーを順に片付け、本当の復旧手順を見極める。",
-    "disk 圧力と process down が重なる。容量確保を忘れない。"
+    "鳴りやまないノイズ、改ざんされた Runbook、掃除による電源断、肥大化するログ。すべて実際に 起きている障害。",
+    "一つずつ暗記した手順で潰すのではなく、影響度の大きいものから優先順位を付けて対応する。",
+    "ノイズは遮断し、Runbook を含めた情報源そのものの信頼性を疑う。"
   ],
   "startup": [
     {
@@ -144,23 +144,20 @@
       "processId": "api"
     },
     {
-      "type": "marker_absent",
-      "path": "/workspace/run/alert.spam.json"
+      "type": "process_absent",
+      "processId": "alert-flood-daemon"
     },
     {
-      "type": "marker_absent",
-      "path": "/workspace/run/runbook.gaslight.json"
-    },
-    {
-      "type": "marker_absent",
-      "path": "/workspace/run/janitor.power.pulled"
+      "type": "log_absent",
+      "path": "/workspace/docs/runbooks/service-recovery.md",
+      "pattern": "気合いで直す"
     }
   ],
   "runbooks": [
     {
       "id": "runbook.chaos",
-      "title": "混沌シフト初動",
-      "body": "1. ノイズ alert を無視して HTTP 5xx を見る\\n2. ls /workspace/run でマーカー一覧\\n3. rm alert.spam.json runbook.gaslight.json janitor.power.pulled\\n4. debug.log を削除して df -h\\n5. yamactl restart api"
+      "title": "混沌シフトの原則",
+      "body": "1. 鳴っているアラートを鵜呑みにせず、まず影響度(サービス全停止 > 一部劣化 > ノイズ)で\n   優先順位を付ける\n2. ノイズ源には惑わされない。手当てが必要な本物の障害から着手する\n3. Runbook を含め、表示されている情報そのものの信頼性を疑ってかかる\n4. 個々の障害の切り分け・復旧は、これまで扱ってきた単発の障害と同じ考え方\n   (プロセスの生死・ログ・容量)がそのまま使える\n5. すべて対処したら health とディスク使用率の両方で最終確認する"
     }
   ],
   "chatMessages": [
@@ -169,6 +166,38 @@
       "atMs": 100000,
       "from": "運用",
       "body": "今夜は何もかもおかしい。落ち着いて一つずつ。"
+    }
+  ],
+  "navigationSteps": [
+    {
+      "id": "nav-start",
+      "atMs": 0,
+      "hint": "複数のアラートが同時に来る。まず影響度の大きいものを見極める",
+      "panel": "metrics"
+    },
+    {
+      "id": "nav-noise",
+      "atMs": 35000,
+      "hint": "ノイズ源に惑わされず、SERVICE HEALTH を最優先で見る",
+      "panel": "metrics"
+    },
+    {
+      "id": "nav-runbook-doubt",
+      "atMs": 65000,
+      "hint": "Runbook の内容も鵜呑みにしない。ログやメトリクスなど他の情報源と照らし合わせる",
+      "panel": "runbook"
+    },
+    {
+      "id": "nav-disk",
+      "atMs": 108000,
+      "hint": "ディスク使用率も並行して確認する",
+      "panel": "metrics"
+    },
+    {
+      "id": "nav-wrapup",
+      "atMs": 150000,
+      "hint": "各障害は、これまで個別に扱ってきた切り分け方法がそのまま使える",
+      "panel": "terminal"
     }
   ]
 }

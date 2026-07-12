@@ -7,9 +7,9 @@ service:
   name: やまびこ API
   healthUrl: http://localhost:8080/health
 briefing:
-  - ノイズアラートが大量に飛ぶと、本当に重要な障害を見落とす。
-  - alert.spam.json を片付け、HTTP 5xx の本丸を探す。
-  - 監視パネルと app.log を併用して優先度を付ける。
+  - 通知が鳴りやまない。撤去し忘れた古いノイズ発生源(通知デーモン)が残っている疑いがある。
+  - ノイズに紛れて、本物の障害も同時に起きている。見逃さないこと。
+  - 監視パネルと app.log を併用し、ノイズと本物を切り分けて優先度を付ける。
 startup:
   - id: api
     command: PORT=8080 node /workspace/services/yamabiko-api/server.mjs
@@ -77,23 +77,28 @@ alerts:
     severity: warning
     message: Keyboard moisture sensor tripped
     source: monitor
-  - id: real-500
+  - id: real-down
     atMs: 82000
     severity: critical
-    message: HTTP 500 rate is above threshold
-    source: scenario
+    message: やまびこ API health check failed
+    source: monitor
 successConditions:
   - type: http_status
     url: http://localhost:8080/health
     status: 200
   - type: process_running
     processId: api
-  - type: marker_absent
-    path: /workspace/run/alert.spam.json
+  - type: process_absent
+    processId: alert-flood-daemon
 runbooks:
   - id: runbook.alert-spam
     title: アラートスパム対応
-    body: 1. 左の監視で HTTP 5xx を優先\n2. cat /workspace/run/alert.spam.json\n3. rm /workspace/run/alert.spam.json\n4. tail /workspace/logs/app.log で本物の障害を探す\n5. 必要なら yamactl restart api
+    body: |-
+      1. 大量に鳴っていても、まず SERVICE HEALTH のような実指標を優先して見る
+      2. app.log にノイズを吐き続けているプロセスがいないか確認する(ps / pgrep)
+      3. ノイズ源を止めたら、ログに残る「本物」の障害の痕跡を探す
+      4. 見つかった障害に応じて復旧する(例: yamactl restart api)
+      5. curl localhost:8080/health で復旧確認する
 chatMessages:
   - id: pager-duty
     atMs: 70000
@@ -102,13 +107,18 @@ chatMessages:
 navigationSteps:
   - id: nav-metrics
     atMs: 0
-    hint: HTTP 5xx と SERVICE HEALTH を先に見る
+    hint: SERVICE HEALTH を先に見る。件数に惑わされない
     panel: metrics
   - id: nav-spam-file
     atMs: 50000
-    hint: alert.spam.json の中身を確認する
+    hint: ノイズを吐き続けているプロセスがいないか探す
     panel: terminal
-    suggestedCommand: cat /workspace/run/alert.spam.json
+    suggestedCommand: ps aux | grep node
+  - id: nav-real
+    atMs: 78000
+    hint: ノイズの陰で本物の障害が起きていないか、app.log と health を確認する
+    panel: terminal
+    suggestedCommand: tail -n 50 /workspace/logs/app.log
   - id: nav-runbook
     atMs: 90000
     hint: アラートスパム Runbook を開く

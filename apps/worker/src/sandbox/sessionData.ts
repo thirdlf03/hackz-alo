@@ -88,7 +88,8 @@ export async function fetchSessionStorage(env: Bindings, sessionId: string) {
     "const run='/workspace/run';",
     'const entries=[];',
     "if(fs.existsSync('/workspace/etc/yamabiko-api.json')) entries.push({key:'yamabiko-api.config',value:fs.readFileSync('/workspace/etc/yamabiko-api.json','utf8').trim()});",
-    "if(fs.existsSync(path.join(run,'monitor.blind.json'))) entries.push({key:'monitor.blind',value:fs.readFileSync(path.join(run,'monitor.blind.json'),'utf8')});",
+    "if(fs.existsSync('/workspace/etc/monitoring.json')) entries.push({key:'monitoring.config',value:fs.readFileSync('/workspace/etc/monitoring.json','utf8').trim()});",
+    "if(fs.existsSync(path.join(run,'metrics','agent.json'))) entries.push({key:'monitor-agent',value:fs.readFileSync(path.join(run,'metrics','agent.json'),'utf8').trim()});",
     "if(fs.existsSync(path.join(run,'job-queue.jsonl'))) entries.push({key:'job-queue',value:fs.readFileSync(path.join(run,'job-queue.jsonl'),'utf8').split('\\n').slice(-5).join('\\n')});",
     "if(fs.existsSync(path.join(run,'fake-db-stats.json'))) entries.push({key:'fake-db-stats',value:fs.readFileSync(path.join(run,'fake-db-stats.json'),'utf8').trim()});",
     'process.stdout.write(JSON.stringify(entries));',
@@ -171,6 +172,25 @@ export async function readSessionFile(
   return {path: safePath, content};
 }
 
+/**
+ * Reads a sandbox file by absolute /workspace path without restricting to
+ * the user-editable roots (unlike readSessionFile). Intended for worker-side
+ * reads of scenario-declared paths (e.g. a runbook's `file`), never a
+ * user-supplied path.
+ */
+export async function readSandboxFileRaw(
+  env: Bindings,
+  sessionId: string,
+  path: string
+): Promise<string> {
+  if (!isWorkspacePath(path)) {
+    throw new Error('path must stay inside /workspace');
+  }
+  const sandbox = getSessionSandbox(env, sessionId) as SandboxFileApi;
+  const file = await sandbox.readFile(path);
+  return typeof file === 'string' ? file : file.content;
+}
+
 export async function writeSessionFile(
   env: Bindings,
   sessionId: string,
@@ -198,8 +218,6 @@ function parseMetricsSnapshot(
   payload: Record<string, unknown>
 ): MetricsSnapshot | null {
   const numbers = [
-    'cpu',
-    'memory',
     'disk',
     'http5xxRate',
     'latencyP95Ms',
@@ -212,10 +230,19 @@ function parseMetricsSnapshot(
       return null;
     }
   }
+  const nullableNumbers = ['cpu', 'memory'] as const;
+  for (const key of nullableNumbers) {
+    if (
+      payload[key] !== null &&
+      (typeof payload[key] !== 'number' || !Number.isFinite(payload[key]))
+    ) {
+      return null;
+    }
+  }
   return {
     at: typeof payload.at === 'number' ? payload.at : Date.now(),
-    cpu: payload.cpu as number,
-    memory: payload.memory as number,
+    cpu: payload.cpu as number | null,
+    memory: payload.memory as number | null,
     disk: payload.disk as number,
     http5xxRate: payload.http5xxRate as number,
     latencyP95Ms: payload.latencyP95Ms as number,

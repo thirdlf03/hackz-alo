@@ -13,7 +13,6 @@ const {buildSuccessCheckCommand, successConditionBuilders} = await tsImport(
 const {
   isWorkspacePath,
   normalizeEditableWorkspacePath,
-  normalizeWorkspaceMarkerPath,
   shellArg,
   shellPathSegment,
 } = await tsImport(
@@ -49,7 +48,6 @@ test('buildFaultCommand covers every registered fault type', () => {
       {connections: 12},
       `${faultInjector} db_pool_exhaust 12`,
     ],
-    ['memory_leak', {targetPercent: 91}, `${faultInjector} memory_leak 91`],
     ['dns_misconfig', {}, `${faultInjector} dns_misconfig`],
     [
       'monitor_blind',
@@ -72,9 +70,9 @@ test('buildFaultCommand covers every registered fault type', () => {
       `${faultInjector} cable_jumprope 'fake-db'`,
     ],
     [
-      'keyboard_spill',
-      {noise: 'sticky'},
-      `${faultInjector} keyboard_spill 'sticky'`,
+      'runaway_loadgen',
+      {targetUrl: 'http://127.0.0.1:8080/orders'},
+      `${faultInjector} runaway_loadgen 'http://127.0.0.1:8080/orders'`,
     ],
     ['alert_spam', {count: 6}, `${faultInjector} alert_spam 6`],
     [
@@ -102,6 +100,10 @@ test('buildFaultCommand applies defaults and rejects unknown types', () => {
     buildFaultCommand('monitor_blind', {}),
     `${faultInjector} monitor_blind '["cpu","memory"]'`
   );
+  assert.equal(
+    buildFaultCommand('runaway_loadgen', {}),
+    `${faultInjector} runaway_loadgen`
+  );
   assert.throws(
     () => buildFaultCommand('does_not_exist', {}),
     /unknown fault type: does_not_exist/
@@ -114,7 +116,7 @@ test('buildSuccessCheckCommand covers every success condition type', () => {
     'http_status',
     'kodama_batch_ok',
     'log_absent',
-    'marker_absent',
+    'process_absent',
     'process_running',
   ]);
 
@@ -141,11 +143,30 @@ test('buildSuccessCheckCommand covers every success condition type', () => {
     'test ! -f /workspace/run/worker.down'
   );
   assert.equal(
+    buildSuccessCheckCommand({type: 'process_absent', processId: 'api'}),
+    "! pgrep -f 'yamabiko-api/server\\.mjs' > /dev/null"
+  );
+  assert.equal(
     buildSuccessCheckCommand({
-      type: 'marker_absent',
-      path: "/workspace/run/api's.down",
+      type: 'process_absent',
+      processId: 'alert-flood-daemon',
     }),
-    `test ! -e ${shellArg("/workspace/run/api's.down")}`
+    "! pgrep -f 'alert-flood-daemon\\.mjs' > /dev/null"
+  );
+  assert.equal(
+    buildSuccessCheckCommand({type: 'process_absent', processId: 'loadgen'}),
+    "! pgrep -f 'loadgen\\.mjs' > /dev/null"
+  );
+  assert.equal(
+    buildSuccessCheckCommand({
+      type: 'process_absent',
+      processId: 'monitor-agent',
+    }),
+    "! pgrep -f 'monitor-agent/agent\\.mjs' > /dev/null"
+  );
+  assert.equal(
+    buildSuccessCheckCommand({type: 'process_absent', processId: 'worker'}),
+    'test -f /workspace/run/worker.down'
   );
   assert.equal(
     buildSuccessCheckCommand({type: 'kodama_batch_ok', jobId: 'nightly'}),
@@ -187,19 +208,6 @@ test('path and shell safety helpers preserve workspace boundaries', () => {
   assert.equal(shellArg("api's"), `'api'"'"'s'`);
   assert.equal(shellPathSegment('api_1.2-3'), 'api_1.2-3');
   assert.throws(() => shellPathSegment('api/down'), /invalid process id/);
-
-  assert.equal(
-    normalizeWorkspaceMarkerPath('/workspace/run/api.down'),
-    '/workspace/run/api.down'
-  );
-  assert.throws(
-    () => normalizeWorkspaceMarkerPath('/tmp/api.down'),
-    /marker path must stay inside/
-  );
-  assert.throws(
-    () => normalizeWorkspaceMarkerPath('/workspace/run/../api.down'),
-    /marker path must stay inside/
-  );
 
   assert.equal(
     normalizeEditableWorkspacePath('/workspace/services/app.js'),

@@ -105,12 +105,12 @@
     {
       "id": "runbook.kodama",
       "title": "こだまバッチ調査",
-      "body": "こだま仕様表みてがんばれ。\n\nバッチファイルは /workspace/services/batch/sales.kdm"
+      "body": "こだま仕様表みてがんばれ。\n\nバッチファイルは /workspace/services/batch/sales.kdm\n\n直しただけで終わらせない。バッチログに失敗の記録が残ったままだと、\n監視は「まだ失敗している」と判断して発報を続ける。原因を直したら、\nその痕跡を片付けるところまでが復旧作業。"
     },
     {
       "id": "runbook.kodama-spec",
       "title": "こだま仕様表",
-      "body": "文\nやまびこ帳: コメント（無視）\nよぶ <name> = <expr>: 変数定義\nはかる <expr>: 式を評価\nかえす [<expr>]: 終了（省略時は直前の値）\n\n演算子（優先: かける/わる → たす/ひく）\nたす: +  ひく: -\nかける: *  わる: /（右辺 0 で error）\n\nリテラル: 数値 / しずか(0) / こだま(1) / 変数名 / ( )\n\nエラーはすべて「こだまが返ってきません」のみ表示\nkodama run <file> … 実行  kodama check <file> … 構文チェック\n\n例: よぶ y = しずか  のまま x わる y → 0 除算で失敗"
+      "body": "文\nやまびこ帳: コメント（無視）\nよぶ <name> = <expr>: 変数定義\nはかる <expr>: 式を評価\nかえす [<expr>]: 終了（省略時は直前の値）\n\n演算子（優先: かける/わる → たす/ひく）\nたす: +  ひく: -\nかける: *  わる: /（右辺 0 で error）\n\nリテラル: 数値 / しずか(0) / こだま(1) / 変数名 / ( )\n\nエラーはすべて「こだまが返ってきません」のみ表示\nkodama run <file> … 実行  kodama check <file> … 構文チェック\n\n例: よぶ price = 100、よぶ tax = こだま のとき price かける tax は price のまま"
     }
   ],
   "chatMessages": [
@@ -119,6 +119,27 @@
       "atMs": 130000,
       "from": "経理",
       "body": "売上集計が止まってるんですが、こだまが返ってきません。"
+    }
+  ],
+  "navigationSteps": [
+    {
+      "id": "nav-batch-status",
+      "atMs": 0,
+      "hint": "バッチ失敗のアラートが出ていないか監視画面で確認する",
+      "panel": "metrics"
+    },
+    {
+      "id": "nav-batch-log",
+      "atMs": 95000,
+      "hint": "batch.log でエラー内容を確認する",
+      "panel": "terminal",
+      "suggestedCommand": "tail /workspace/logs/batch.log"
+    },
+    {
+      "id": "nav-batch-source",
+      "atMs": 105000,
+      "hint": "sales.kdm のソースをこだま仕様表と見比べる",
+      "panel": "editor"
     }
   ]
 }

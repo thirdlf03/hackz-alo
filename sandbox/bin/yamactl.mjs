@@ -15,7 +15,7 @@ const SANDBOX_CONTROL_URL =
 const PORT_WAIT_MS = 30_000;
 const PORT_RELEASE_WAIT_MS = 3_000;
 const HEALTH_PROBE_TIMEOUT_MS = 1_200;
-const USAGE = 'usage: yamactl <status|restart|stop> <api|fake-db>';
+const USAGE = 'usage: yamactl <status|restart|stop> <api|fake-db|monitor-agent>';
 
 export const SERVICES = {
   api: {
@@ -34,6 +34,17 @@ export const SERVICES = {
     description: 'fake-db (疑似データベース)',
     command: 'node /workspace/services/fake-db/server.mjs',
     scriptPath: 'services/fake-db/server.mjs',
+    env: {},
+  },
+  'monitor-agent': {
+    processId: 'monitor-agent',
+    // no TCP port: this is a background sampler, not an HTTP service, so
+    // status/restart are driven by a plain process probe instead.
+    port: undefined,
+    pattern: 'monitor-agent/agent.mjs',
+    description: 'monitor-agent (監視エージェント)',
+    command: 'node /workspace/services/monitor-agent/agent.mjs',
+    scriptPath: 'services/monitor-agent/agent.mjs',
     env: {},
   },
 };
@@ -65,6 +76,22 @@ function buildDeps(options) {
 async function statusService(service, deps) {
   const port = deps.port ?? service.port;
   const pids = await deps.findPids(service.pattern);
+
+  if (port === undefined) {
+    const lines = [`● ${service.processId} - ${service.description}`];
+    if (pids.length > 0) {
+      lines.push(`   Process: running (pid ${pids.join(', ')})`);
+      lines.push('   Health:  process alive');
+    } else {
+      lines.push('   Process: dead');
+      lines.push('   Health:  unreachable');
+      lines.push(
+        `   Hint:    not running. start with: yamactl restart ${service.processId}`
+      );
+    }
+    return lines.join('\n');
+  }
+
   const portOpen = await canConnect(port);
   const probe = portOpen ? await probeService(service, port) : {ok: false};
 
@@ -153,6 +180,22 @@ async function restartService(service, deps) {
   if (!deps.manageProcess) return `${service.processId} restarted`;
 
   await stopProcessHard(service, deps);
+
+  if (port === undefined) {
+    await waitForProcessState(deps, service.pattern, false, PORT_RELEASE_WAIT_MS);
+    await startProcess(service, deps);
+    if (
+      !(await waitForProcessState(deps, service.pattern, true, PORT_WAIT_MS))
+    ) {
+      throw new Error(
+        `${service.processId} start requested but the process did not appear. ` +
+          `check /workspace/logs/${service.processId}.err.log`
+      );
+    }
+    await appendAppLog(deps.workspace, `${service.processId} restarted\n`);
+    return `${service.processId} restarted`;
+  }
+
   const released = await waitForPortState(port, false, PORT_RELEASE_WAIT_MS);
   if (!released) {
     throw new Error(
@@ -322,6 +365,17 @@ async function waitForPortState(port, wantOpen, timeoutMs) {
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
   return (await canConnect(port)) === wantOpen;
+}
+
+async function waitForProcessState(deps, pattern, wantPresent, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const pids = await deps.findPids(pattern);
+    if ((pids.length > 0) === wantPresent) return true;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  const pids = await deps.findPids(pattern);
+  return (pids.length > 0) === wantPresent;
 }
 
 if (

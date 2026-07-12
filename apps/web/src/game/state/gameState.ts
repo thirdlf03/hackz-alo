@@ -146,11 +146,12 @@ export function advanceGameState(
       ? scenario.chatMessages.filter((message) => message.atMs <= elapsedMs)
       : state.monitors.right.chatMessages);
 
+  const runbookFileContents = state.monitors.right.runbookFileContents;
   const prevVisibleRunbooks = scenario
-    ? visibleRunbooks(scenario, state.clock.elapsedMs)
+    ? visibleRunbooks(scenario, state.clock.elapsedMs, runbookFileContents)
     : [];
   const nextVisibleRunbooks = scenario
-    ? visibleRunbooks(scenario, elapsedMs)
+    ? visibleRunbooks(scenario, elapsedMs, runbookFileContents)
     : [];
   const newRunbookArrived =
     nextVisibleRunbooks.length > prevVisibleRunbooks.length;
@@ -173,14 +174,11 @@ export function advanceGameState(
       ? 2400
       : Math.max(0, state.notifications.pulseMs - deltaMs);
 
-  const activeRunbookStillVisible = state.monitors.right.activeRunbook
-    ? nextVisibleRunbooks.some(
-        (runbook) => runbook.id === state.monitors.right.activeRunbook?.id
-      )
-    : false;
-  const nextActiveRunbook = activeRunbookStillVisible
-    ? state.monitors.right.activeRunbook
-    : nextVisibleRunbooks[0];
+  const activeRunbookId = state.monitors.right.activeRunbook?.id;
+  const matchedActiveRunbook = activeRunbookId
+    ? nextVisibleRunbooks.find((runbook) => runbook.id === activeRunbookId)
+    : undefined;
+  const nextActiveRunbook = matchedActiveRunbook ?? nextVisibleRunbooks[0];
   const nextActiveRunbookIndex = nextActiveRunbook
     ? Math.max(
         0,
@@ -282,6 +280,9 @@ export function applyLiveMetrics(
     edgeRttMs === null
       ? state.monitors.left.edgeRttHistory
       : appendEdgeRttHistory(state.monitors.left.edgeRttHistory, edgeRttMs);
+  const runbookFileContents = metrics.runbookFiles
+    ? {...state.monitors.right.runbookFileContents, ...metrics.runbookFiles}
+    : state.monitors.right.runbookFileContents;
   return {
     ...state,
     monitors: {
@@ -293,6 +294,10 @@ export function applyLiveMetrics(
         metricsSource: 'live',
         edgeRttMs: edgeRttMs ?? state.monitors.left.edgeRttMs,
         edgeRttHistory,
+      },
+      right: {
+        ...state.monitors.right,
+        ...(runbookFileContents ? {runbookFileContents} : {}),
       },
     },
   };

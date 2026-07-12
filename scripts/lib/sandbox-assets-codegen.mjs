@@ -18,10 +18,15 @@ export const SANDBOX_ASSET_FILES = [
   ["services/fake-db/server.mjs", "/workspace/services/fake-db/server.mjs"],
   ["services/batch/report-batch.mjs", "/workspace/services/batch/report-batch.mjs"],
   ["services/tools/legacy-metrics-agent.mjs", "/workspace/services/tools/legacy-metrics-agent.mjs"],
+  ["services/tools/alert-flood-daemon.mjs", "/workspace/services/tools/alert-flood-daemon.mjs"],
+  ["services/tools/loadgen.mjs", "/workspace/services/tools/loadgen.mjs"],
+  ["services/monitor-agent/agent.mjs", "/workspace/services/monitor-agent/agent.mjs"],
   ["bin/fault-injector.mjs", "/workspace/bin/fault-injector.mjs"],
   ["bin/yamactl.mjs", "/workspace/bin/yamactl.mjs"],
   ["bin/kodama.mjs", "/workspace/bin/kodama.mjs"],
   ["services/batch/sales.kdm", "/workspace/services/batch/sales.kdm"],
+  ["docs/runbooks/service-recovery.md", "/workspace/docs/runbooks/service-recovery.md"],
+  ["docs/backups/service-recovery.md", "/workspace/docs/backups/service-recovery.md"],
 ];
 
 export const ASSETS_TS_RELATIVE_PATH = "apps/worker/src/sandbox/assets.ts";
@@ -67,7 +72,7 @@ interface SandboxAsset {
 const assets: SandboxAsset[] = ${JSON.stringify(assets, null, 2)};
 
 export async function installSandboxAssets(sandbox: SandboxRuntime) {
-  await sandbox.exec("mkdir -p /workspace/services/metrics /workspace/services/yamabiko-api /workspace/services/fake-db /workspace/services/batch /workspace/services/tools /workspace/bin /workspace/logs /workspace/run /workspace/etc /workspace/releases");
+  await sandbox.exec("mkdir -p /workspace/services/metrics /workspace/services/yamabiko-api /workspace/services/fake-db /workspace/services/batch /workspace/services/tools /workspace/services/monitor-agent /workspace/bin /workspace/logs /workspace/run /workspace/etc /workspace/releases /workspace/docs/runbooks /workspace/docs/backups");
   for (const asset of assets) {
     await sandbox.writeFile(asset.path, asset.content);
   }

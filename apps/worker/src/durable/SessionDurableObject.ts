@@ -491,10 +491,12 @@ export class SessionDurableObject implements DurableObject {
 
   private async metrics() {
     const session = await this.requireSession();
+    const scenario = requireScenario(session.scenarioId);
     const response = await readSessionMetrics(
       this.env,
       session,
-      this.metricsCache
+      this.metricsCache,
+      scenario
     );
     await this.touchClientActivity();
     return response;

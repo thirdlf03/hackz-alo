@@ -96,13 +96,6 @@ export interface DbPoolExhaustTrigger {
   params: {connections?: number; maxConnections?: number};
 }
 
-export interface MemoryLeakTrigger {
-  id: string;
-  atMs: number;
-  type: 'memory_leak';
-  params: {targetPercent: number};
-}
-
 export interface DnsMisconfigTrigger {
   id: string;
   atMs: number;
@@ -138,11 +131,11 @@ export interface CableJumpropeTrigger {
   params: {processId?: string};
 }
 
-export interface KeyboardSpillTrigger {
+export interface RunawayLoadgenTrigger {
   id: string;
   atMs: number;
-  type: 'keyboard_spill';
-  params: {noise?: string};
+  type: 'runaway_loadgen';
+  params: {targetUrl?: string};
 }
 
 export interface AlertSpamTrigger {
@@ -168,13 +161,12 @@ export type ScenarioTrigger =
   | QueueBacklogTrigger
   | BadDeployTrigger
   | DbPoolExhaustTrigger
-  | MemoryLeakTrigger
   | DnsMisconfigTrigger
   | MonitorBlindTrigger
   | CompositeRestartLoopTrigger
   | JanitorPowerPullTrigger
   | CableJumpropeTrigger
-  | KeyboardSpillTrigger
+  | RunawayLoadgenTrigger
   | AlertSpamTrigger
   | RunbookGaslightTrigger;
 
@@ -347,7 +339,7 @@ export type SuccessCondition =
   | {type: 'http_status'; url: string; status: number}
   | {type: 'disk_usage_below'; path: string; valuePercent: number}
   | {type: 'process_running'; processId: string}
-  | {type: 'marker_absent'; path: string}
+  | {type: 'process_absent'; processId: string}
   | {type: 'log_absent'; path: string; pattern: string}
   | {type: 'kodama_batch_ok'; jobId: string};
 
@@ -356,6 +348,8 @@ export interface RunbookDefinition {
   title: string;
   body: string;
   availableAtMs?: number;
+  /** Sandbox path whose live content should override `body` once fetched. */
+  file?: string;
 }
 
 export interface ChatMessageDefinition {
@@ -422,14 +416,18 @@ export interface ScenarioDefinition {
 
 export interface MetricsSnapshot {
   at: number;
-  cpu: number;
-  memory: number;
+  /** null when the monitoring source is blind (agent dead or data stale). */
+  cpu: number | null;
+  /** null when the monitoring source is blind (agent dead or data stale). */
+  memory: number | null;
   disk: number;
   http5xxRate: number;
   latencyP95Ms: number;
   rps: number;
   dbConnections: number;
   queueDepth: number;
+  /** Live sandbox file content for file-backed runbooks, keyed by runbook id. */
+  runbookFiles?: Record<string, string>;
 }
 
 export type MetricsSource = 'loading' | 'live' | 'offline';
@@ -480,6 +478,8 @@ export interface GameRenderState {
       activeRunbook?: RunbookDefinition | undefined;
       activeRunbookIndex: number;
       chatMessages: ChatMessageDefinition[];
+      /** Live sandbox file content for file-backed runbooks, keyed by runbook id. */
+      runbookFileContents?: Record<string, string>;
     };
   };
   navigation: GameNavigationState;

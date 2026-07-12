@@ -14,13 +14,12 @@ const triggerTypes = new Set([
   'queue_backlog',
   'bad_deploy',
   'db_pool_exhaust',
-  'memory_leak',
   'dns_misconfig',
   'monitor_blind',
   'composite_restart_loop',
   'janitor_power_pull',
   'cable_jumprope',
-  'keyboard_spill',
+  'runaway_loadgen',
   'alert_spam',
   'runbook_gaslight',
 ]);
@@ -45,7 +44,7 @@ const successTypes = new Set([
   'http_status',
   'disk_usage_below',
   'process_running',
-  'marker_absent',
+  'process_absent',
   'log_absent',
   'kodama_batch_ok',
 ]);
@@ -168,6 +167,9 @@ export function validateScenarioDefinition(
     requireString(item, 'body', errors, path);
     if (item.availableAtMs !== undefined) {
       requireNonNegativeInteger(item, 'availableAtMs', errors, path);
+    }
+    if (item.file !== undefined) {
+      requireAbsolutePath(item, 'file', errors, path);
     }
   });
   requireNonEmptyArray(value, 'runbooks', errors);
@@ -568,8 +570,6 @@ function validateTriggerParams(
         `${path}.params`
       );
     }
-  } else if (trigger.type === 'memory_leak') {
-    requirePercent(trigger.params, 'targetPercent', errors, `${path}.params`);
   } else if (trigger.type === 'monitor_blind') {
     if (
       !Array.isArray(trigger.params.blindMetrics) ||
@@ -589,9 +589,9 @@ function validateTriggerParams(
     if (trigger.params.processId !== undefined) {
       requireString(trigger.params, 'processId', errors, `${path}.params`);
     }
-  } else if (trigger.type === 'keyboard_spill') {
-    if (trigger.params.noise !== undefined) {
-      requireString(trigger.params, 'noise', errors, `${path}.params`);
+  } else if (trigger.type === 'runaway_loadgen') {
+    if (trigger.params.targetUrl !== undefined) {
+      requireHttpUrl(trigger.params, 'targetUrl', errors, `${path}.params`);
     }
   } else if (trigger.type === 'alert_spam') {
     if (trigger.params.count !== undefined) {
@@ -617,8 +617,8 @@ function validateSuccessCondition(
     requirePercent(condition, 'valuePercent', errors, path);
   } else if (condition.type === 'process_running') {
     requireString(condition, 'processId', errors, path);
-  } else if (condition.type === 'marker_absent') {
-    requireAbsolutePath(condition, 'path', errors, path);
+  } else if (condition.type === 'process_absent') {
+    requireString(condition, 'processId', errors, path);
   } else if (condition.type === 'log_absent') {
     requireAbsolutePath(condition, 'path', errors, path);
     requireString(condition, 'pattern', errors, path);
