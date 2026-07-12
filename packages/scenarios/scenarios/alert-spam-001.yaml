@@ -42,7 +42,7 @@ triggers:
     params:
       count: 32
   - id: real-stop
-    atMs: 120000
+    atMs: 75000
     type: process_stop
     params:
       processId: api
@@ -78,7 +78,7 @@ alerts:
     message: Keyboard moisture sensor tripped
     source: monitor
   - id: real-500
-    atMs: 125000
+    atMs: 82000
     severity: critical
     message: HTTP 500 rate is above threshold
     source: scenario

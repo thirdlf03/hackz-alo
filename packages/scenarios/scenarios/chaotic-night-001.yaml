@@ -100,7 +100,7 @@ successConditions:
 runbooks:
   - id: runbook.chaos
     title: 混沌シフト初動
-    body: 1. ノイズ alert を無視して HTTP 5xx を見る\n2. ls /workspace/run でマーカー一覧\n3. rm alert.spam.json runbook.gaslight.json janitor.power.pulled api.down\n4. debug.log を削除して df -h\n5. yamactl restart api
+    body: 1. ノイズ alert を無視して HTTP 5xx を見る\n2. ls /workspace/run でマーカー一覧\n3. rm alert.spam.json runbook.gaslight.json janitor.power.pulled\n4. debug.log を削除して df -h\n5. yamactl restart api
 chatMessages:
   - id: all-hands
     atMs: 100000

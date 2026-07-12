@@ -10,19 +10,16 @@ import { fileURLToPath } from "node:url";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SCENARIO_DIR = path.join(ROOT, "packages/scenarios/data");
 
-/** Initial sandbox markers/files that are absent at session start (runtime clears api.down etc.). */
+/** Initial sandbox markers/files that are absent at session start (runtime clears them on prepare). */
 const INITIAL_ABSENT_MARKERS = new Set([
-  "/workspace/run/api.down",
-  "/workspace/run/deploy.json",
-  "/workspace/run/db.pool.exhausted",
   "/workspace/run/monitor.blind.json",
   "/workspace/run/alert.spam.json",
   "/workspace/run/runbook.gaslight.json",
   "/workspace/run/janitor.power.pulled",
   "/workspace/run/network.jumprope",
-  "/workspace/run/hosts.override",
   "/workspace/run/keyboard.spill",
-  "/workspace/run/terminal.noise"
+  "/workspace/run/terminal.noise",
+  "/workspace/run/memory.leak"
 ]);
 
 /** Conditions that pass in a healthy initial session (before any trigger). */

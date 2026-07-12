@@ -110,7 +110,7 @@
     {
       "id": "runbook.janitor",
       "title": "掃除による電源断",
-      "body": "1. curl localhost:8080/health で影響確認\\n2. ls /workspace/run で janitor.power.pulled を探す\\n3. rm /workspace/run/janitor.power.pulled /workspace/run/api.down\\n4. yamactl restart api\\n5. health で復旧確認"
+      "body": "1. curl localhost:8080/health で影響確認\\n2. yamactl status api でプロセス状態を見る\\n3. ls /workspace/run で物理的な原因の痕跡(janitor.power.pulled)を探す\\n4. 痕跡を記録して片付け(rm)、yamactl restart api\\n5. health で復旧確認"
     }
   ],
   "chatMessages": [

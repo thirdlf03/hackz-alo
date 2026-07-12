@@ -1,0 +1,73 @@
+id: port-conflict-001
+version: 1
+title: ポート 8080 を奪われた夜
+difficulty: advanced
+timeLimitMinutes: 12
+service:
+  name: やまびこ API
+  healthUrl: http://localhost:8080/health
+briefing:
+  - API が落ちた。いつも通り再起動すれば直る……はずだった。
+  - 「再起動したのに直らない」ときは、思い込みを捨てて足元から確かめる。
+  - Runbook が正しいとは限らない。ツールの出すエラーを最後まで読むこと。
+startup:
+  - id: api
+    command: PORT=8080 node /workspace/services/yamabiko-api/server.mjs
+    waitForPort: 8080
+  - id: fake-db
+    command: node /workspace/services/fake-db/server.mjs
+    waitForPort: 15432
+topology:
+  nodes:
+    - id: user
+      label: ユーザー
+      kind: external
+    - id: api
+      label: やまびこ API
+      kind: service
+      processId: api
+    - id: fake-db
+      label: 疑似データベース
+      kind: datastore
+      processId: fake-db
+  edges:
+    - from: user
+      to: api
+    - from: api
+      to: fake-db
+triggers:
+  - id: conflict
+    atMs: 50000
+    type: port_conflict
+    params:
+      processId: api
+      port: 8080
+alerts:
+  - id: api-down
+    atMs: 70000
+    severity: critical
+    message: やまびこ API health check failed
+    source: monitor
+  - id: identity
+    atMs: 210000
+    severity: warning
+    message: Health endpoint returns unknown service identity
+    source: scenario
+successConditions:
+  - type: http_status
+    url: http://localhost:8080/health
+    status: 200
+  - type: process_running
+    processId: api
+runbooks:
+  - id: runbook.port-conflict
+    title: API 停止時の対応(2019年版)
+    body: |-
+      yamactl restart api で再起動する。
+
+      それで直る。いつも直ってきた。
+chatMessages:
+  - id: senpai-hint
+    atMs: 180000
+    from: 先輩(仮眠中)
+    body: 前にも一回あったな…直った気がして直ってないやつ。ポート見てみ。ss -ltnp

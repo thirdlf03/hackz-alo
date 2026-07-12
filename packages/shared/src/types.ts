@@ -47,6 +47,20 @@ export interface ProcessStopTrigger {
   params: {processId: string};
 }
 
+export interface ProcessHangTrigger {
+  id: string;
+  atMs: number;
+  type: 'process_hang';
+  params: {processId: string};
+}
+
+export interface PortConflictTrigger {
+  id: string;
+  atMs: number;
+  type: 'port_conflict';
+  params: {port?: number; processId?: string};
+}
+
 export interface DiskFullTrigger {
   id: string;
   atMs: number;
@@ -72,14 +86,14 @@ export interface BadDeployTrigger {
   id: string;
   atMs: number;
   type: 'bad_deploy';
-  params: {configPath: string};
+  params: {configPath?: string};
 }
 
 export interface DbPoolExhaustTrigger {
   id: string;
   atMs: number;
   type: 'db_pool_exhaust';
-  params: {maxConnections: number};
+  params: {connections?: number; maxConnections?: number};
 }
 
 export interface MemoryLeakTrigger {
@@ -93,7 +107,7 @@ export interface DnsMisconfigTrigger {
   id: string;
   atMs: number;
   type: 'dns_misconfig';
-  params: {hostsPath: string};
+  params: {hostsPath?: string};
 }
 
 export interface MonitorBlindTrigger {
@@ -121,7 +135,7 @@ export interface CableJumpropeTrigger {
   id: string;
   atMs: number;
   type: 'cable_jumprope';
-  params: {hostsPath?: string};
+  params: {processId?: string};
 }
 
 export interface KeyboardSpillTrigger {
@@ -147,6 +161,8 @@ export interface RunbookGaslightTrigger {
 
 export type ScenarioTrigger =
   | ProcessStopTrigger
+  | ProcessHangTrigger
+  | PortConflictTrigger
   | DiskFullTrigger
   | KodamaBatchFailureTrigger
   | QueueBacklogTrigger

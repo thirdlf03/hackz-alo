@@ -65,5 +65,5 @@ successConditions:
 runbooks:
   - id: runbook.loop
     title: 再起動ループ
-    body: 1. df -h\n2. ログ削除\n3. yamactl restart api\n4. health 確認
+    body: 1. yamactl restart api\n2. すぐ再発する場合は原因が残っている。df -h と du -sh /workspace/logs/* で容量を見る\n3. 容量を確保してから再起動し直す\n4. health 確認
 chatMessages: []

@@ -1,16 +1,17 @@
 {
-  "id": "disk-restart-loop-001",
+  "id": "port-conflict-001",
   "version": 1,
-  "title": "再起動ループの夜",
+  "title": "ポート 8080 を奪われた夜",
   "difficulty": "advanced",
-  "timeLimitMinutes": 15,
+  "timeLimitMinutes": 12,
   "service": {
     "name": "やまびこ API",
     "healthUrl": "http://localhost:8080/health"
   },
   "briefing": [
-    "disk full のまま再起動するとすぐ再障害する。",
-    "容量を確保してから再起動する。"
+    "API が落ちた。いつも通り再起動すれば直る……はずだった。",
+    "「再起動したのに直らない」ときは、思い込みを捨てて足元から確かめる。",
+    "Runbook が正しいとは限らない。ツールの出すエラーを最後まで読むこと。"
   ],
   "startup": [
     {
@@ -57,29 +58,28 @@
   },
   "triggers": [
     {
-      "id": "loop",
-      "atMs": 60000,
-      "type": "composite_restart_loop",
+      "id": "conflict",
+      "atMs": 50000,
+      "type": "port_conflict",
       "params": {
-        "diskPath": "/workspace/logs/debug.log",
-        "bytes": 838860800,
-        "processId": "api"
+        "processId": "api",
+        "port": 8080
       }
     }
   ],
   "alerts": [
     {
-      "id": "disk-full",
+      "id": "api-down",
       "atMs": 70000,
       "severity": "critical",
-      "message": "Disk usage is above 95%",
+      "message": "やまびこ API health check failed",
       "source": "monitor"
     },
     {
-      "id": "api-down",
-      "atMs": 80000,
-      "severity": "critical",
-      "message": "API process is down",
+      "id": "identity",
+      "atMs": 210000,
+      "severity": "warning",
+      "message": "Health endpoint returns unknown service identity",
       "source": "scenario"
     }
   ],
@@ -90,21 +90,23 @@
       "status": 200
     },
     {
-      "type": "disk_usage_below",
-      "path": "/workspace",
-      "valuePercent": 80
-    },
-    {
       "type": "process_running",
       "processId": "api"
     }
   ],
   "runbooks": [
     {
-      "id": "runbook.loop",
-      "title": "再起動ループ",
-      "body": "1. yamactl restart api\\n2. すぐ再発する場合は原因が残っている。df -h と du -sh /workspace/logs/* で容量を見る\\n3. 容量を確保してから再起動し直す\\n4. health 確認"
+      "id": "runbook.port-conflict",
+      "title": "API 停止時の対応(2019年版)",
+      "body": "yamactl restart api で再起動する。\n\nそれで直る。いつも直ってきた。"
     }
   ],
-  "chatMessages": []
+  "chatMessages": [
+    {
+      "id": "senpai-hint",
+      "atMs": 180000,
+      "from": "先輩(仮眠中)",
+      "body": "前にも一回あったな…直った気がして直ってないやつ。ポート見てみ。ss -ltnp"
+    }
+  ]
 }

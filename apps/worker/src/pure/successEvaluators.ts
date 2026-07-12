@@ -9,19 +9,33 @@ export type SuccessConditionCommandBuilder = (
   condition: SuccessCondition
 ) => string;
 
+/**
+ * Real process patterns per startup id. process_running checks the live
+ * process table instead of a marker file, so a killed or crashed process
+ * fails the condition even when no marker exists.
+ */
+const PROCESS_PATTERNS: Record<string, string> = {
+  api: 'yamabiko-api/server\\.mjs',
+  'fake-db': 'fake-db/server\\.mjs',
+};
+
 export const successConditionBuilders: Record<
   string,
   SuccessConditionCommandBuilder
 > = {
   http_status: (condition) => {
     if (condition.type !== 'http_status') return invalidCondition(condition);
-    const script = `fetch(${JSON.stringify(condition.url)}).then(r=>process.exit(r.status===${String(condition.status)}?0:1)).catch(()=>process.exit(1))`;
+    const script = `fetch(${JSON.stringify(condition.url)},{signal:AbortSignal.timeout(2000)}).then(r=>process.exit(r.status===${String(condition.status)}?0:1)).catch(()=>process.exit(1))`;
     return `node -e ${shellArg(script)}`;
   },
 
   process_running: (condition) => {
     if (condition.type !== 'process_running') {
       return invalidCondition(condition);
+    }
+    const pattern = PROCESS_PATTERNS[condition.processId];
+    if (pattern) {
+      return `pgrep -f ${shellArg(pattern)} > /dev/null`;
     }
     return `test ! -f /workspace/run/${shellPathSegment(condition.processId)}.down`;
   },
@@ -35,7 +49,20 @@ export const successConditionBuilders: Record<
     if (condition.type !== 'disk_usage_below') {
       return invalidCondition(condition);
     }
-    const script = `const {execFileSync}=require("child_process");const target=${JSON.stringify(condition.path)};let used=100;try{const out=execFileSync("df",["-P",target],{encoding:"utf8"});const line=out.trim().split("\\n")[1];used=Number(line.split(/\\s+/)[4].replace("%",""));}catch{}process.exit(used<${String(condition.valuePercent)}?0:1)`;
+    const script = [
+      'const {execFileSync}=require("child_process");',
+      'const fs=require("fs");const path=require("path");',
+      `const target=${JSON.stringify(condition.path)};`,
+      'let used=0;',
+      'try{const out=execFileSync("df",["-P",target],{encoding:"utf8"});const line=out.trim().split("\\n")[1];const df=Number(line.split(/\\s+/)[4].replace("%",""));if(Number.isFinite(df))used=df;}catch{}',
+      'let quota=536870912;',
+      'try{const cfg=JSON.parse(fs.readFileSync("/workspace/etc/yamabiko-api.json","utf8"));if(Number.isFinite(cfg.logQuotaBytes))quota=cfg.logQuotaBytes;}catch{}',
+      'let bytes=0;',
+      'try{for(const entry of fs.readdirSync("/workspace/logs")){try{const info=fs.statSync(path.join("/workspace/logs",entry));if(info.isFile())bytes+=info.size;}catch{}}}catch{}',
+      'const logPercent=quota>0?Math.min(100,Math.round((bytes/quota)*100)):0;',
+      'if(logPercent>used)used=logPercent;',
+      `process.exit(used<${String(condition.valuePercent)}?0:1)`,
+    ].join('');
     return `node -e ${shellArg(script)}`;
   },
 
