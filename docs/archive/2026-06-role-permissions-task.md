@@ -1,5 +1,8 @@
 # タスク: 役割にゲームプレイ上の意味を持たせる(ターミナル/エディタの役割権限)
 
+> **Status: 実装済み・アーカイブ**(2026-07-12 確認)
+> 本タスクは PR #12(`0f3e75ca`)で実装され、フォローアップ `df0a50ed` でターミナル出力ミラー配信に調整済み。unit テストも `tests/unit/exercise-room.test.mjs` に追加済み。
+
 ## 背景
 
 参加者役割 `ParticipantRole = incident_commander | ops | scribe | comms | facilitator | observer`(`packages/shared/src/types.ts:180-189`)は現在ほぼ表示のみで意味を持たない。挙動に影響するのは `areParticipantsReadyToStart` の observer 除外(`apps/worker/src/pure/exerciseRoom.ts`)のみ。役割に実効的な意味を持たせる。

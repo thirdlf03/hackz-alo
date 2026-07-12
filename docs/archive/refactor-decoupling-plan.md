@@ -1,5 +1,8 @@
 # 疎結合化リファクタリング計画
 
+> **Status: 完了・アーカイブ**(2026-07-12 確認)
+> `node scripts/audit-coupling.mjs` で全数値目標を達成(App.tsx 709行 ≤ 1100 / SessionDurableObject.ts 739行 ≤ 750 / index.ts 86行 ≤ 260 / runtime.ts 20行 ≤ 420、すべて ok)。Phase 1〜7 の切り出しモジュールも実在を確認済み。
+
 ## 目的
 
 現状のコードは主要機能を少数の大きなファイルが抱えており、UI、状態遷移、API 通信、録画、Sandbox 操作、永続化、描画が近い距離で結合している。
