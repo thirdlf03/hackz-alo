@@ -40,11 +40,22 @@ const FIXES = {
   },
   "db-pool-001": {
     waitGameMs: 60_000,
-    commands: ["rm -f /workspace/run/db.pool.exhausted", "yamactl restart api"]
+    commands: ["pkill -f report-batch.mjs", "curl -s localhost:8080/health"]
   },
   "bad-deploy-001": {
     waitGameMs: 45_000,
-    commands: ["rm -f /workspace/run/deploy.json", "curl -s localhost:8080/health"]
+    commands: [
+      "cp /workspace/releases/yamabiko-api.previous.json /workspace/etc/yamabiko-api.json",
+      "curl -s localhost:8080/health"
+    ]
+  },
+  "api-hang-001": {
+    waitGameMs: 60_000,
+    commands: ["yamactl restart api"]
+  },
+  "port-conflict-001": {
+    waitGameMs: 50_000,
+    commands: ["pkill -f legacy-metrics-agent.mjs", "yamactl restart api"]
   },
   "log-bloat-001": {
     waitGameMs: 50_000,
@@ -69,16 +80,13 @@ const FIXES = {
   "janitor-power-001": {
     waitGameMs: 60_000,
     commands: [
-      "rm -f /workspace/run/janitor.power.pulled /workspace/run/api.down",
+      "rm -f /workspace/run/janitor.power.pulled",
       "yamactl restart api"
     ]
   },
   "cable-jumprope-001": {
     waitGameMs: 55_000,
-    commands: [
-      "rm -f /workspace/run/network.jumprope /workspace/run/hosts.override /workspace/run/api.down",
-      "yamactl restart api"
-    ]
+    commands: ["yamactl restart fake-db", "curl -s localhost:8080/health"]
   },
   "keyboard-spill-001": {
     waitGameMs: 50_000,
@@ -95,7 +103,7 @@ const FIXES = {
   "chaotic-night-001": {
     waitGameMs: 105_000,
     commands: [
-      "rm -f /workspace/run/alert.spam.json /workspace/run/runbook.gaslight.json /workspace/run/janitor.power.pulled /workspace/run/api.down",
+      "rm -f /workspace/run/alert.spam.json /workspace/run/runbook.gaslight.json /workspace/run/janitor.power.pulled",
       "rm -f /workspace/logs/debug.log",
       "yamactl restart api"
     ]

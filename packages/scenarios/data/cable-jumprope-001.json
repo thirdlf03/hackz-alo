@@ -3,15 +3,15 @@
   "version": 1,
   "title": "LANケーブル縄跳びの夜",
   "difficulty": "intermediate",
-  "timeLimitMinutes": 5,
+  "timeLimitMinutes": 8,
   "service": {
     "name": "やまびこ API",
     "healthUrl": "http://localhost:8080/health"
   },
   "briefing": [
-    "ネットワーク断に見えても、実は誰かが LAN ケーブルで縄跳びしているだけかもしれない。",
-    "network.jumprope マーカーと hosts.override を確認する。",
-    "ケーブルを戻してから API を再起動する。"
+    "API は生きているのに 5xx が返る。そんな時は依存先を疑う。",
+    "API → DB の経路のどこで壊れているのかを順番に切り分ける。",
+    "障害の原因は、技術的とは限らない。"
   ],
   "startup": [
     {
@@ -33,11 +33,6 @@
         "kind": "external"
       },
       {
-        "id": "network",
-        "label": "社内ネットワーク",
-        "kind": "service"
-      },
-      {
         "id": "api",
         "label": "やまびこ API",
         "kind": "service",
@@ -53,10 +48,6 @@
     "edges": [
       {
         "from": "user",
-        "to": "network"
-      },
-      {
-        "from": "network",
         "to": "api"
       },
       {
@@ -71,23 +62,23 @@
       "atMs": 55000,
       "type": "cable_jumprope",
       "params": {
-        "hostsPath": "/workspace/run/hosts.override"
+        "processId": "fake-db"
       }
     }
   ],
   "alerts": [
     {
-      "id": "net-down",
-      "atMs": 70000,
+      "id": "api-500",
+      "atMs": 75000,
       "severity": "critical",
-      "message": "Network unreachable to API host",
+      "message": "やまびこ API health check failed",
       "source": "monitor"
     },
     {
-      "id": "eth0-flap",
-      "atMs": 85000,
+      "id": "db-link",
+      "atMs": 90000,
       "severity": "warning",
-      "message": "eth0 link flapping detected",
+      "message": "DB rack link down",
       "source": "scenario"
     }
   ],
@@ -102,45 +93,39 @@
       "processId": "api"
     },
     {
-      "type": "marker_absent",
-      "path": "/workspace/run/network.jumprope"
+      "type": "process_running",
+      "processId": "fake-db"
     }
   ],
   "runbooks": [
     {
       "id": "runbook.jumprope",
-      "title": "ケーブル縄跳び対応",
-      "body": "1. cat /workspace/run/network.jumprope で状況確認\\n2. rm /workspace/run/network.jumprope /workspace/run/hosts.override /workspace/run/api.down\\n3. yamactl restart api\\n4. curl localhost:8080/health"
+      "title": "依存先の切り分け",
+      "body": "1. curl localhost:8080/health で API の応答を見る(500 の reason を読む)\n2. API 自体の問題か、依存先(DB)の問題かを分ける\n   yamactl status api / yamactl status fake-db\n3. 依存先が死んでいたら復旧する(yamactl restart fake-db)\n4. /workspace/run に現場の痕跡が残っていることがある。報告に添える\n5. health で復旧確認する"
     }
   ],
   "chatMessages": [
     {
       "id": "infra-joke",
-      "atMs": 95000,
+      "atMs": 110000,
       "from": "インフラ",
-      "body": "縄跳び大会やってる？ ping 通らないんだけど。"
+      "body": "縄跳び大会やってる？DB ラックの前に人が集まってるんだけど。"
     }
   ],
   "navigationSteps": [
     {
-      "id": "nav-ping",
+      "id": "nav-health",
       "atMs": 30000,
-      "hint": "curl localhost:8080/health で疎通を確認する",
+      "hint": "curl localhost:8080/health で reason を読む",
       "panel": "terminal",
       "suggestedCommand": "curl localhost:8080/health"
     },
     {
-      "id": "nav-run",
-      "atMs": 60000,
-      "hint": "/workspace/run のマーカーを調べる",
+      "id": "nav-db-status",
+      "atMs": 70000,
+      "hint": "依存先の状態を確認する",
       "panel": "terminal",
-      "suggestedCommand": "ls -la /workspace/run"
-    },
-    {
-      "id": "nav-runbook",
-      "atMs": 80000,
-      "hint": "ケーブル縄跳び Runbook を参照する",
-      "panel": "runbook"
+      "suggestedCommand": "yamactl status fake-db"
     }
   ]
 }

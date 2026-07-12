@@ -1,11 +1,13 @@
 import {execFile} from 'node:child_process';
-import {appendFile, mkdir, readFile, writeFile} from 'node:fs/promises';
+import {appendFile, mkdir, readFile, readdir, stat, writeFile} from 'node:fs/promises';
 import {existsSync} from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {promisify} from 'node:util';
+import {readApiConfig} from '../yamabiko-api/config.mjs';
 
 const execFileAsync = promisify(execFile);
+const PROBE_TIMEOUT_MS = 1500;
 
 const DEFAULT_TRAFFIC_WINDOW_MS = 60_000;
 
@@ -95,7 +97,9 @@ export async function probeUpstreamTraffic(
   for (const pathname of ['/health', '/orders']) {
     const startedAt = performance.now();
     try {
-      const response = await fetch(`${baseUrl}${pathname}`);
+      const response = await fetch(`${baseUrl}${pathname}`, {
+        signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
+      });
       await appendTrafficSample(
         workspace,
         response.status,
@@ -274,37 +278,57 @@ async function readMemoryPercent(workspace) {
   return 0;
 }
 
+/**
+ * Total bytes under <workspace>/logs measured against the app's log quota.
+ * The quota models a bounded log volume, so `du`-style investigation finds
+ * the real culprit file whatever its name.
+ */
+export async function readLogVolume(workspace, quotaBytes) {
+  let quota = quotaBytes;
+  if (!Number.isFinite(quota) || quota === undefined) {
+    const configResult = await readApiConfig(workspace);
+    quota = configResult.ok
+      ? configResult.config.logQuotaBytes
+      : 512 * 1024 * 1024;
+  }
+
+  let bytes = 0;
+  try {
+    const logDir = path.join(workspace, 'logs');
+    for (const entry of await readdir(logDir)) {
+      try {
+        const info = await stat(path.join(logDir, entry));
+        if (info.isFile()) bytes += info.size;
+      } catch {
+        // file disappeared mid-scan
+      }
+    }
+  } catch {
+    // no logs dir yet
+  }
+
+  const percent =
+    quota > 0 ? Math.min(100, Math.round((bytes / quota) * 100)) : 0;
+  return {bytes, quotaBytes: quota, percent};
+}
+
 async function readDiskPercent(workspace) {
+  let dfPercent = 0;
   try {
     const {stdout} = await execFileAsync('df', ['-P', workspace]);
     const line = stdout.trim().split('\n')[1];
     const usePercent = Number(line?.split(/\s+/)[4]?.replace('%', '') ?? NaN);
     if (Number.isFinite(usePercent))
-      {return Math.min(100, Math.max(0, usePercent));}
+      {dfPercent = Math.min(100, Math.max(0, usePercent));}
   } catch {
     // fall through
   }
 
-  return 0;
+  const logVolume = await readLogVolume(workspace);
+  return Math.max(dfPercent, logVolume.percent);
 }
 
 async function readDbConnections(workspace) {
-  if (existsSync(path.join(workspace, 'run', 'db.pool.exhausted'))) {
-    try {
-      const max = Number(
-        (
-          await readFile(
-            path.join(workspace, 'run', 'db.pool.exhausted'),
-            'utf8'
-          )
-        ).trim()
-      );
-      if (Number.isFinite(max)) return max;
-    } catch {
-      return 40;
-    }
-  }
-
   const statsPath = path.join(workspace, 'run', 'fake-db-stats.json');
   if (!existsSync(statsPath)) return 0;
   try {

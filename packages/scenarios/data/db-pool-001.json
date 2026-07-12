@@ -9,8 +9,9 @@
     "healthUrl": "http://localhost:8080/health"
   },
   "briefing": [
-    "DB 接続プール枯渇は API レイテンシと 5xx の両方を悪化させる。",
-    "メトリクスと fake-db の状態を突き合わせる。"
+    "DB 接続プールが飽和すると、API は新しい接続を拒否されて 5xx を返し始める。",
+    "誰が接続を握っているのか。メトリクスの DB Conn と fake-db の統計から犯人を探す。",
+    "再起動だけでは直らない障害もある。"
   ],
   "startup": [
     {
@@ -42,6 +43,11 @@
         "label": "疑似データベース",
         "kind": "datastore",
         "processId": "fake-db"
+      },
+      {
+        "id": "report-batch",
+        "label": "月次レポートバッチ",
+        "kind": "batch"
       }
     ],
     "edges": [
@@ -52,6 +58,10 @@
       {
         "from": "api",
         "to": "fake-db"
+      },
+      {
+        "from": "report-batch",
+        "to": "fake-db"
       }
     ]
   },
@@ -61,7 +71,7 @@
       "atMs": 60000,
       "type": "db_pool_exhaust",
       "params": {
-        "maxConnections": 40
+        "connections": 38
       }
     }
   ],
@@ -72,6 +82,13 @@
       "severity": "critical",
       "message": "DB connection pool exhausted",
       "source": "monitor"
+    },
+    {
+      "id": "api-5xx",
+      "atMs": 105000,
+      "severity": "critical",
+      "message": "HTTP 5xx rate is above threshold",
+      "source": "scenario"
     }
   ],
   "successConditions": [
@@ -85,15 +102,15 @@
       "processId": "api"
     },
     {
-      "type": "marker_absent",
-      "path": "/workspace/run/db.pool.exhausted"
+      "type": "process_running",
+      "processId": "fake-db"
     }
   ],
   "runbooks": [
     {
       "id": "runbook.db-pool",
-      "title": "DB pool 枯渇",
-      "body": "1. メトリクスの DB Conn を確認\\n2. cat /workspace/run/fake-db-stats.json\\n3. rm /workspace/run/db.pool.exhausted\\n4. yamactl restart api"
+      "title": "DB 接続飽和の初動",
+      "body": "1. 監視の DB Conn が上限(40)に張り付いていないか確認する\n2. fake-db の統計で「どのアプリが」接続を握っているか見る\n   (統計は /workspace/run/fake-db-stats.json に出ている)\n3. 接続を握っているプロセスを特定して止める(ps / kill)\n4. DB を再起動しても、犯人が生きていればすぐ再発する\n5. curl localhost:8080/health で復旧確認する"
     }
   ],
   "chatMessages": [
@@ -101,28 +118,28 @@
       "id": "dba",
       "atMs": 100000,
       "from": "DBA",
-      "body": "プールサイズいじった？"
+      "body": "プールサイズいじった？上限は 40 のはずだけど。"
+    },
+    {
+      "id": "senpai",
+      "atMs": 160000,
+      "from": "先輩(仮眠中)",
+      "body": "ん…月次レポートのバッチ、今夜だったかも…zzz"
     }
   ],
   "navigationSteps": [
     {
       "id": "nav-db-conn",
       "atMs": 0,
-      "hint": "DB Conn メトリクスが跳ね上がっていないか見る",
+      "hint": "DB Conn メトリクスが上限に張り付いていないか見る",
       "panel": "metrics"
     },
     {
       "id": "nav-stats",
-      "atMs": 45000,
-      "hint": "fake-db-stats.json を確認する",
+      "atMs": 70000,
+      "hint": "fake-db の統計で接続元の内訳を確認する",
       "panel": "terminal",
       "suggestedCommand": "cat /workspace/run/fake-db-stats.json"
-    },
-    {
-      "id": "nav-runbook",
-      "atMs": 75000,
-      "hint": "DB pool 枯渇 Runbook を開く",
-      "panel": "runbook"
     }
   ]
 }

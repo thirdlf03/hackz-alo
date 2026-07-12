@@ -22,10 +22,12 @@ export function normalizeEditableWorkspacePath(value: string) {
   }
   if (
     !value.startsWith('/workspace/services/') &&
-    !value.startsWith('/workspace/run/')
+    !value.startsWith('/workspace/run/') &&
+    !value.startsWith('/workspace/etc/') &&
+    !value.startsWith('/workspace/releases/')
   ) {
     throw new Error(
-      'editable files must be under /workspace/services or /workspace/run'
+      'editable files must be under /workspace/services, /workspace/run, /workspace/etc, or /workspace/releases'
     );
   }
   if (value.includes('\0') || value.split('/').includes('..')) {

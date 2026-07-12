@@ -25,8 +25,8 @@ interface InitialGameStateOptions {
 
 const DEFAULT_EDITOR_FILES: EditorPanelState['files'] = [
   {path: '/workspace/services/batch/sales.kdm'},
-  {path: '/workspace/run/deploy.json'},
-  {path: '/workspace/run/hosts.override'},
+  {path: '/workspace/etc/yamabiko-api.json'},
+  {path: '/workspace/releases/yamabiko-api.previous.json'},
   {path: '/workspace/run/job-queue.jsonl'},
 ];
 
