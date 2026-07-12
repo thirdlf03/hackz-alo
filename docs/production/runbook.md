@@ -16,9 +16,14 @@ Or tag push / workflow_dispatch via `.github/workflows/deploy.yml`. The deploy
 workflow requires these secrets:
 
 - `INCIDENT_WORKER_URL`
-- `INCIDENT_SMOKE_TURNSTILE_TOKEN`
 - `TURNSTILE_SITE_KEY`
 - `CLOUDFLARE_API_TOKEN`
+
+The workflow's post-deploy smoke only runs a readiness check
+(`--ready-only`), since Turnstile tokens are single-use and cannot be
+provisioned in CI. Run the full smoke (session creation through
+`INCIDENT_SMOKE_TURNSTILE_TOKEN`, as in the manual deploy example above)
+by hand after deploying.
 
 For a readiness-only emergency check:
 
