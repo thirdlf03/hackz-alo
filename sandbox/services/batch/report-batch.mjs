@@ -13,25 +13,31 @@ const DB_PORT = Number(process.env.FAKE_DB_PORT ?? 15432);
 const RECONNECT_DELAY_MS = 5_000;
 
 export function startConnectionHog(options = {}) {
-  const target = options.target ?? Number(options.count ?? 38);
+  const target = options.target ?? Number(options.count ?? 40);
   const host = options.host ?? DB_HOST;
   const port = options.port ?? DB_PORT;
   const sockets = new Set();
+  const pendingSockets = new Set();
   let stopped = false;
+  let refillTimer;
 
   function openOne() {
-    if (stopped || sockets.size >= target) return;
+    if (stopped || sockets.size + pendingSockets.size >= target) return;
     const socket = net.createConnection({host, port});
+    pendingSockets.add(socket);
     socket.setEncoding('utf8');
     socket.once('connect', () => {
+      if (!pendingSockets.delete(socket)) return;
       sockets.add(socket);
       socket.write('app report-batch\nselect 1\n');
-      openOne();
+      fill();
     });
     const drop = () => {
-      sockets.delete(socket);
+      const wasPending = pendingSockets.delete(socket);
+      const wasConnected = sockets.delete(socket);
+      if (!wasPending && !wasConnected) return;
       socket.destroy();
-      if (!stopped) setTimeout(openOne, RECONNECT_DELAY_MS);
+      scheduleRefill();
     };
     socket.once('error', drop);
     socket.once('close', drop);
@@ -40,14 +46,32 @@ export function startConnectionHog(options = {}) {
     });
   }
 
-  for (let index = 0; index < target; index += 1) openOne();
+  function fill() {
+    while (!stopped && sockets.size + pendingSockets.size < target) {
+      openOne();
+    }
+  }
+
+  function scheduleRefill() {
+    if (stopped || refillTimer !== undefined) return;
+    refillTimer = setTimeout(() => {
+      refillTimer = undefined;
+      fill();
+    }, RECONNECT_DELAY_MS);
+  }
+
+  fill();
 
   return {
     size: () => sockets.size,
     stop: () => {
       stopped = true;
-      for (const socket of sockets) socket.destroy();
+      if (refillTimer !== undefined) clearTimeout(refillTimer);
+      for (const socket of [...sockets, ...pendingSockets]) {
+        socket.destroy();
+      }
       sockets.clear();
+      pendingSockets.clear();
     },
   };
 }
@@ -61,7 +85,7 @@ if (
   process.argv[1] &&
   fileURLToPath(import.meta.url) === path.resolve(process.argv[1])
 ) {
-  const count = Number(process.argv[2] ?? 38);
+  const count = Number(process.argv[2] ?? 40);
   const workspace = DEFAULT_WORKSPACE;
   await appendBatchLog(
     workspace,

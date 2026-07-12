@@ -35,7 +35,7 @@ export const faultCommandBuilders: Record<string, FaultCommandBuilder> = {
   bad_deploy: () => `${FAULT_INJECTOR} bad_deploy`,
 
   db_pool_exhaust: (params) =>
-    `${FAULT_INJECTOR} db_pool_exhaust ${String(coerceNumber(params.connections ?? params.maxConnections, 38))}`,
+    `${FAULT_INJECTOR} db_pool_exhaust ${String(coerceNumber(params.connections ?? params.maxConnections, 40))}`,
 
   memory_leak: (params) =>
     `${FAULT_INJECTOR} memory_leak ${String(coerceNumber(params.targetPercent, 92))}`,

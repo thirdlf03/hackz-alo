@@ -191,6 +191,23 @@ test('fault injector spawns real culprit processes for pool and port faults', as
   assert.equal(spawns.at(-1).env.PORT, '8080');
 });
 
+test('connection hog holds exactly the requested number of connections', async (t) => {
+  const workspace = await tempWorkspace();
+  const db = createFakeDbServer({workspace, maxConnections: 100});
+  const address = await listenTcp(db);
+  const hog = startConnectionHog({target: 5, port: address.port});
+  t.after(async () => {
+    hog.stop();
+    await closeServer(db);
+    await rm(workspace, {recursive: true, force: true});
+  });
+
+  await waitFor(async () => (await readStats(workspace)).connections === 5);
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  assert.equal(hog.size(), 5);
+  assert.equal((await readStats(workspace)).connections, 5);
+});
+
 test('bad deploy breaks the real config and rollback restores health', async (t) => {
   const workspace = await tempWorkspace();
   t.after(() => rm(workspace, {recursive: true, force: true}));
@@ -591,6 +608,10 @@ test('fake-db answers queries, tracks clients, and rejects beyond max connection
   const rejection = await connectAndCollect(address, 'ping\n');
   assert.match(rejection, /too many connections/);
 
+  await waitFor(async () => {
+    const stats = await readStats(workspace);
+    return stats.maxConnections === 2 && stats.rejectedTotal >= 1;
+  });
   const stats = await readStats(workspace);
   assert.equal(stats.maxConnections, 2);
   assert.equal(stats.clients['report-batch'], 2);
@@ -655,7 +676,8 @@ async function connectAndCollect(address, message) {
   socket.on('error', () => {});
   await once(socket, 'connect');
   socket.write(message);
-  await once(socket, 'close');
+  await once(socket, 'end');
+  socket.destroy();
   return chunks.join('');
 }
 

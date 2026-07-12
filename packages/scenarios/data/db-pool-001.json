@@ -71,7 +71,7 @@
       "atMs": 60000,
       "type": "db_pool_exhaust",
       "params": {
-        "connections": 38
+        "connections": 40
       }
     }
   ],

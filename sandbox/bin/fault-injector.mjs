@@ -154,7 +154,7 @@ export async function injectFault(fault, args = [], options = {}) {
   }
 
   if (fault === 'db_pool_exhaust') {
-    const connections = String(parseByteCount(args[0] ?? 38));
+    const connections = String(parseByteCount(args[0] ?? 40));
     await spawnProcess({
       workspace,
       script: 'services/batch/report-batch.mjs',

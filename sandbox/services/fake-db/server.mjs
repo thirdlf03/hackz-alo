@@ -16,8 +16,8 @@ export function createFakeDbServer(options = {}) {
     if (clients.size >= maxConnections) {
       rejectedTotal += 1;
       void writeStats(workspace, clients, maxConnections, rejectedTotal);
-      socket.write('error: too many connections\n');
-      socket.destroy();
+      socket.resume();
+      socket.end('error: too many connections\n');
       return;
     }
 
