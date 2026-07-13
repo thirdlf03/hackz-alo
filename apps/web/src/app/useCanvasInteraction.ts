@@ -16,7 +16,7 @@ import {metricsPanelScrollRegion} from '../game/render/canvasLayout.js';
 import {resolveCanvasAction} from '../game/input/canvasActions.js';
 import {canOperateSandbox} from '../pure/rolePermissions.js';
 import type {ReplayEventEmitter} from '../game/events/emitReplayEvent.js';
-import type {FinishMode, Screen} from './AppScreens.js';
+import type {FinishMode, Screen} from './appTypes.js';
 import {containsPoint, toLogicalCanvasPoint} from './appUtils.js';
 
 export function useCanvasInteraction(options: {

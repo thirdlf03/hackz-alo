@@ -6,7 +6,7 @@ import {
 import {toErrorMessage} from '../pure/errors.js';
 import {containsPoint} from '../pure/geometry.js';
 import {SessionActionError} from '../api/httpClient.js';
-import {participantRoleLabels} from './AppScreens.js';
+import {participantRoleLabels} from './screens/LobbyScreen.js';
 
 export function readReplayIdFromSearch() {
   if (typeof window === 'undefined') return undefined;
