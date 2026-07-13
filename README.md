@@ -1,20 +1,20 @@
-# Incident Training Simulation
+# 障害対応訓練シミュレーション
 
-MVP implementation for the incident-response training game described in
-`youken.md` and `tech.md`.
+`youken.md`(要件・SSoT)と `tech.md`(技術方針)に基づく、障害対応訓練ゲームの実装。
+開発に参加する場合は [CONTRIBUTING.md](CONTRIBUTING.md) を参照。
 
-## Layout
+## 構成
 
-- `apps/web`: Preact/Vite canvas game and replay UI
-- `apps/worker`: Hono/Cloudflare Worker API and Durable Object session runtime
-- `packages/shared`: API, scenario, replay, rendering, and storage contracts
-- `packages/scenarios`: beginner scenarios and runbook metadata
-- `sandbox`: local scripts that model the sandbox services and fault injection
-- `migrations`: D1 schema
-- `tests`: unit, integration, and e2e tests
-- `docs/production`: runbook, edge protection, privacy, observability, [ops-notes](docs/production/ops-notes.md)
+- `apps/web`: Preact/Vite の canvas ゲームとリプレイ UI
+- `apps/worker`: Hono/Cloudflare Worker API と Durable Object セッションランタイム
+- `packages/shared`: API・シナリオ・リプレイ・描画・ストレージの契約
+- `packages/scenarios`: シナリオ定義と Runbook メタデータ
+- `sandbox`: sandbox サービスと障害注入のローカルスクリプト
+- `migrations`: D1 スキーマ
+- `tests`: unit / integration / e2e / vrt テスト
+- `docs/production`: runbook、edge 保護、プライバシー、可観測性、[ops-notes](docs/production/ops-notes.md)
 
-## Local Checks
+## ローカルチェック
 
 ```sh
 pnpm test
@@ -25,12 +25,14 @@ pnpm run lint
 pnpm run typecheck
 ```
 
-`pnpm install` registers [Lefthook](https://lefthook.dev/) `pre-push` hooks that run
-the same gates as the CI `test` job (`pnpm run ci:test`). Skip once with
-`LEFTHOOK=0 git push`. Perf Playwright (`tests/e2e/perf.spec.ts`) runs only via
-`pnpm run perf:e2e`, not the default `test:e2e` suite.
+`pnpm install` で [Lefthook](https://lefthook.dev/) のフックが登録される。
+`commit-msg` は Conventional Commits を検査し(規約は [CONTRIBUTING.md](CONTRIBUTING.md))、
+`pre-push` は CI の `test` ジョブと同じゲート(`pnpm run ci:test`)を実行する。
+一度だけスキップするには `LEFTHOOK=0 git push`。
+perf 用 Playwright(`tests/e2e/perf.spec.ts`)はデフォルトの `test:e2e` には含まれず、
+`pnpm run perf:e2e` でのみ実行される。
 
-Install workspace dependencies before running the Vite/Worker dev servers:
+Vite / Worker の dev server を起動する前に workspace の依存をインストールする:
 
 ```sh
 pnpm install
@@ -38,12 +40,12 @@ pnpm run dev:web
 pnpm run dev:worker
 ```
 
-## Deploy (Worker + static frontend)
+## デプロイ(Worker + 静的フロントエンド)
 
-Production serves the Vite build from the same Worker as the API (`/api/*`).
-Local development still uses separate Vite and Worker dev servers.
+本番は API(`/api/*`)と同じ Worker から Vite ビルドを配信する。
+ローカル開発では従来どおり Vite と Worker の dev server を分けて使う。
 
-One-time Cloudflare setup:
+Cloudflare の初回セットアップ:
 
 ```sh
 wrangler login
@@ -51,43 +53,45 @@ pnpm run setup:cloudflare
 pnpm run db:migrate:remote
 ```
 
-Deploy:
+デプロイ:
 
 ```sh
 pnpm run deploy
 ```
 
-See [docs/production/runbook.md](docs/production/runbook.md) and
-[docs/production/cloudflare-edge.md](docs/production/cloudflare-edge.md) for
-production checklist.
+本番チェックリストは [docs/production/runbook.md](docs/production/runbook.md) と
+[docs/production/cloudflare-edge.md](docs/production/cloudflare-edge.md) を参照。
 
-`pnpm run deploy` builds scenarios, builds `apps/web/dist`, then runs `wrangler deploy`.
-R2 bucket creation and container image upload are handled by Wrangler during deploy.
+`pnpm run deploy` はシナリオのビルド → `apps/web/dist` のビルド → `wrangler deploy` の順に実行する。
+R2 バケットの作成とコンテナイメージのアップロードはデプロイ時に Wrangler が処理する。
 
-CI deploy uses `.github/workflows/deploy.yml` (tag `v*` or workflow_dispatch).
+CI からのデプロイは `.github/workflows/deploy.yml`(タグ `v*` または workflow_dispatch)。
 
-### GitHub Actions secrets (deploy workflow)
+### GitHub Actions のシークレット(deploy ワークフロー)
 
-| Secret                 | Purpose                                                                              |
-| ---------------------- | ------------------------------------------------------------------------------------ |
-| `CLOUDFLARE_API_TOKEN` | Wrangler deploy + D1 remote migrations                                               |
-| `INCIDENT_WORKER_URL`  | Post-deploy `GET /api/ready` smoke (custom domain: `https://incident.thirdlf03.com`) |
-| `TURNSTILE_SITE_KEY`   | Optional Turnstile site key for web build                                            |
+| シークレット           | 用途                                                                                       |
+| ---------------------- | ------------------------------------------------------------------------------------------ |
+| `CLOUDFLARE_API_TOKEN` | Wrangler デプロイ + D1 リモートマイグレーション                                            |
+| `INCIDENT_WORKER_URL`  | デプロイ後の `GET /api/ready` スモーク(カスタムドメイン: `https://incident.thirdlf03.com`) |
+| `TURNSTILE_SITE_KEY`   | web ビルド用の Turnstile サイトキー(任意)                                                  |
 
-Create a Cloudflare API token with **Workers Scripts Edit**, **D1 Edit**, **Containers Edit**, **Account Settings Read**, **Zone → Workers Routes → Edit** (required for `incident.thirdlf03.com` in `wrangler.toml`), and optionally **Turnstile Edit** for `pnpm run setup:edge`, then:
+Cloudflare API トークンには **Workers Scripts Edit**、**D1 Edit**、**Containers Edit**、
+**Account Settings Read**、**Zone → Workers Routes → Edit**(`wrangler.toml` の
+`incident.thirdlf03.com` に必要)、および `pnpm run setup:edge` を使う場合は
+**Turnstile Edit** を付与して:
 
 ```sh
 gh secret set CLOUDFLARE_API_TOKEN --repo thirdlf03/hackz-alo
-pnpm run setup:domain   # sets INCIDENT_WORKER_URL to https://incident.thirdlf03.com
+pnpm run setup:domain   # INCIDENT_WORKER_URL を https://incident.thirdlf03.com に設定
 ```
 
-## Environment variables (Worker secrets)
+## 環境変数(Worker シークレット)
 
-| Name                    | Purpose                                                               |
+| 名前                    | 用途                                                                  |
 | ----------------------- | --------------------------------------------------------------------- |
-| `ENVIRONMENT`           | Set to `production` to disable dev routes                             |
-| `TURNSTILE_SECRET_KEY`  | Optional bot protection on session create                             |
-| `ADMIN_SECRET`          | Admin API fallback when Access JWT absent                             |
+| `ENVIRONMENT`           | `production` にすると dev ルートを無効化                              |
+| `TURNSTILE_SECRET_KEY`  | セッション作成のボット対策(任意)                                      |
+| `ADMIN_SECRET`          | Access JWT がない場合の管理 API フォールバック                        |
 | `VAPID_PUBLIC_KEY`      | Web Push の VAPID 公開鍵(ページャー機能。未設定なら機能は無効化)      |
 | `VAPID_PRIVATE_KEY`     | Web Push の VAPID 秘密鍵                                              |
 | `VAPID_SUBJECT`         | VAPID subject(`mailto:` 形式)                                         |
