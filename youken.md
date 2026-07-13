@@ -1,6 +1,6 @@
 # 障害対応訓練シミュレーション 要件定義書
 
-このドキュメントはプロダクトの正(SSoT)である。世界観・仕様に関してはコードよりもこのドキュメントを優先する。コード側の識別子はまだ旧名称のまま残っている箇所があるが、移行対象は「旧名称からの移行メモ」節にまとめる。
+このドキュメントはプロダクトの正(SSoT)である。世界観・仕様に関してはコードよりもこのドキュメントを優先する。旧名称からの識別子移行は完了済み(経緯は「旧名称からの移行メモ」節)。
 
 ## ポジショニング
 
@@ -933,26 +933,17 @@ timeline_events:
 
 ## 旧名称からの移行メモ
 
-このドキュメントが正であり、コード側は追って移行する。現時点ではコード側に旧識別子が残っている。世界観の転換に伴い、以下を新名称へ移行する。
+世界観の転換に伴う旧名称からの移行は**完了済み**。新旧対応の記録として残す。
 
-新旧対応。
+- サービス名「うん用」→「やまびこ」、識別子 `unyoh` → `yamabiko` — 済
+- 社内 DSL「うん言語」→「こだま」、識別子 `unlang` → `kodama` — 済
+- 「解雇」エンド → 「静かな朝 / にぎやかな朝」エンド — 済(結果画面・イベントサマリーとも blameless な文言に刷新)
+- チャット風 UI の識別子 `slack_*` → `chat_*` — 済
 
-- サービス名「うん用」→「やまびこ」、識別子 `unyoh` → `yamabiko`
-- 社内 DSL「うん言語」→「こだま」、識別子 `unlang` → `kodama`
-- 「解雇」エンド → 「静かな朝 / にぎやかな朝」エンド
-- チャット風 UI の識別子: 現行実装は `slack_message_read`(`packages/shared/src/replayEventTypes.ts`)や `slack_compose`・「Slack報告」(`packages/shared/src/events.ts`)等の Slack 由来の識別子 → `chat_message_read` 等へ改称予定
+意図的に残している互換のみ例外とする。
 
-移行対象(いずれも旧識別子・旧表記が残っている)。
-
-- `packages/scenarios/scenarios/*.yaml` と `packages/scenarios/data/*.json`(16 本。`unyoh-api`・「うん用」表記)
-- `unlang-batch-001` / `unlang-mystery-001`(シナリオ ID・内容とも「こだま」へ)
-- `sandbox/services/unyoh-api/`
-- `sandbox/bin/unctl.mjs`
-- `sandbox/runbooks/unlang-spec.md`
-- `apps/worker/src/sandbox/assets.ts`
-- `packages/shared/src/events.ts`
-- `apps/web/src/pages/ResultPage.tsx`(解雇スタンプ演出)
-- テスト: `tests/unit/recording.test.mjs`, `tests/unit/sandbox-runtime.test.mjs`, `tests/e2e/helpers.ts`
+- `packages/shared/src/events.ts` の `slack_compose` 読み取り互換: 過去に記録されたリプレイを再生するためだけに残す。新規イベントは `chat_compose` のみを記録する
+- エンディングの保存用 ID(`clear-shift` / `overtime` / `false-resolve` / `early-exit` / `aborted`)は既存リプレイとの互換のため据え置き。表示名のみ「静かな朝 / にぎやかな朝」系に統一
 
 ## 成功条件
 
