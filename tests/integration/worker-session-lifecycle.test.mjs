@@ -201,6 +201,64 @@ test('session delete tears down the Durable Object and purges replay storage', a
   );
 });
 
+test('ws/terminal route forwards a real write-access decision and ignores a client-spoofed header', async () => {
+  const {app, env, state} = createSessionHarness();
+  const created = await json(
+    await app.fetch(createSessionRequest({difficulty: 'beginner'}), env)
+  );
+  const sessionId = created.data.sessionId;
+  const writeToken = created.data.writeToken;
+
+  const withWriteToken = await app.fetch(
+    new Request(
+      `http://test/api/sessions/${sessionId}/ws/terminal?accessToken=${encodeURIComponent(writeToken)}`,
+      {headers: {'x-incident-write-access': 'spoofed'}}
+    ),
+    env
+  );
+  assert.equal(withWriteToken.status, 200);
+  const terminalCallWithWrite = state.doCalls.find((call) =>
+    call.path.endsWith('/terminal')
+  );
+  assert.ok(terminalCallWithWrite, 'terminal proxied to Durable Object');
+  assert.equal(terminalCallWithWrite.headers['x-incident-write-access'], '1');
+
+  state.doCalls.length = 0;
+  const issued = await json(
+    await app.fetch(
+      new Request(`http://test/api/sessions/${sessionId}/read-tokens`, {
+        method: 'POST',
+        headers: {authorization: `Bearer ${writeToken}`},
+      }),
+      env
+    )
+  );
+  const withReadToken = await app.fetch(
+    new Request(
+      `http://test/api/sessions/${sessionId}/ws/terminal?accessToken=${encodeURIComponent(issued.data.readToken)}`,
+      {headers: {'x-incident-write-access': '1'}}
+    ),
+    env
+  );
+  assert.equal(withReadToken.status, 200);
+  const terminalCallWithRead = state.doCalls.find((call) =>
+    call.path.endsWith('/terminal')
+  );
+  assert.ok(terminalCallWithRead, 'terminal proxied to Durable Object');
+  assert.equal(terminalCallWithRead.headers['x-incident-write-access'], '0');
+
+  state.doCalls.length = 0;
+  const anonymous = await app.fetch(
+    new Request(`http://test/api/sessions/${sessionId}/ws/terminal`),
+    env
+  );
+  assert.equal(anonymous.status, 401);
+  assert.equal(
+    state.doCalls.some((call) => call.path.endsWith('/terminal')),
+    false
+  );
+});
+
 test('turnstile failure blocks session create when a secret is configured', async () => {
   const {app, env} = createSessionHarness({
     envOverrides: {TURNSTILE_SECRET_KEY: 'secret'},
@@ -298,6 +356,7 @@ function fakeSessionDoNamespace(state) {
             method: request.method,
             path: url.pathname,
             body,
+            headers: Object.fromEntries(request.headers.entries()),
           });
           return new Response(JSON.stringify({ok: true, data: {}}), {
             headers: {'content-type': 'application/json'},

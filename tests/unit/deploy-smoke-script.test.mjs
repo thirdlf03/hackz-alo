@@ -75,6 +75,75 @@ test('deploy smoke checks ready, session create, replay access, and cleanup', as
   );
 });
 
+test('deploy smoke uses x-admin-secret to bypass turnstile when adminSecret is set', async () => {
+  const requests = [];
+  await runDeploySmoke({
+    baseUrl: 'https://worker.example.test',
+    adminSecret: 'smoke-admin-secret',
+    fetchImpl: async (url, init = {}) => {
+      const parsed = new URL(url);
+      requests.push({
+        method: init.method ?? 'GET',
+        pathname: parsed.pathname,
+        adminSecret: init.headers?.['x-admin-secret'],
+        authorization: init.headers?.authorization,
+        body: init.body,
+      });
+
+      if (parsed.pathname === '/api/ready') {
+        return jsonResponse(200, {ok: true, data: {status: 'ready'}});
+      }
+      if (parsed.pathname === '/api/sessions') {
+        return jsonResponse(200, {
+          ok: true,
+          data: {
+            sessionId: 'sess_smoke',
+            replayId: 'repl_smoke',
+            writeToken: 'write-token',
+          },
+        });
+      }
+      if (parsed.pathname === '/api/replays/repl_smoke') {
+        if (init.headers?.authorization === 'Bearer write-token') {
+          return jsonResponse(200, {ok: true, data: {id: 'repl_smoke'}});
+        }
+        return jsonResponse(401, {
+          ok: false,
+          error: {code: 'unauthorized', message: 'token required'},
+        });
+      }
+      if (parsed.pathname === '/api/sessions/sess_smoke') {
+        return jsonResponse(200, {ok: true, data: {deleted: true}});
+      }
+      return jsonResponse(404, {
+        ok: false,
+        error: {code: 'not_found', message: 'not found'},
+      });
+    },
+    log: () => undefined,
+    warn: () => undefined,
+  });
+
+  const sessionCreate = requests.find(
+    (request) => request.pathname === '/api/sessions'
+  );
+  assert.equal(sessionCreate.adminSecret, 'smoke-admin-secret');
+});
+
+test('deploy smoke requires a turnstile token or admin secret in full mode', async () => {
+  await assert.rejects(
+    () =>
+      runDeploySmoke({
+        baseUrl: 'https://worker.example.test',
+        fetchImpl: async () =>
+          jsonResponse(200, {ok: true, data: {status: 'ready'}}),
+        log: () => undefined,
+        warn: () => undefined,
+      }),
+    /INCIDENT_SMOKE_TURNSTILE_TOKEN or INCIDENT_SMOKE_ADMIN_SECRET is required/
+  );
+});
+
 function jsonResponse(status, body) {
   return new Response(JSON.stringify(body), {
     status,

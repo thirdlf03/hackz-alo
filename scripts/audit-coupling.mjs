@@ -26,6 +26,16 @@ const packageEntrypoints = new Map([
 
 const thresholds = new Map([
   ['apps/web/src/app/App.tsx', {loc: 1100}],
+  ['apps/web/src/app/screens/TopBar.tsx', {loc: 110}],
+  ['apps/web/src/app/screens/SelectScreen.tsx', {loc: 110}],
+  ['apps/web/src/app/screens/ScenarioListScreen.tsx', {loc: 80}],
+  ['apps/web/src/app/screens/BriefingScreen.tsx', {loc: 130}],
+  ['apps/web/src/app/screens/LobbyScreen.tsx', {loc: 180}],
+  ['apps/web/src/app/screens/PlayScreen.tsx', {loc: 250}],
+  ['apps/web/src/app/screens/playPanels.tsx', {loc: 450}],
+  ['apps/web/src/app/screens/HotwashScreen.tsx', {loc: 130}],
+  ['apps/web/src/app/screens/ResultScreen.tsx', {loc: 35}],
+  ['apps/web/src/app/screens/ReplayScreen.tsx', {loc: 20}],
   ['apps/worker/src/durable/SessionDurableObject.ts', {loc: 750}],
   ['apps/worker/src/index.ts', {loc: 260}],
   ['apps/worker/src/sandbox/runtime.ts', {loc: 420}],

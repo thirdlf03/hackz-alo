@@ -25,7 +25,7 @@ import type {
   SessionClockResponse,
   SessionSnapshotResponse,
 } from './appRuntime.js';
-import type {FinishMode, Screen, ScenarioSummary} from './AppScreens.js';
+import type {FinishMode, Screen, ScenarioSummary} from './appTypes.js';
 import {
   computeLiveGameTimeMs,
   describeSessionActionError,

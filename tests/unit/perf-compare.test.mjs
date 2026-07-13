@@ -22,6 +22,20 @@ test('comparePerfReports flags sandbox span p95 regressions', () => {
   assert.match(result.findings.join('\n'), /sandbox\.prepare/);
 });
 
+test('comparePerfReports treats a missing baseline as ok in non-strict mode', () => {
+  const current = reportWithSpan(INCIDENT_SPAN_NAMES.sandboxPrepare, 2000);
+  const result = comparePerfReports(current, undefined);
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.findings, ['baseline not provided']);
+});
+
+test('comparePerfReports fails when strict and baseline is missing', () => {
+  const current = reportWithSpan(INCIDENT_SPAN_NAMES.sandboxPrepare, 2000);
+  const result = comparePerfReports(current, undefined, {strict: true});
+  assert.equal(result.ok, false);
+  assert.deepEqual(result.findings, ['baseline not provided']);
+});
+
 function reportWithSpan(name, p95Ms) {
   return {
     generatedAt: new Date().toISOString(),

@@ -2,10 +2,44 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {tsImport} from 'tsx/esm/api';
 
-const {verifyTurnstileToken} = await tsImport(
+const {shouldBypassTurnstileForSmoke, verifyTurnstileToken} = await tsImport(
   '../../apps/worker/src/http/turnstile.ts',
   import.meta.url
 );
+
+test('shouldBypassTurnstileForSmoke allows the correct admin secret', () => {
+  const allowed = shouldBypassTurnstileForSmoke(
+    {ADMIN_SECRET: 'top-secret'},
+    'top-secret'
+  );
+  assert.equal(allowed, true);
+});
+
+test('shouldBypassTurnstileForSmoke rejects a wrong secret', () => {
+  const allowed = shouldBypassTurnstileForSmoke(
+    {ADMIN_SECRET: 'top-secret'},
+    'wrong-secret'
+  );
+  assert.equal(allowed, false);
+});
+
+test('shouldBypassTurnstileForSmoke rejects when ADMIN_SECRET is unset', () => {
+  const allowed = shouldBypassTurnstileForSmoke({}, 'anything');
+  assert.equal(allowed, false);
+});
+
+test('shouldBypassTurnstileForSmoke rejects when ADMIN_SECRET is empty', () => {
+  const allowed = shouldBypassTurnstileForSmoke({ADMIN_SECRET: ''}, 'anything');
+  assert.equal(allowed, false);
+});
+
+test('shouldBypassTurnstileForSmoke rejects a missing provided secret', () => {
+  const allowed = shouldBypassTurnstileForSmoke(
+    {ADMIN_SECRET: 'top-secret'},
+    undefined
+  );
+  assert.equal(allowed, false);
+});
 
 test('verifyTurnstileToken skips when secret is unset', async () => {
   const accepted = await verifyTurnstileToken({}, undefined, '1.2.3.4');

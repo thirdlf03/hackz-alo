@@ -27,6 +27,45 @@ test('applySecurityHeaders sets production security headers', () => {
     headers.get('Permissions-Policy'),
     securityHeaderValues.permissionsPolicy
   );
+  assert.equal(headers.get('Content-Security-Policy'), null);
+});
+
+test('applySecurityHeaders adds CSP only when isHtml is true', () => {
+  const headers = new Headers();
+  applySecurityHeaders(headers, true);
+  assert.equal(
+    headers.get('Content-Security-Policy'),
+    securityHeaderValues.contentSecurityPolicy
+  );
+});
+
+test('withSecurityHeaders adds CSP to HTML responses and keeps other headers', () => {
+  const source = new Response('<!doctype html><html></html>', {
+    status: 200,
+    headers: {'content-type': 'text/html; charset=utf-8'},
+  });
+  const secured = withSecurityHeaders(source);
+  assert.equal(
+    secured.headers.get('Content-Security-Policy'),
+    securityHeaderValues.contentSecurityPolicy
+  );
+  assert.equal(
+    secured.headers.get('X-Content-Type-Options'),
+    securityHeaderValues.xContentTypeOptions
+  );
+});
+
+test('withSecurityHeaders omits CSP for non-HTML responses', () => {
+  const source = new Response('{"ok":true}', {
+    status: 200,
+    headers: {'content-type': 'application/json'},
+  });
+  const secured = withSecurityHeaders(source);
+  assert.equal(secured.headers.get('Content-Security-Policy'), null);
+  assert.equal(
+    secured.headers.get('X-Content-Type-Options'),
+    securityHeaderValues.xContentTypeOptions
+  );
 });
 
 test('withSecurityHeaders passes through WebSocket upgrade responses', () => {

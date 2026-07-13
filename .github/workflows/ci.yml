@@ -21,7 +21,7 @@ jobs:
       - run: pnpm run fmt:check
       - run: pnpm run lint
       - run: pnpm run typecheck
-      - run: pnpm test
+      - run: pnpm run test:coverage:check
       - run: pnpm run test:integration
       - run: pnpm run audit:schema-sync
       - run: pnpm run audit:route-body
@@ -54,7 +54,7 @@ jobs:
             test-results/
           retention-days: 7
 
-  integration:
+  vrt:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -64,14 +64,21 @@ jobs:
           node-version: '24'
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm run test:integration
+      - run: pnpm run build:scenarios
+      - run: pnpm run build
+      - run: pnpm run db:migrate:local
+      - run: docker info
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm run test:vrt
+        env:
+          CI: 'true'
       - uses: actions/upload-artifact@v7
         if: failure()
         with:
-          name: playwright-report
+          name: vrt-report
           path: |
-            playwright-report/
             test-results/
+            tests/vrt/screens.spec.ts-snapshots/
           retention-days: 7
 
   perf:

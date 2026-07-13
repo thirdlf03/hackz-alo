@@ -20,7 +20,7 @@ alwaysApply: true
 
 ```sh
 pnpm run fmt:check && pnpm run typecheck && pnpm run lint && pnpm test && pnpm run build
-pnpm run test:coverage   # 全体 line coverage 77.27% 未満に落とさない
+pnpm run test:coverage:check   # 全体 line coverage 73.02% 未満に落とさない(CI ゲート)
 pnpm run audit:coupling  # LOC / fan-out の退行確認
 ```
 

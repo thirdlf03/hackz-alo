@@ -5,8 +5,14 @@ import type {WorkerApp, WorkerContext} from '../http/context.js';
 import {readRouteJsonObject} from '../http/routeBody.js';
 import {enforceRateLimit, shouldEnforceRateLimit} from '../http/rateLimit.js';
 import {logStructured} from '../http/requestLog.js';
-import {requireSessionReadAccess} from '../http/sessionReadPolicy.js';
-import {verifyTurnstileToken} from '../http/turnstile.js';
+import {
+  hasSessionWriteAccess,
+  requireSessionReadAccess,
+} from '../http/sessionReadPolicy.js';
+import {
+  shouldBypassTurnstileForSmoke,
+  verifyTurnstileToken,
+} from '../http/turnstile.js';
 import {requireSessionWriteAccess} from '../http/writeAuthMiddleware.js';
 import {err, messageFrom, ok} from '../http/response.js';
 import {createWriteToken, hashWriteToken} from '../pure/writeAuth.js';
@@ -17,7 +23,10 @@ import {generateIceServers} from '../effect/cloudflareTurn.js';
 import {sendPagerNotification} from '../effect/pagerPush.js';
 import {buildPagerNotificationPayload} from '../pure/pagerNotification.js';
 import {upsertPagerSubscription} from '../repositories/pagerSubscriptionRepository.js';
-import {createSessionProxyRequest} from '../http/sessionProxyRequest.js';
+import {
+  createSessionProxyRequest,
+  INTERNAL_WRITE_ACCESS_HEADER,
+} from '../http/sessionProxyRequest.js';
 
 const difficulties = new Set<Difficulty>([
   'beginner',
@@ -77,7 +86,14 @@ export function registerSessionRoutes(app: WorkerApp) {
       turnstileToken?: string;
       participantId?: string;
     };
-    if (!(await verifyTurnstileToken(c.env, body.turnstileToken, clientIp))) {
+    const bypassTurnstile = shouldBypassTurnstileForSmoke(
+      c.env,
+      c.req.header('x-admin-secret')
+    );
+    if (
+      !bypassTurnstile &&
+      !(await verifyTurnstileToken(c.env, body.turnstileToken, clientIp))
+    ) {
       return c.json(err('forbidden', 'turnstile verification failed'), 403);
     }
     const scenario = resolveRequestedScenario(body);
@@ -146,6 +162,13 @@ export function registerSessionRoutes(app: WorkerApp) {
       scenarioId: scenario.id,
     });
 
+    if (bypassTurnstile) {
+      logStructured('smoke_turnstile_bypass', {
+        sessionId,
+        replayId,
+        scenarioId: scenario.id,
+      });
+    }
     logStructured('session_created', {
       sessionId,
       replayId,
@@ -318,7 +341,7 @@ export function registerSessionRoutes(app: WorkerApp) {
     return proxySession(c, 'file', body);
   });
   app.get('/api/sessions/:sessionId/ws/terminal', async (c) =>
-    proxySessionRead(c, 'terminal')
+    proxySessionTerminal(c)
   );
   app.post('/api/sessions/:sessionId/terminal/interrupt', async (c) => {
     const denied = await requireSessionWriteAccess(c, c.req.param('sessionId'));
@@ -507,7 +530,35 @@ async function proxySessionRead(c: WorkerContext, action: string) {
   return proxySession(c, action);
 }
 
-async function proxySession(c: WorkerContext, action: string, body?: unknown) {
+/**
+ * The ws/terminal route additionally computes whether the connecting
+ * request carries a *valid write token* and forwards that as an internal
+ * x-incident-write-access header the DO trusts (createSessionProxyRequest
+ * always strips any client-supplied copy of this header first — see
+ * sessionProxyRequest.ts — so it cannot be spoofed). SessionDurableObject
+ * .terminal() combines it with the canOperateSandbox role check to decide
+ * whether to pass the sandbox PTY WebSocket through untouched or wrap it
+ * in a read-only relay that drops client -> sandbox input frames.
+ */
+async function proxySessionTerminal(c: WorkerContext) {
+  const sessionId = c.req.param('sessionId');
+  if (!sessionId) {
+    return c.json(err('bad_request', 'sessionId is required'), 400);
+  }
+  const denied = await requireSessionReadAccess(c, sessionId);
+  if (denied) return denied;
+  const hasWriteAccess = await hasSessionWriteAccess(c, sessionId);
+  return proxySession(c, 'terminal', undefined, {
+    [INTERNAL_WRITE_ACCESS_HEADER]: hasWriteAccess ? '1' : '0',
+  });
+}
+
+async function proxySession(
+  c: WorkerContext,
+  action: string,
+  body?: unknown,
+  extraHeaders?: Record<string, string>
+) {
   const sessionId = c.req.param('sessionId');
   if (!sessionId) {
     return c.json(err('bad_request', 'sessionId is required'), 400);
@@ -520,7 +571,12 @@ async function proxySession(c: WorkerContext, action: string, body?: unknown) {
   const stub = getSessionDoStub(c.env.SESSION_DO, sessionId);
   const target = new URL(c.req.url);
   target.pathname = `/internal/sessions/${sessionId}/${action}`;
-  const request = createSessionProxyRequest(c.req.raw, target, body);
+  const request = createSessionProxyRequest(
+    c.req.raw,
+    target,
+    body,
+    extraHeaders
+  );
   return stub.fetch(request);
 }
 

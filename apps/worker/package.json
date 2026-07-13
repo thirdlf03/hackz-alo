@@ -11,11 +11,11 @@
     "db:migrate:remote": "wrangler d1 migrations apply incident-training --remote"
   },
   "dependencies": {
-    "@block65/webcrypto-web-push": "latest",
-    "@cloudflare/sandbox": "latest",
+    "@block65/webcrypto-web-push": "^1.0.2",
+    "@cloudflare/sandbox": "^0.12.3",
     "@incident/observability": "workspace:*",
     "@incident/scenarios": "workspace:*",
     "@incident/shared": "workspace:*",
-    "hono": "latest"
+    "hono": "^4.12.29"
   }
 }

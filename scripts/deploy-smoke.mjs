@@ -32,13 +32,18 @@ export async function runDeploySmoke(options) {
 
   async function createSession() {
     assert(
-      options.turnstileToken,
-      'INCIDENT_SMOKE_TURNSTILE_TOKEN is required'
+      options.turnstileToken || options.adminSecret,
+      'INCIDENT_SMOKE_TURNSTILE_TOKEN or INCIDENT_SMOKE_ADMIN_SECRET is required'
     );
     log('[deploy-smoke] POST /api/sessions');
     const {response, body} = await request('/api/sessions', {
       method: 'POST',
-      headers: {'content-type': 'application/json'},
+      headers: {
+        'content-type': 'application/json',
+        ...(options.adminSecret
+          ? {'x-admin-secret': options.adminSecret}
+          : {}),
+      },
       body: JSON.stringify({scenarioId, turnstileToken: options.turnstileToken}),
     });
     assert(
@@ -128,6 +133,7 @@ async function main() {
   await runDeploySmoke({
     baseUrl: readRequiredEnv('INCIDENT_WORKER_URL'),
     turnstileToken: process.env.INCIDENT_SMOKE_TURNSTILE_TOKEN?.trim(),
+    adminSecret: process.env.INCIDENT_SMOKE_ADMIN_SECRET?.trim(),
     timeoutMs: Number(process.env.INCIDENT_SMOKE_TIMEOUT_MS ?? 15_000),
     scenarioId: process.env.INCIDENT_SMOKE_SCENARIO_ID,
     readyOnly: args.includes('--ready-only'),

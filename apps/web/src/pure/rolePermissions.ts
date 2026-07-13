@@ -6,12 +6,17 @@ import type {ParticipantPresence} from '@incident/shared';
  * input, terminal resize, and editor file writes are limited to the
  * `ops` and `facilitator` roles. This does not gate connecting to the
  * terminal — every role attaches to see the shared output mirror; only
- * operating it (sending input/resize) is restricted, and enforcement for
- * terminal input specifically happens here on the client since the
- * server proxies the PTY WebSocket as a raw tunnel it cannot inspect.
- * Solo rescue: with at most one online participant nothing is
- * restricted. In multiplayer, an unknown or missing participantId is
- * rejected.
+ * operating it (sending input/resize) is restricted.
+ *
+ * The server now enforces the write-token half of this boundary itself
+ * (SessionDurableObject.terminal() drops client -> sandbox input frames
+ * over the WS when the connection lacks a valid write token — see
+ * terminalRelayPolicy.ts on the worker side), which is a real security
+ * boundary against read-token-only viewers. This client-side check
+ * additionally covers the ops/facilitator role split among write-token
+ * holders (which the server cannot authenticate per-participant, since
+ * participantId is self-reported), and gives instant UI feedback without
+ * waiting on a WS round trip — both defense in depth and UX.
  */
 export function canOperateSandbox(
   participants: ParticipantPresence[],
@@ -46,7 +51,9 @@ export function canContributeRecords(
  * (e.g. `gameStateRef.current?.room.participants`, populated once play
  * has started) and falling back to the participants snapshot captured
  * when the terminal was attached (used for the brief window before that
- * live source exists, e.g. mid-connect).
+ * live source exists, e.g. mid-connect). See canOperateSandbox above for
+ * how this decision relates to the server-side enforcement added in
+ * SessionDurableObject.terminal().
  */
 export function resolveTerminalCanOperate(
   liveParticipants: ParticipantPresence[] | undefined,

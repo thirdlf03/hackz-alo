@@ -17,7 +17,7 @@
 ## ローカルチェック
 
 ```sh
-pnpm test
+pnpm run test:coverage:check
 pnpm run test:integration
 pnpm run audit:schema-sync
 pnpm run fmt:check
@@ -25,12 +25,26 @@ pnpm run lint
 pnpm run typecheck
 ```
 
+`test:coverage:check` は line coverage のしきい値ゲート(`.cursor/rules/project-conventions.mdc` 参照)。
+CI の `test` ジョブは `pnpm test` の代わりにこちらを実行する。
+
 `pnpm install` で [Lefthook](https://lefthook.dev/) のフックが登録される。
 `commit-msg` は Conventional Commits を検査し(規約は [CONTRIBUTING.md](CONTRIBUTING.md))、
-`pre-push` は CI の `test` ジョブと同じゲート(`pnpm run ci:test`)を実行する。
+`pre-push` は CI の `test` ジョブと同じゲート(`pnpm run ci:test`)に加えて `pnpm run test:integration` を実行する。
 一度だけスキップするには `LEFTHOOK=0 git push`。
 perf 用 Playwright(`tests/e2e/perf.spec.ts`)はデフォルトの `test:e2e` には含まれず、
 `pnpm run perf:e2e` でのみ実行される。
+
+VRT(Visual Regression Test)は CI の `vrt` ジョブで実行される(`pnpm run test:vrt`)。
+スクリーンショット基準は Linux(CI ランナー)で撮ったものを使うため、更新するときは
+ローカルで `--update-snapshots` するのではなく、`vrt-baseline/**` ブランチを push するか
+`.github/workflows/vrt-baseline.yml` を `workflow_dispatch` で手動実行し、生成された
+artifact `vrt-snapshots` の中身を `tests/vrt/screens.spec.ts-snapshots/` に配置してコミットする。
+
+perf 回帰ゲート(`pnpm run perf:compare`)は `perf-baselines/main.json` が無いと strict モードで
+失敗する。ベースラインは CI の `perf` ジョブが生成する artifact(`perf-reports/report.json`)を
+取得し、`pnpm run perf:baseline:accept -- --report <path>` で `perf-baselines/main.json` に
+取り込んでコミットする運用にする(ローカルの計測値をそのままベースラインにはしない)。
 
 Vite / Worker の dev server を起動する前に workspace の依存をインストールする:
 
@@ -69,11 +83,12 @@ CI からのデプロイは `.github/workflows/deploy.yml`(タグ `v*` または
 
 ### GitHub Actions のシークレット(deploy ワークフロー)
 
-| シークレット           | 用途                                                                                       |
-| ---------------------- | ------------------------------------------------------------------------------------------ |
-| `CLOUDFLARE_API_TOKEN` | Wrangler デプロイ + D1 リモートマイグレーション                                            |
-| `INCIDENT_WORKER_URL`  | デプロイ後の `GET /api/ready` スモーク(カスタムドメイン: `https://incident.thirdlf03.com`) |
-| `TURNSTILE_SITE_KEY`   | web ビルド用の Turnstile サイトキー(任意)                                                  |
+| シークレット           | 用途                                                                                                                                                                                                                    |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `CLOUDFLARE_API_TOKEN` | Wrangler デプロイ + D1 リモートマイグレーション                                                                                                                                                                         |
+| `INCIDENT_WORKER_URL`  | デプロイ後の `GET /api/ready` スモーク(カスタムドメイン: `https://incident.thirdlf03.com`)                                                                                                                              |
+| `TURNSTILE_SITE_KEY`   | web ビルド用の Turnstile サイトキー(任意)                                                                                                                                                                               |
+| `ADMIN_SECRET`         | デプロイ後スモークをフル検証(セッション作成 + リプレイ認可チェック + 削除)にするため、`INCIDENT_SMOKE_ADMIN_SECRET` として deploy ワークフローに渡し、本番 Turnstile を安全にバイパスする。未設定だとスモークは失敗する |
 
 Cloudflare API トークンには **Workers Scripts Edit**、**D1 Edit**、**Containers Edit**、
 **Account Settings Read**、**Zone → Workers Routes → Edit**(`wrangler.toml` の

@@ -7,19 +7,16 @@ import type {
   ParticipantRole,
   ScenarioDefinition,
 } from '@incident/shared';
-import {
-  BriefingScreen,
-  HotwashScreen,
-  LobbyScreen,
-  PlayScreen,
-  ReplayScreen,
-  ResultScreen,
-  ScenarioListScreen,
-  SelectScreen,
-  TopBar,
-  type ScenarioSummary,
-  type Screen,
-} from './AppScreens.js';
+import {type ScenarioSummary, type Screen} from './appTypes.js';
+import {TopBar} from './screens/TopBar.js';
+import {SelectScreen} from './screens/SelectScreen.js';
+import {ScenarioListScreen} from './screens/ScenarioListScreen.js';
+import {BriefingScreen} from './screens/BriefingScreen.js';
+import {LobbyScreen} from './screens/LobbyScreen.js';
+import {PlayScreen} from './screens/PlayScreen.js';
+import {HotwashScreen} from './screens/HotwashScreen.js';
+import {ResultScreen} from './screens/ResultScreen.js';
+import {ReplayScreen} from './screens/ReplayScreen.js';
 import {
   api,
   useCanvasRecording,
