@@ -47,6 +47,20 @@ export interface ProcessStopTrigger {
   params: {processId: string};
 }
 
+export interface ProcessHangTrigger {
+  id: string;
+  atMs: number;
+  type: 'process_hang';
+  params: {processId: string};
+}
+
+export interface PortConflictTrigger {
+  id: string;
+  atMs: number;
+  type: 'port_conflict';
+  params: {port?: number; processId?: string};
+}
+
 export interface DiskFullTrigger {
   id: string;
   atMs: number;
@@ -72,28 +86,21 @@ export interface BadDeployTrigger {
   id: string;
   atMs: number;
   type: 'bad_deploy';
-  params: {configPath: string};
+  params: {configPath?: string};
 }
 
 export interface DbPoolExhaustTrigger {
   id: string;
   atMs: number;
   type: 'db_pool_exhaust';
-  params: {maxConnections: number};
-}
-
-export interface MemoryLeakTrigger {
-  id: string;
-  atMs: number;
-  type: 'memory_leak';
-  params: {targetPercent: number};
+  params: {connections?: number; maxConnections?: number};
 }
 
 export interface DnsMisconfigTrigger {
   id: string;
   atMs: number;
   type: 'dns_misconfig';
-  params: {hostsPath: string};
+  params: {hostsPath?: string};
 }
 
 export interface MonitorBlindTrigger {
@@ -121,14 +128,14 @@ export interface CableJumpropeTrigger {
   id: string;
   atMs: number;
   type: 'cable_jumprope';
-  params: {hostsPath?: string};
+  params: {processId?: string};
 }
 
-export interface KeyboardSpillTrigger {
+export interface RunawayLoadgenTrigger {
   id: string;
   atMs: number;
-  type: 'keyboard_spill';
-  params: {noise?: string};
+  type: 'runaway_loadgen';
+  params: {targetUrl?: string};
 }
 
 export interface AlertSpamTrigger {
@@ -147,18 +154,19 @@ export interface RunbookGaslightTrigger {
 
 export type ScenarioTrigger =
   | ProcessStopTrigger
+  | ProcessHangTrigger
+  | PortConflictTrigger
   | DiskFullTrigger
   | KodamaBatchFailureTrigger
   | QueueBacklogTrigger
   | BadDeployTrigger
   | DbPoolExhaustTrigger
-  | MemoryLeakTrigger
   | DnsMisconfigTrigger
   | MonitorBlindTrigger
   | CompositeRestartLoopTrigger
   | JanitorPowerPullTrigger
   | CableJumpropeTrigger
-  | KeyboardSpillTrigger
+  | RunawayLoadgenTrigger
   | AlertSpamTrigger
   | RunbookGaslightTrigger;
 
@@ -331,7 +339,7 @@ export type SuccessCondition =
   | {type: 'http_status'; url: string; status: number}
   | {type: 'disk_usage_below'; path: string; valuePercent: number}
   | {type: 'process_running'; processId: string}
-  | {type: 'marker_absent'; path: string}
+  | {type: 'process_absent'; processId: string}
   | {type: 'log_absent'; path: string; pattern: string}
   | {type: 'kodama_batch_ok'; jobId: string};
 
@@ -340,6 +348,8 @@ export interface RunbookDefinition {
   title: string;
   body: string;
   availableAtMs?: number;
+  /** Sandbox path whose live content should override `body` once fetched. */
+  file?: string;
 }
 
 export interface ChatMessageDefinition {
@@ -383,6 +393,8 @@ export interface ScenarioDefinition {
   version: number;
   title: string;
   difficulty: Difficulty;
+  /** 難易度区分内の表示順・細かい難易度を表す整数(小さいほど易しい)。 */
+  difficultyScore: number;
   timeLimitMinutes: number;
   service: {
     name: string;
@@ -406,14 +418,18 @@ export interface ScenarioDefinition {
 
 export interface MetricsSnapshot {
   at: number;
-  cpu: number;
-  memory: number;
+  /** null when the monitoring source is blind (agent dead or data stale). */
+  cpu: number | null;
+  /** null when the monitoring source is blind (agent dead or data stale). */
+  memory: number | null;
   disk: number;
   http5xxRate: number;
   latencyP95Ms: number;
   rps: number;
   dbConnections: number;
   queueDepth: number;
+  /** Live sandbox file content for file-backed runbooks, keyed by runbook id. */
+  runbookFiles?: Record<string, string>;
 }
 
 export type MetricsSource = 'loading' | 'live' | 'offline';
@@ -464,6 +480,8 @@ export interface GameRenderState {
       activeRunbook?: RunbookDefinition | undefined;
       activeRunbookIndex: number;
       chatMessages: ChatMessageDefinition[];
+      /** Live sandbox file content for file-backed runbooks, keyed by runbook id. */
+      runbookFileContents?: Record<string, string>;
     };
   };
   navigation: GameNavigationState;

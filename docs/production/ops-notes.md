@@ -85,6 +85,41 @@ pnpm run setup:ops -- --admin --access-guide
 # 必要なら --notify（メール）または Notifications UI で Webhook
 ```
 
+## 実験的 Web API 依存の棚卸し
+
+本サービスは実験的・新しめの Web API に複数依存している。ブラウザ側の仕様変更や
+origin trial 終了で黙って壊れるのを防ぐため、**月次**で下表の各 API のステータス
+（Chrome Platform Status / origin trial 期限）を確認し、確認日を下の記録に追記する。
+
+| API                                | 用途                                | 非対応時のフォールバック                                               | 実装                                                        |
+| ---------------------------------- | ----------------------------------- | ---------------------------------------------------------------------- | ----------------------------------------------------------- |
+| Prompt API (`LanguageModel`)       | AI Assist / AI NPC / ポストモーテム | `unsupported` 判定で該当 UI 非表示                                     | `apps/web/src/effect/promptAssistant.ts`, `npcPrompt.ts`    |
+| WebMCP (`navigator.modelContext`)  | ゲーム内操作のツール公開            | 未対応ならツール登録をスキップ                                         | `apps/web/src/effect/webmcp.ts`                             |
+| WebCodecs                          | リプレイの録画・再生                | 録画不可時は録画なしでプレイ継続                                       | `apps/web/src/replay/`, `apps/web/src/pure/webmDemux.ts`    |
+| WebRTC + Cloudflare TURN           | ウォールーム音声                    | TURN 鍵未設定なら STUN のみで接続                                      | `apps/web/src/effect/voiceChat.ts`, worker `cloudflareTurn` |
+| Web Push (VAPID)                   | ページャー通知                      | 鍵未設定なら `publicKey: null` を返し UI 非表示                        | `apps/worker/src/routes/pushRoutes.ts`                      |
+| Document Picture-in-Picture        | 監視モニターの分離表示              | 未対応なら通常表示のまま                                               | `apps/web/src/effect/pipMonitor.ts`                         |
+| Web Speech（コンテキストバイアス） | 音声インシデントログ                | `unsupported` でテキスト入力のみ。phrases 非対応はバイアスなしで再試行 | `apps/web/src/effect/speechLog.ts`                          |
+| HTML-in-Canvas                     | canvas 内チャット入力               | 未対応なら従来の canvas 描画入力                                       | `docs/dev/html-in-canvas-design.md` 参照                    |
+
+新しく実験的 API を使う機能を追加したら、フォールバックを実装した上でこの表に行を足す
+（手順は [CONTRIBUTING.md](../../CONTRIBUTING.md)）。
+
+### 確認記録
+
+| 確認日     | 特記事項                                        |
+| ---------- | ----------------------------------------------- |
+| 2026-07-13 | 初回作成。全 API のフォールバック実装を確認済み |
+
+## Runbook 実地検証の記録
+
+`runbook.md` / `incident-response.md` は四半期に一度、実際に手順どおり実行して
+食い違いを潰し、結果をここに残す（「Runbook が古い」はゲームの中だけにする）。
+
+| 検証日     | 対象ドキュメント | 結果・修正した食い違い |
+| ---------- | ---------------- | ---------------------- |
+| （未実施） | -                | -                      |
+
 ## 本番 URL
 
 - 正式: `https://incident.thirdlf03.com`

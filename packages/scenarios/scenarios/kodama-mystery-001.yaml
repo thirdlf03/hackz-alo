@@ -2,6 +2,7 @@ id: kodama-mystery-001
 version: 1
 title: '????'
 difficulty: advanced
+difficultyScore: 330
 timeLimitMinutes: 15
 service:
   name: やまびこ batch

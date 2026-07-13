@@ -7,6 +7,7 @@ import type {CanvasRenderSurface} from './canvasRenderSurface.js';
 import {
   clamp,
   drawSparkline,
+  formatMetricValue,
   roundRect,
   summarizeMetricsHealth,
   truncateToWidth,
@@ -118,11 +119,11 @@ function drawMetricCard(
   height: number,
   card: {
     label: string;
-    value: number;
+    value: number | null;
     suffix: string;
     max: number;
     color: string;
-    historyValues: number[];
+    historyValues: Array<number | null>;
   }
 ) {
   ctx.fillStyle = palette.bgPanel;
@@ -138,15 +139,19 @@ function drawMetricCard(
 
   ctx.fillStyle = palette.textPrimary;
   ctx.font = monoFont(22, 'bold');
-  ctx.fillText(`${String(card.value)}${card.suffix}`, x + 12, y + 44);
+  ctx.fillText(formatMetricValue(card.value, card.suffix), x + 12, y + 44);
 
+  const numericHistory = card.historyValues.filter(
+    (value): value is number => value !== null
+  );
+  const fallback = card.value !== null ? [card.value] : [];
   drawSparkline(
     ctx,
     x + 12,
     y + height - 31,
     width - 24,
     22,
-    card.historyValues.length > 0 ? card.historyValues : [card.value],
+    numericHistory.length > 0 ? numericHistory : fallback,
     card.color,
     card.max
   );

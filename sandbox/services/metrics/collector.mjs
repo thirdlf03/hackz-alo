@@ -1,11 +1,13 @@
 import {execFile} from 'node:child_process';
-import {appendFile, mkdir, readFile, writeFile} from 'node:fs/promises';
+import {appendFile, mkdir, readFile, readdir, stat, writeFile} from 'node:fs/promises';
 import {existsSync} from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {promisify} from 'node:util';
+import {readApiConfig} from '../yamabiko-api/config.mjs';
 
 const execFileAsync = promisify(execFile);
+const PROBE_TIMEOUT_MS = 1500;
 
 const DEFAULT_TRAFFIC_WINDOW_MS = 60_000;
 
@@ -95,7 +97,9 @@ export async function probeUpstreamTraffic(
   for (const pathname of ['/health', '/orders']) {
     const startedAt = performance.now();
     try {
-      const response = await fetch(`${baseUrl}${pathname}`);
+      const response = await fetch(`${baseUrl}${pathname}`, {
+        signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
+      });
       await appendTrafficSample(
         workspace,
         response.status,
@@ -145,19 +149,22 @@ export class RequestMetricsTracker {
   }
 }
 
-export async function readSystemMetrics(workspace = '/workspace') {
-  const [cpu, memory, disk, overrides] = await Promise.all([
-    readCpuPercent(),
-    readMemoryPercent(workspace),
-    readDiskPercent(workspace),
-    readMonitorOverrides(workspace),
-  ]);
+const AGENT_STALE_AFTER_MS = 10_000;
 
-  return {
-    cpu: overrides.cpu ?? cpu,
-    memory: overrides.memory ?? memory,
-    disk,
-  };
+export async function readSystemMetrics(workspace = '/workspace') {
+  const monitoring = await readMonitoringConfig(workspace);
+  const disk = await readDiskPercent(workspace);
+
+  if (monitoring.source === 'agent') {
+    const agentMetrics = await readAgentMetrics(workspace);
+    return {cpu: agentMetrics.cpu, memory: agentMetrics.memory, disk};
+  }
+
+  const [cpu, memory] = await Promise.all([
+    readCpuPercent(),
+    readMemoryPercent(),
+  ]);
+  return {cpu, memory, disk};
 }
 
 export async function readServiceMetrics(workspace = '/workspace') {
@@ -169,7 +176,7 @@ export async function readServiceMetrics(workspace = '/workspace') {
   return {dbConnections, queueDepth};
 }
 
-async function readCpuPercent() {
+export async function readCpuPercent() {
   const cgroup = await readCgroupCpuPercent();
   if (cgroup !== undefined) return cgroup;
 
@@ -220,17 +227,7 @@ async function readCpuQuotaRatio() {
   }
 }
 
-async function readMemoryPercent(workspace) {
-  const leakPath = path.join(workspace, 'run', 'memory.leak');
-  if (existsSync(leakPath)) {
-    try {
-      const value = Number((await readFile(leakPath, 'utf8')).trim());
-      if (Number.isFinite(value)) return Math.min(100, Math.max(0, value));
-    } catch {
-      // fall through
-    }
-  }
-
+export async function readMemoryPercent() {
   try {
     const [currentRaw, maxRaw] = await Promise.all([
       readFile('/sys/fs/cgroup/memory.current', 'utf8'),
@@ -274,37 +271,57 @@ async function readMemoryPercent(workspace) {
   return 0;
 }
 
+/**
+ * Total bytes under <workspace>/logs measured against the app's log quota.
+ * The quota models a bounded log volume, so `du`-style investigation finds
+ * the real culprit file whatever its name.
+ */
+export async function readLogVolume(workspace, quotaBytes) {
+  let quota = quotaBytes;
+  if (!Number.isFinite(quota) || quota === undefined) {
+    const configResult = await readApiConfig(workspace);
+    quota = configResult.ok
+      ? configResult.config.logQuotaBytes
+      : 512 * 1024 * 1024;
+  }
+
+  let bytes = 0;
+  try {
+    const logDir = path.join(workspace, 'logs');
+    for (const entry of await readdir(logDir)) {
+      try {
+        const info = await stat(path.join(logDir, entry));
+        if (info.isFile()) bytes += info.size;
+      } catch {
+        // file disappeared mid-scan
+      }
+    }
+  } catch {
+    // no logs dir yet
+  }
+
+  const percent =
+    quota > 0 ? Math.min(100, Math.round((bytes / quota) * 100)) : 0;
+  return {bytes, quotaBytes: quota, percent};
+}
+
 async function readDiskPercent(workspace) {
+  let dfPercent = 0;
   try {
     const {stdout} = await execFileAsync('df', ['-P', workspace]);
     const line = stdout.trim().split('\n')[1];
     const usePercent = Number(line?.split(/\s+/)[4]?.replace('%', '') ?? NaN);
     if (Number.isFinite(usePercent))
-      {return Math.min(100, Math.max(0, usePercent));}
+      {dfPercent = Math.min(100, Math.max(0, usePercent));}
   } catch {
     // fall through
   }
 
-  return 0;
+  const logVolume = await readLogVolume(workspace);
+  return Math.max(dfPercent, logVolume.percent);
 }
 
 async function readDbConnections(workspace) {
-  if (existsSync(path.join(workspace, 'run', 'db.pool.exhausted'))) {
-    try {
-      const max = Number(
-        (
-          await readFile(
-            path.join(workspace, 'run', 'db.pool.exhausted'),
-            'utf8'
-          )
-        ).trim()
-      );
-      if (Number.isFinite(max)) return max;
-    } catch {
-      return 40;
-    }
-  }
-
   const statsPath = path.join(workspace, 'run', 'fake-db-stats.json');
   if (!existsSync(statsPath)) return 0;
   try {
@@ -328,19 +345,38 @@ async function readQueueDepth(workspace) {
   }
 }
 
-async function readMonitorOverrides(workspace) {
-  const blindPath = path.join(workspace, 'run', 'monitor.blind.json');
-  if (!existsSync(blindPath)) return {};
+/**
+ * /workspace/etc/monitoring.json selects the metrics source.
+ * `{"source":"direct"}` (default, including when the file is absent) reads
+ * CPU/memory straight from the sandbox. `{"source":"agent"}` reads them from
+ * the monitor-agent's /workspace/run/metrics/agent.json instead, so killing
+ * the agent makes monitoring go blind for real (no live data, not a lie).
+ */
+async function readMonitoringConfig(workspace) {
+  const configPath = path.join(workspace, 'etc', 'monitoring.json');
+  if (!existsSync(configPath)) return {source: 'direct'};
   try {
-    const payload = JSON.parse(await readFile(blindPath, 'utf8'));
-    const blind = Array.isArray(payload.blindMetrics)
-      ? payload.blindMetrics
-      : [];
-    const overrides = {};
-    if (blind.includes('cpu')) overrides.cpu = 0;
-    if (blind.includes('memory')) overrides.memory = 0;
-    return overrides;
+    const payload = JSON.parse(await readFile(configPath, 'utf8'));
+    return {source: payload.source === 'agent' ? 'agent' : 'direct'};
   } catch {
-    return {};
+    return {source: 'direct'};
+  }
+}
+
+async function readAgentMetrics(workspace) {
+  const agentPath = path.join(workspace, 'run', 'metrics', 'agent.json');
+  if (!existsSync(agentPath)) return {cpu: null, memory: null};
+  try {
+    const payload = JSON.parse(await readFile(agentPath, 'utf8'));
+    const at = Number(payload.at);
+    if (!Number.isFinite(at) || Date.now() - at > AGENT_STALE_AFTER_MS) {
+      return {cpu: null, memory: null};
+    }
+    return {
+      cpu: Number.isFinite(payload.cpu) ? payload.cpu : null,
+      memory: Number.isFinite(payload.memory) ? payload.memory : null,
+    };
+  } catch {
+    return {cpu: null, memory: null};
   }
 }

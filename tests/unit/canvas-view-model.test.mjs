@@ -11,7 +11,7 @@ const {buildCanvasViewModel} = await tsImport(
 test('buildCanvasViewModel exposes visible runbooks from scenario timeline', () => {
   const scenario = {
     ...baseScenario(),
-    id: 'demo-tutorial-001',
+    id: 'canvas-fixture-001',
     title: 'Tutorial',
     timeLimitMinutes: 30,
     runbooks: [

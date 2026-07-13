@@ -269,6 +269,7 @@ export class SessionDurableObject implements DurableObject {
     const result = await this.prepareSandbox(session, scenario);
     logStructured('session_prepared', {
       sessionId: session.sessionId,
+      scenarioId: scenario.id,
       reused: result.reused,
       durationMs: Date.now() - startedAt,
     });
@@ -491,10 +492,12 @@ export class SessionDurableObject implements DurableObject {
 
   private async metrics() {
     const session = await this.requireSession();
+    const scenario = requireScenario(session.scenarioId);
     const response = await readSessionMetrics(
       this.env,
       session,
-      this.metricsCache
+      this.metricsCache,
+      scenario
     );
     await this.touchClientActivity();
     return response;

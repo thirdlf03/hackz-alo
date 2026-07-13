@@ -1,17 +1,18 @@
 {
-  "id": "demo-tutorial-001",
+  "id": "api-hang-001",
   "version": 1,
-  "title": "デモ: 1分復旧ドリル",
-  "difficulty": "beginner",
-  "timeLimitMinutes": 1,
+  "title": "固まった API の夜",
+  "difficulty": "intermediate",
+  "difficultyScore": 210,
+  "timeLimitMinutes": 10,
   "service": {
     "name": "やまびこ API",
     "healthUrl": "http://localhost:8080/health"
   },
   "briefing": [
-    "これは約1分で遊べるデモ用シナリオです。",
-    "API が落ちたら、ログ確認 → 再起動 → health 確認の順で復旧します。",
-    "困ったら右の Runbook を見てください。"
+    "プロセスが「死んでいる」のと「固まっている」のは別の障害。",
+    "curl は返ってこない。でもプロセスは生きている。その状態を切り分ける。",
+    "ps の STAT 列が読めると強い。"
   ],
   "startup": [
     {
@@ -58,9 +59,9 @@
   },
   "triggers": [
     {
-      "id": "stop-api",
-      "atMs": 10000,
-      "type": "process_stop",
+      "id": "hang",
+      "atMs": 60000,
+      "type": "process_hang",
       "params": {
         "processId": "api"
       }
@@ -68,15 +69,15 @@
   ],
   "alerts": [
     {
-      "id": "http-500",
-      "atMs": 15000,
+      "id": "latency",
+      "atMs": 80000,
       "severity": "critical",
-      "message": "HTTP 500 rate is above threshold",
-      "source": "scenario"
+      "message": "API latency p95 is above 5s",
+      "source": "monitor"
     },
     {
-      "id": "health-check-failed",
-      "atMs": 20000,
+      "id": "health-fail",
+      "atMs": 95000,
       "severity": "critical",
       "message": "やまびこ API health check failed",
       "source": "monitor"
@@ -95,45 +96,32 @@
   ],
   "runbooks": [
     {
-      "id": "runbook.demo",
-      "title": "1分復旧 Runbook",
-      "body": "1. 左の監視で HTTP 5xx を確認する\\n2. tail -n 20 /workspace/logs/app.log で停止を確認する\\n3. yamactl restart api で再起動する\\n4. curl localhost:8080/health で 200 を確認する"
+      "id": "runbook.hang",
+      "title": "ハングの切り分け",
+      "body": "1. curl --max-time 3 localhost:8080/health で応答を見る\n   (返ってこない=タイムアウトも重要な情報)\n2. yamactl status api。プロセスが生きているのに応答しないなら「ハング」\n3. ps -o pid,stat,cmd で状態を確認する。STAT が T なら停止シグナルで固まっている\n4. 直近の app.log に前兆(GC pause など)がないか見る\n5. yamactl restart api で強制再起動し、health で復旧確認する"
     }
   ],
   "chatMessages": [
     {
-      "id": "boss-demo",
-      "atMs": 25000,
+      "id": "boss-hang",
+      "atMs": 115000,
       "from": "上司",
-      "body": "デモ用だから再起動でいいよ。おやすみ。"
+      "body": "落ちてはいないんでしょ？なら大丈夫じゃない。おやすみ。"
     }
   ],
   "navigationSteps": [
     {
-      "id": "nav-metrics",
+      "id": "nav-latency",
       "atMs": 0,
-      "hint": "左の監視画面で SERVICE HEALTH を確認する",
+      "hint": "Latency p95 が急上昇していないか見る",
       "panel": "metrics"
     },
     {
-      "id": "nav-log",
-      "atMs": 5000,
-      "hint": "app.log に停止の痕跡がないか確認する",
+      "id": "nav-curl",
+      "atMs": 65000,
+      "hint": "タイムアウト付きで応答を確認する",
       "panel": "terminal",
-      "suggestedCommand": "tail -n 20 /workspace/logs/app.log"
-    },
-    {
-      "id": "nav-status",
-      "atMs": 8000,
-      "hint": "yamactl status api でサービス状態を確認する",
-      "panel": "terminal",
-      "suggestedCommand": "yamactl status api"
-    },
-    {
-      "id": "nav-runbook",
-      "atMs": 12000,
-      "hint": "右の Runbook で復旧手順を確認する",
-      "panel": "runbook"
+      "suggestedCommand": "curl --max-time 3 localhost:8080/health"
     }
   ]
 }

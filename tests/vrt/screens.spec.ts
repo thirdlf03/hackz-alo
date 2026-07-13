@@ -2,7 +2,7 @@ import {expect, test, type Page} from '@playwright/test';
 import {
   acceptRecordingConsent,
   clickResolveButton,
-  openDemoScenarioBriefing,
+  openDefaultScenarioBriefing,
   retireFromGame,
   setSaveRecording,
   startGameFromBriefing,
@@ -14,7 +14,7 @@ import {
   waitForTerminalCommand,
 } from '../e2e/helpers.js';
 
-const DEMO_SCENARIO = /デモ: 1分復旧ドリル/;
+const DEFAULT_SCENARIO = /API が寝落ち/;
 
 async function waitForFontsReady(page: Page) {
   await page.evaluate(() => document.fonts.ready);
@@ -40,7 +40,7 @@ test('scenario-list screen', async ({page}) => {
 });
 
 test('briefing screen', async ({page}) => {
-  await openDemoScenarioBriefing(page);
+  await openDefaultScenarioBriefing(page);
   await acceptRecordingConsent(page);
   await expect(page.getByRole('button', {name: /シフト開始/})).toBeEnabled({
     timeout: 90_000,
@@ -60,11 +60,13 @@ test('lobby screen', async ({page}) => {
       response.ok(),
     {timeout: 90_000}
   );
-  await page.getByRole('button', {name: DEMO_SCENARIO}).click();
+  await page.getByRole('button', {name: DEFAULT_SCENARIO}).click();
   await sessionResponse;
-  await expect(page.getByRole('heading', {name: DEMO_SCENARIO})).toBeVisible({
-    timeout: 30_000,
-  });
+  await expect(page.getByRole('heading', {name: DEFAULT_SCENARIO})).toBeVisible(
+    {
+      timeout: 30_000,
+    }
+  );
   const continueButton = page.getByRole('button', {name: 'ブリーフィングへ'});
   await expect(continueButton).toBeEnabled({timeout: 30_000});
   await waitForFontsReady(page);
@@ -75,7 +77,7 @@ test('lobby screen', async ({page}) => {
 });
 
 test('play screen', async ({page}) => {
-  await openDemoScenarioBriefing(page);
+  await openDefaultScenarioBriefing(page);
   await acceptRecordingConsent(page);
   await setSaveRecording(page, false);
   await startGameFromBriefing(page);
@@ -94,13 +96,15 @@ test('play screen', async ({page}) => {
 });
 
 test('result screen (success)', async ({page}) => {
-  await openDemoScenarioBriefing(page);
+  await openDefaultScenarioBriefing(page);
   await acceptRecordingConsent(page);
   await setSaveRecording(page, false);
   await startGameFromBriefing(page);
-  // デモシナリオは制限時間 1 分なので等速のまま進める(8x にすると
-  // stop-api トリガー後のコマンド操作の間にタイムアウトしてしまう)。
+  // process-stop-001 は制限時間 5 分、障害トリガー(stop-api)は atMs 20000。
+  // 等速のまま進め、トリガー通過を待ってから復旧コマンドを打つ(先に打つと
+  // 復旧前に障害が発生し、未復旧のまま resolve されてタイムアウトしてしまう)。
   await waitForSandboxReady(page);
+  await page.waitForTimeout(10_000);
   await waitForTerminalCommand(page, 'yamactl restart api', {
     skipWarmup: true,
   });
@@ -121,7 +125,7 @@ test('result screen (success)', async ({page}) => {
 });
 
 test('result screen (fired)', async ({page}) => {
-  await openDemoScenarioBriefing(page);
+  await openDefaultScenarioBriefing(page);
   await acceptRecordingConsent(page);
   await setSaveRecording(page, false);
   await startGameFromBriefing(page);
@@ -141,7 +145,7 @@ test('result screen (fired)', async ({page}) => {
 });
 
 test('replay screen', async ({page, request}) => {
-  const session = await openDemoScenarioBriefing(page);
+  const session = await openDefaultScenarioBriefing(page);
   await acceptRecordingConsent(page);
   await setSaveRecording(page, true);
   await startGameFromBriefing(page);
@@ -172,7 +176,7 @@ test('replay screen', async ({page, request}) => {
 });
 
 test('hotwash screen', async ({page}) => {
-  await openDemoScenarioBriefing(page);
+  await openDefaultScenarioBriefing(page);
   await acceptRecordingConsent(page);
   await setSaveRecording(page, false);
   await startGameFromBriefing(page);

@@ -1,0 +1,122 @@
+id: alert-triage-001
+version: 1
+title: アラートを全部は信じない夜
+difficulty: beginner
+difficultyScore: 160
+timeLimitMinutes: 10
+service:
+  name: やまびこ API
+  healthUrl: http://localhost:8080/health
+briefing:
+  - 通知が次々と鳴る。撤去し忘れたノイズ発生源(通知デーモン)が原因かもしれない。
+  - ノイズの中に本物の障害が紛れていることがある。
+  - アラートの件数に飛びつく前に、SERVICE HEALTH のような実指標を起点に本物を特定する。
+startup:
+  - id: api
+    command: PORT=8080 node /workspace/services/yamabiko-api/server.mjs
+    waitForPort: 8080
+  - id: fake-db
+    command: node /workspace/services/fake-db/server.mjs
+    waitForPort: 15432
+topology:
+  nodes:
+    - id: user
+      label: ユーザー
+      kind: external
+    - id: api
+      label: やまびこ API
+      kind: service
+      processId: api
+    - id: fake-db
+      label: 疑似データベース
+      kind: datastore
+      processId: fake-db
+  edges:
+    - from: user
+      to: api
+    - from: api
+      to: fake-db
+triggers:
+  - id: spam
+    atMs: 60000
+    type: alert_spam
+    params:
+      count: 12
+  - id: real-stop
+    atMs: 120000
+    type: process_stop
+    params:
+      processId: api
+alerts:
+  - id: noise-1
+    atMs: 65000
+    severity: warning
+    message: CPU fan is dancing
+    source: monitor
+  - id: noise-2
+    atMs: 70000
+    severity: critical
+    message: Energy drink stock critically low
+    source: monitor
+  - id: noise-3
+    atMs: 75000
+    severity: warning
+    message: Janitor camera lens fogged
+    source: monitor
+  - id: noise-4
+    atMs: 80000
+    severity: warning
+    message: Fridge door open for 3 minutes
+    source: monitor
+  - id: real-down
+    atMs: 135000
+    severity: critical
+    message: やまびこ API health check failed
+    source: monitor
+successConditions:
+  - type: http_status
+    url: http://localhost:8080/health
+    status: 200
+  - type: process_running
+    processId: api
+  - type: process_absent
+    processId: alert-flood-daemon
+runbooks:
+  - id: runbook.alert-triage
+    title: アラートトリアージの基本
+    body: |-
+      1. 件数に驚かず、まず SERVICE HEALTH のような実指標を確認する
+      2. app.log を見て、ノイズを吐き続けているプロセスがいないか探す(ps aux | grep node)
+      3. ノイズ源を止める(pkill -f alert-flood-daemon.mjs)
+      4. ノイズの陰に本物の障害がないか、app.log と health を確認する
+      5. 見つかった障害を復旧する(例: yamactl restart api)
+      6. curl localhost:8080/health で復旧確認する
+chatMessages:
+  - id: pager-triage
+    atMs: 90000
+    from: Pager
+    body: 12件鳴ってます。落ち着いて。
+navigationSteps:
+  - id: nav-metrics
+    atMs: 0
+    hint: SERVICE HEALTH を先に見る。件数に惑わされない
+    panel: metrics
+  - id: nav-spam-file
+    atMs: 65000
+    hint: ノイズを吐き続けているプロセスがいないか探す
+    panel: terminal
+    suggestedCommand: ps aux | grep node
+  - id: nav-kill-spam
+    atMs: 85000
+    hint: ノイズ源を止める
+    panel: terminal
+    suggestedCommand: pkill -f alert-flood-daemon.mjs
+  - id: nav-real
+    atMs: 125000
+    hint: ノイズの陰で本物の障害が起きていないか、app.log と health を確認する
+    panel: terminal
+    suggestedCommand: tail -n 50 /workspace/logs/app.log
+  - id: nav-runbook
+    atMs: 140000
+    hint: アラートトリアージ Runbook を開く
+    panel: runbook

@@ -8,6 +8,7 @@ import {
 import {
   extractTypedCommand,
   formatDifficulty,
+  formatMetricValue,
   formatNarrativeClock,
   formatRecordingStatus,
   formatTerminalInputText,
@@ -38,6 +39,7 @@ export {
   formatTerminalInputText,
   extractTypedCommand,
   metricTone,
+  formatMetricValue,
   summarizeMetricsHealth,
   mirrorTerminalVisualLine,
   findTerminalCursorVisualLine,

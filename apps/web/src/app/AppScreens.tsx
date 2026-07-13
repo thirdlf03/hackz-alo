@@ -59,7 +59,7 @@ const difficultyOptions: Array<{
     difficulty: 'beginner',
     label: '初級',
     tone: 'green',
-    summary: '監視とログを順番に追う短い初動訓練',
+    summary: '丁寧な誘導つきで、基本動作をひとつずつ学ぶ初動訓練',
   },
   {
     difficulty: 'intermediate',

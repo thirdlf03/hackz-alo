@@ -17,7 +17,7 @@ function beep(
   oscillator.frequency.value = frequency;
   oscillator.connect(gain);
   gain.connect(ctx.destination);
-  // アラート音もリプレイに残す(tech.md R30-R32): 録画ミックスにも分岐する
+  // アラート音もリプレイに残す(docs/dev/tech/03-recording-and-replay.md R30-R32): 録画ミックスにも分岐する
   connectNodeToRecordingMix(gain);
   gain.gain.setValueAtTime(volume, startAt);
   gain.gain.exponentialRampToValueAtTime(0.001, startAt + durationSec);

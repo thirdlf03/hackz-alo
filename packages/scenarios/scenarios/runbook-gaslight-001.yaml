@@ -1,15 +1,16 @@
 id: runbook-gaslight-001
 version: 1
-title: Runbook が全部「気合いで直す」の夜
+title: Runbook が「気合いで直す」に化けた夜
 difficulty: intermediate
+difficultyScore: 290
 timeLimitMinutes: 10
 service:
   name: やまびこ API
   healthUrl: http://localhost:8080/health
 briefing:
-  - Runbook が改ざんされ、役に立たない文言だけが表示されることがある。
-  - runbook.gaslight.json を削除し、正しい手順を思い出す。
-  - サービス自体は動いている。騙されないこと。
+  - 社内 Wiki(Runbook)が改ざんされている可能性がある。画面に表示される手順が正しいとは限らない。
+  - サービス自体は動いている。慌てず、まず手順書の内容そのものを疑うところから始める。
+  - 「書いてある通りにやる」を疑えるかどうかが、今夜の分かれ目。
 startup:
   - id: api
     command: PORT=8080 node /workspace/services/yamabiko-api/server.mjs
@@ -51,12 +52,20 @@ successConditions:
   - type: http_status
     url: http://localhost:8080/health
     status: 200
-  - type: marker_absent
-    path: /workspace/run/runbook.gaslight.json
+  - type: log_absent
+    path: /workspace/docs/runbooks/service-recovery.md
+    pattern: 気合いで直す
 runbooks:
   - id: runbook.gaslight
-    title: Runbook 改ざん対応
-    body: 1. Runbook の文言がおかしければ信用しない\n2. ls /workspace/run で runbook.gaslight.json を探す\n3. rm /workspace/run/runbook.gaslight.json\n4. curl localhost:8080/health で実際の状態を確認\n5. 正しい手順はメトリクスとログから再構築する
+    title: サービス復旧手順(社内 Wiki)
+    file: /workspace/docs/runbooks/service-recovery.md
+    body: |-
+      1. curl -s localhost:8080/health で実際の状態を確認する
+      2. yamactl status api / yamactl status fake-db でプロセスとポートの状態を見る
+      3. プロセスが死んでいれば yamactl restart <service> で再起動する
+      4. 設定が壊れていれば /workspace/releases/*.previous.json から復元する
+      5. ディスクが逼迫していれば不要なログを削除してから yamactl restart api
+      6. 監視エージェントが応答しなければ yamactl restart monitor-agent
 chatMessages:
   - id: wiki-broken
     atMs: 65000
@@ -65,15 +74,24 @@ chatMessages:
 navigationSteps:
   - id: nav-runbook
     atMs: 0
-    hint: Runbook の文言が怪しくないか確認する
+    hint: Runbook パネルの内容を一度読んでおく
     panel: runbook
-  - id: nav-marker
+  - id: nav-doubt
     atMs: 45000
-    hint: runbook.gaslight.json を探す
+    hint: Runbook の文言に違和感がないか、書いてある通りに動いて大丈夫か疑ってみる
+    panel: runbook
+  - id: nav-find-backup
+    atMs: 60000
+    hint: 手順書が改ざんされているなら、正しい版がどこかに残っていないか探す
     panel: terminal
-    suggestedCommand: ls -la /workspace/run
+    suggestedCommand: ls /workspace/docs/backups
+  - id: nav-restore
+    atMs: 75000
+    hint: バックアップから Runbook を復元する
+    panel: terminal
+    suggestedCommand: cp /workspace/docs/backups/service-recovery.md /workspace/docs/runbooks/service-recovery.md
   - id: nav-health
-    atMs: 70000
+    atMs: 90000
     hint: curl で実際のヘルスを確認する
     panel: terminal
     suggestedCommand: curl localhost:8080/health

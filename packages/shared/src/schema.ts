@@ -7,18 +7,19 @@ export type ValidationResult<T> =
 const difficulties = new Set(['beginner', 'intermediate', 'advanced']);
 const triggerTypes = new Set([
   'process_stop',
+  'process_hang',
+  'port_conflict',
   'disk_full',
   'kodama_batch_failure',
   'queue_backlog',
   'bad_deploy',
   'db_pool_exhaust',
-  'memory_leak',
   'dns_misconfig',
   'monitor_blind',
   'composite_restart_loop',
   'janitor_power_pull',
   'cable_jumprope',
-  'keyboard_spill',
+  'runaway_loadgen',
   'alert_spam',
   'runbook_gaslight',
 ]);
@@ -43,7 +44,7 @@ const successTypes = new Set([
   'http_status',
   'disk_usage_below',
   'process_running',
-  'marker_absent',
+  'process_absent',
   'log_absent',
   'kodama_batch_ok',
 ]);
@@ -76,6 +77,8 @@ export function validateScenarioDefinition(
   ) {
     errors.push('difficulty must be beginner, intermediate, or advanced');
   }
+
+  requirePositiveInteger(value, 'difficultyScore', errors);
 
   if (!isObject(value.service)) {
     errors.push('service must be an object');
@@ -166,6 +169,9 @@ export function validateScenarioDefinition(
     requireString(item, 'body', errors, path);
     if (item.availableAtMs !== undefined) {
       requireNonNegativeInteger(item, 'availableAtMs', errors, path);
+    }
+    if (item.file !== undefined) {
+      requireAbsolutePath(item, 'file', errors, path);
     }
   });
   requireNonEmptyArray(value, 'runbooks', errors);
@@ -529,6 +535,12 @@ function validateTriggerParams(
 
   if (trigger.type === 'process_stop') {
     requireString(trigger.params, 'processId', errors, `${path}.params`);
+  } else if (trigger.type === 'process_hang') {
+    requireString(trigger.params, 'processId', errors, `${path}.params`);
+  } else if (trigger.type === 'port_conflict') {
+    if (trigger.params.port !== undefined) {
+      requirePort(trigger.params, 'port', errors, `${path}.params`);
+    }
   } else if (trigger.type === 'disk_full') {
     requireAbsolutePath(trigger.params, 'path', errors, `${path}.params`);
     requirePositiveInteger(trigger.params, 'bytes', errors, `${path}.params`);
@@ -543,19 +555,23 @@ function validateTriggerParams(
     }
   } else if (trigger.type === 'queue_backlog') {
     requirePositiveInteger(trigger.params, 'count', errors, `${path}.params`);
-  } else if (trigger.type === 'bad_deploy') {
-    requireAbsolutePath(trigger.params, 'configPath', errors, `${path}.params`);
   } else if (trigger.type === 'db_pool_exhaust') {
-    requirePositiveInteger(
-      trigger.params,
-      'maxConnections',
-      errors,
-      `${path}.params`
-    );
-  } else if (trigger.type === 'memory_leak') {
-    requirePercent(trigger.params, 'targetPercent', errors, `${path}.params`);
-  } else if (trigger.type === 'dns_misconfig') {
-    requireAbsolutePath(trigger.params, 'hostsPath', errors, `${path}.params`);
+    if (trigger.params.connections !== undefined) {
+      requirePositiveInteger(
+        trigger.params,
+        'connections',
+        errors,
+        `${path}.params`
+      );
+    }
+    if (trigger.params.maxConnections !== undefined) {
+      requirePositiveInteger(
+        trigger.params,
+        'maxConnections',
+        errors,
+        `${path}.params`
+      );
+    }
   } else if (trigger.type === 'monitor_blind') {
     if (
       !Array.isArray(trigger.params.blindMetrics) ||
@@ -572,17 +588,12 @@ function validateTriggerParams(
       requireString(trigger.params, 'processId', errors, `${path}.params`);
     }
   } else if (trigger.type === 'cable_jumprope') {
-    if (trigger.params.hostsPath !== undefined) {
-      requireAbsolutePath(
-        trigger.params,
-        'hostsPath',
-        errors,
-        `${path}.params`
-      );
+    if (trigger.params.processId !== undefined) {
+      requireString(trigger.params, 'processId', errors, `${path}.params`);
     }
-  } else if (trigger.type === 'keyboard_spill') {
-    if (trigger.params.noise !== undefined) {
-      requireString(trigger.params, 'noise', errors, `${path}.params`);
+  } else if (trigger.type === 'runaway_loadgen') {
+    if (trigger.params.targetUrl !== undefined) {
+      requireHttpUrl(trigger.params, 'targetUrl', errors, `${path}.params`);
     }
   } else if (trigger.type === 'alert_spam') {
     if (trigger.params.count !== undefined) {
@@ -608,8 +619,8 @@ function validateSuccessCondition(
     requirePercent(condition, 'valuePercent', errors, path);
   } else if (condition.type === 'process_running') {
     requireString(condition, 'processId', errors, path);
-  } else if (condition.type === 'marker_absent') {
-    requireAbsolutePath(condition, 'path', errors, path);
+  } else if (condition.type === 'process_absent') {
+    requireString(condition, 'processId', errors, path);
   } else if (condition.type === 'log_absent') {
     requireAbsolutePath(condition, 'path', errors, path);
     requireString(condition, 'pattern', errors, path);

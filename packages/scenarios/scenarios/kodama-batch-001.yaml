@@ -2,6 +2,7 @@ id: kodama-batch-001
 version: 1
 title: こだまが返ってこないバッチ
 difficulty: intermediate
+difficultyScore: 240
 timeLimitMinutes: 8
 service:
   name: やまびこ batch
@@ -69,6 +70,10 @@ runbooks:
       こだま仕様表みてがんばれ。
 
       バッチファイルは /workspace/services/batch/sales.kdm
+
+      直しただけで終わらせない。バッチログに失敗の記録が残ったままだと、
+      監視は「まだ失敗している」と判断して発報を続ける。原因を直したら、
+      その痕跡を片付けるところまでが復旧作業。
   - id: runbook.kodama-spec
     title: こだま仕様表
     body: |-
@@ -87,9 +92,23 @@ runbooks:
       エラーはすべて「こだまが返ってきません」のみ表示
       kodama run <file> … 実行  kodama check <file> … 構文チェック
 
-      例: よぶ y = しずか  のまま x わる y → 0 除算で失敗
+      例: よぶ price = 100、よぶ tax = こだま のとき price かける tax は price のまま
 chatMessages:
   - id: mystery-error
     atMs: 130000
     from: 経理
     body: 売上集計が止まってるんですが、こだまが返ってきません。
+navigationSteps:
+  - id: nav-batch-status
+    atMs: 0
+    hint: バッチ失敗のアラートが出ていないか監視画面で確認する
+    panel: metrics
+  - id: nav-batch-log
+    atMs: 95000
+    hint: batch.log でエラー内容を確認する
+    panel: terminal
+    suggestedCommand: tail /workspace/logs/batch.log
+  - id: nav-batch-source
+    atMs: 105000
+    hint: sales.kdm のソースをこだま仕様表と見比べる
+    panel: editor

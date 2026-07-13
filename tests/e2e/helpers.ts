@@ -20,7 +20,6 @@ const CANVAS_LABEL = '録画対象のゲーム画面';
 const CONSENT_CHECKBOX = /録画し、振り返りに使うことに同意する/;
 const SAVE_CHECKBOX = /録画データをサーバーに保存する/;
 const DEFAULT_SCENARIO = /API が寝落ち/;
-const DEMO_SCENARIO = /デモ: 1分復旧ドリル/;
 
 const DESIGN_WIDTH = logicalWidth;
 const DESIGN_HEIGHT = logicalHeight;
@@ -78,10 +77,6 @@ export async function openDefaultScenarioBriefing(
   options: {perf?: boolean} = {}
 ) {
   return openScenarioBriefing(page, options);
-}
-
-export async function openDemoScenarioBriefing(page: Page) {
-  return openScenarioBriefing(page, {scenarioName: DEMO_SCENARIO});
 }
 
 export async function acceptRecordingConsent(page: Page) {
@@ -241,19 +236,19 @@ export async function waitForTerminalCommand(
 
 export async function waitForResolveSuccess(page: Page) {
   await expect(page.locator('#result-heading')).toBeVisible({timeout: 30_000});
-  await expect(page.getByText('無事退勤', {exact: true})).toBeVisible();
+  await expect(page.getByText('静かな朝', {exact: true})).toBeVisible();
   await expect(page.getByRole('heading', {name: 'ハイライト'})).toBeVisible();
 }
 
 export async function waitForFalseResolveResult(page: Page) {
   await expect(page.locator('#result-heading')).toBeVisible({timeout: 30_000});
-  await expect(page.locator('.result-stamp')).toHaveText('解雇');
+  await expect(page.locator('.result-stamp')).toHaveText('にぎやかな朝');
   await expect(page.getByText('未復旧のまま宣言')).toBeVisible();
 }
 
 export async function waitForRetireResult(page: Page) {
   await expect(page.locator('#result-heading')).toBeVisible({timeout: 30_000});
-  await expect(page.locator('.result-stamp')).toHaveText('解雇');
+  await expect(page.locator('.result-stamp')).toHaveText('にぎやかな朝');
   await expect(page.getByRole('heading', {name: 'ハイライト'})).toBeVisible();
   await expect(page.getByRole('button', {name: '再挑戦'})).toBeVisible();
 }

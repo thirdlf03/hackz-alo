@@ -1,14 +1,15 @@
 id: disk-restart-loop-001
 version: 1
-title: 再起動ループの夜
-difficulty: advanced
-timeLimitMinutes: 15
+title: 再起動しても直らない夜
+difficulty: intermediate
+difficultyScore: 270
+timeLimitMinutes: 10
 service:
   name: やまびこ API
   healthUrl: http://localhost:8080/health
 briefing:
-  - disk full のまま再起動するとすぐ再障害する。
-  - 容量を確保してから再起動する。
+  - API が落ちている。再起動すれば直るはずだが、health がすぐ 500 に戻ってしまう。
+  - 「直った」と思うのはまだ早い。ディスク要因が残っている間は再起動しても意味がない。
 startup:
   - id: api
     command: PORT=8080 node /workspace/services/yamabiko-api/server.mjs
@@ -65,5 +66,5 @@ successConditions:
 runbooks:
   - id: runbook.loop
     title: 再起動ループ
-    body: 1. df -h\n2. ログ削除\n3. yamactl restart api\n4. health 確認
+    body: 1. yamactl restart api\n2. すぐ再発する場合は原因が残っている。df -h と du -sh /workspace/logs/* で容量を見る\n3. 容量を確保してから再起動し直す\n4. health 確認
 chatMessages: []

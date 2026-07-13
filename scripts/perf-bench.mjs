@@ -21,7 +21,7 @@ const {buildCanvasViewModel} = await tsImport(
   import.meta.url
 );
 
-const scenario = getScenario('process-stop-001') ?? getScenario('demo-tutorial-001');
+const scenario = getScenario('process-stop-001');
 if (!scenario) throw new Error('benchmark scenario not found');
 
 const initialState = createInitialGameState(
