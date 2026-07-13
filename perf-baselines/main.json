@@ -1,0 +1,43 @@
+{
+  "generatedAt": "2026-07-13T10:18:14.641Z",
+  "spans": {
+    "count": 0,
+    "byName": []
+  },
+  "marks": [],
+  "frames": {
+    "count": 0,
+    "p95DrawMs": 0,
+    "slowDrawCount": 0
+  },
+  "benchmarks": {
+    "advanceGameState": {
+      "name": "advanceGameState",
+      "iterations": 3000,
+      "totalMs": 8.575,
+      "meanMs": 0.003,
+      "p95Ms": 0.004
+    },
+    "buildMetricSections": {
+      "name": "buildMetricSections",
+      "iterations": 5000,
+      "totalMs": 20.358,
+      "meanMs": 0.004,
+      "p95Ms": 0.005
+    },
+    "buildCanvasViewModel": {
+      "name": "buildCanvasViewModel",
+      "iterations": 5000,
+      "totalMs": 3.19,
+      "meanMs": 0.001,
+      "p95Ms": 0.001
+    },
+    "visibleRunbooks": {
+      "name": "visibleRunbooks",
+      "iterations": 5000,
+      "totalMs": 1.057,
+      "meanMs": 0,
+      "p95Ms": 0
+    }
+  }
+}
