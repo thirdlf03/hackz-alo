@@ -18,6 +18,8 @@ pre-push:
       run: pnpm run typecheck
     test:
       run: pnpm test
+    integration:
+      run: pnpm run test:integration
     audit-schema:
       run: pnpm run audit:schema-sync
     audit-route-body:

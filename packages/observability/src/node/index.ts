@@ -99,7 +99,7 @@ export function comparePerfReports(
   options: {strict?: boolean} = {}
 ) {
   if (!baseline) {
-    return {ok: true, findings: ['baseline not provided']};
+    return {ok: options.strict !== true, findings: ['baseline not provided']};
   }
   const findings: string[] = [];
   for (const currentBench of Object.entries(current.benchmarks ?? {})) {

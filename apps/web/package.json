@@ -9,13 +9,13 @@
     "preview": "vite preview --host 127.0.0.1"
   },
   "dependencies": {
-    "@cloudflare/sandbox": "latest",
+    "@cloudflare/sandbox": "^0.12.3",
     "@incident/observability": "workspace:*",
     "@incident/shared": "workspace:*",
-    "@preact/preset-vite": "latest",
-    "@xterm/xterm": "latest",
+    "@preact/preset-vite": "^2.10.5",
+    "@xterm/xterm": "^6.0.0",
     "effect": "^3.21.4",
-    "preact": "latest",
-    "vite": "latest"
+    "preact": "^10.29.7",
+    "vite": "^8.1.4"
   }
 }

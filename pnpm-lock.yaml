@@ -9,16 +9,16 @@ importers:
   .:
     devDependencies:
       '@cloudflare/workers-types':
-        specifier: latest
+        specifier: ^5.20260712.1
         version: 5.20260712.1
       '@eslint/js':
         specifier: ^10.0.1
         version: 10.0.1(eslint@10.7.0)
       '@playwright/test':
-        specifier: latest
+        specifier: ^1.61.1
         version: 1.61.1
       '@types/node':
-        specifier: latest
+        specifier: ^26.1.1
         version: 26.1.1
       effect:
         specifier: ^3.21.4
@@ -36,19 +36,19 @@ importers:
         specifier: ^2.1.10
         version: 2.1.10
       oxfmt:
-        specifier: latest
+        specifier: ^0.58.0
         version: 0.58.0
       oxlint:
-        specifier: latest
+        specifier: ^1.73.0
         version: 1.73.0(oxlint-tsgolint@0.24.0)
       oxlint-config-presets:
-        specifier: latest
+        specifier: ^0.1.16
         version: 0.1.16(oxlint@1.73.0(oxlint-tsgolint@0.24.0))
       oxlint-tsgolint:
-        specifier: latest
+        specifier: ^0.24.0
         version: 0.24.0
       tsx:
-        specifier: latest
+        specifier: ^4.23.0
         version: 4.23.0
       typescript:
         specifier: ~6.0.3
@@ -57,10 +57,10 @@ importers:
         specifier: ^8.63.0
         version: 8.63.0(eslint@10.7.0)(typescript@6.0.3)
       vite:
-        specifier: latest
+        specifier: ^8.1.4
         version: 8.1.4(@types/node@26.1.1)(esbuild@0.28.1)(tsx@4.23.0)(yaml@2.9.0)
       wrangler:
-        specifier: latest
+        specifier: ^4.110.0
         version: 4.110.0(@cloudflare/workers-types@5.20260712.1)
       yaml:
         specifier: ^2.9.0
@@ -69,7 +69,7 @@ importers:
   apps/web:
     dependencies:
       '@cloudflare/sandbox':
-        specifier: latest
+        specifier: ^0.12.3
         version: 0.12.3(@xterm/xterm@6.0.0)
       '@incident/observability':
         specifier: workspace:*
@@ -78,28 +78,28 @@ importers:
         specifier: workspace:*
         version: link:../../packages/shared
       '@preact/preset-vite':
-        specifier: latest
+        specifier: ^2.10.5
         version: 2.10.5(@babel/core@7.29.7)(preact@10.29.7)(vite@8.1.4(@types/node@26.1.1)(esbuild@0.28.1)(tsx@4.23.0)(yaml@2.9.0))
       '@xterm/xterm':
-        specifier: latest
+        specifier: ^6.0.0
         version: 6.0.0
       effect:
         specifier: ^3.21.4
         version: 3.21.4
       preact:
-        specifier: latest
+        specifier: ^10.29.7
         version: 10.29.7
       vite:
-        specifier: latest
+        specifier: ^8.1.4
         version: 8.1.4(@types/node@26.1.1)(esbuild@0.28.1)(tsx@4.23.0)(yaml@2.9.0)
 
   apps/worker:
     dependencies:
       '@block65/webcrypto-web-push':
-        specifier: latest
+        specifier: ^1.0.2
         version: 1.0.2
       '@cloudflare/sandbox':
-        specifier: latest
+        specifier: ^0.12.3
         version: 0.12.3(@xterm/xterm@6.0.0)
       '@incident/observability':
         specifier: workspace:*
@@ -111,7 +111,7 @@ importers:
         specifier: workspace:*
         version: link:../../packages/shared
       hono:
-        specifier: latest
+        specifier: ^4.12.29
         version: 4.12.29
 
   packages/observability: {}
@@ -1505,10 +1505,6 @@ packages:
     resolution: {integrity: sha512-F/1DnUGPopORZi0ni+CvrCgHQ5FyEAHRLSApuYWMmrbSwoN2Mn/7k+Gl38gJnR7yyDZk6WLXwiGod1JOWNDKGw==}
     hasBin: true
 
-  hono@4.12.27:
-    resolution: {integrity: sha512-1yrb/+w6HWQJrUCLkJ2IF5jNIPvvFkblV5RNOYl6bV+OA6p9GLcMpHFFGTosSvHvcAUibuUukRqhlYI4z32C7Q==}
-    engines: {node: '>=16.9.0'}
-
   hono@4.12.29:
     resolution: {integrity: sha512-1hNiRjawYrLq/4m3DQQjPGFg0VZkk4RjQJDff/excI6Dm9BiL75qxGrd7/c6YOxPdq6AscP3LiXhQ6fKFC1Waw==}
     engines: {node: '>=16.9.0'}
@@ -1816,10 +1812,6 @@ packages:
   picomatch@2.3.2:
     resolution: {integrity: sha512-V7+vQEJ06Z+c5tSye8S+nHUfI51xoXIXjHQ99cQtKUkQqqO1kO/KCJUfZXuB47h/YBlDhah2H3hdUGXn8ie0oA==}
     engines: {node: '>=8.6'}
-
-  picomatch@4.0.4:
-    resolution: {integrity: sha512-QP88BAKvMam/3NxH6vj2o21R6MjxZUAd6nlwAS/pnGvN9IVLocLHxGYIzFhg6fUQ+5th6P4dv4eW9jX3DSIj7A==}
-    engines: {node: '>=12'}
 
   picomatch@4.0.5:
     resolution: {integrity: sha512-RvwwcruNjI1ncT5xRakeyS9Lf8lcItv34KD+aif+VH9kduAyfYBipGh12274xtenIPZ119/R9BdTBa8gAwSh0A==}
@@ -2232,7 +2224,7 @@ snapshots:
       '@cloudflare/containers': 0.3.7
       aws4fetch: 1.0.20
       capnweb: 0.8.0
-      hono: 4.12.27
+      hono: 4.12.29
     optionalDependencies:
       '@xterm/xterm': 6.0.0
 
@@ -2783,7 +2775,7 @@ snapshots:
     dependencies:
       '@types/estree': 1.0.9
       estree-walker: 2.0.2
-      picomatch: 4.0.4
+      picomatch: 4.0.5
 
   '@sindresorhus/is@7.2.0': {}
 
@@ -3191,9 +3183,9 @@ snapshots:
 
   fast-levenshtein@2.0.6: {}
 
-  fdir@6.5.0(picomatch@4.0.4):
+  fdir@6.5.0(picomatch@4.0.5):
     optionalDependencies:
-      picomatch: 4.0.4
+      picomatch: 4.0.5
 
   file-entry-cache@8.0.0:
     dependencies:
@@ -3226,8 +3218,6 @@ snapshots:
   globals@17.7.0: {}
 
   he@1.2.0: {}
-
-  hono@4.12.27: {}
 
   hono@4.12.29: {}
 
@@ -3506,8 +3496,6 @@ snapshots:
 
   picomatch@2.3.2: {}
 
-  picomatch@4.0.4: {}
-
   picomatch@4.0.5: {}
 
   playwright-core@1.61.1: {}
@@ -3612,8 +3600,8 @@ snapshots:
 
   tinyglobby@0.2.17:
     dependencies:
-      fdir: 6.5.0(picomatch@4.0.4)
-      picomatch: 4.0.4
+      fdir: 6.5.0(picomatch@4.0.5)
+      picomatch: 4.0.5
 
   tinypool@2.1.0: {}
 
@@ -3623,7 +3611,7 @@ snapshots:
 
   ts-declaration-location@1.0.7(typescript@6.0.3):
     dependencies:
-      picomatch: 4.0.4
+      picomatch: 4.0.5
       typescript: 6.0.3
 
   tslib@2.8.1:

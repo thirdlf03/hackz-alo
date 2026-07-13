@@ -1,0 +1,32 @@
+name: VRT Baseline
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ['vrt-baseline/**']
+
+jobs:
+  vrt-baseline:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run build:scenarios
+      - run: pnpm run build
+      - run: pnpm run db:migrate:local
+      - run: docker info
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm run test:vrt -- --update-snapshots=all
+        env:
+          CI: 'true'
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: vrt-snapshots
+          path: tests/vrt/screens.spec.ts-snapshots/
+          retention-days: 7

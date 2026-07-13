@@ -32,8 +32,21 @@ pnpm run dev:worker   # Worker dev server(別ターミナル)
 | unit        | `pnpm test`                 | 純粋ロジック(`tests/unit/*.mjs`)                                    |
 | integration | `pnpm run test:integration` | Worker ルートを本物の Request/Response で駆動(`tests/integration/`) |
 | e2e         | `pnpm run test:e2e`         | Playwright でブラウザからの主要フロー                               |
-| vrt         | `pnpm run test:vrt`         | 全画面のスクリーンショット基準比較                                  |
+| vrt         | `pnpm run test:vrt`         | 全画面のスクリーンショット基準比較(CI の `vrt` ジョブで実行)        |
 | perf        | `pnpm run perf:e2e`         | 性能ベースライン(default の e2e には含まれない)                     |
+
+`pnpm run test:coverage:check` は line coverage のしきい値ゲート(`.cursor/rules/project-conventions.mdc`
+参照)。CI の `test` ジョブはこれを実行する。
+
+VRT のスクリーンショット基準は CI(Linux)で生成したものを使う。更新するときは
+`vrt-baseline/**` ブランチを push するか `.github/workflows/vrt-baseline.yml` を
+`workflow_dispatch` で手動実行し、artifact `vrt-snapshots` の中身を
+`tests/vrt/screens.spec.ts-snapshots/` に配置してコミットする。
+
+perf 回帰ゲート(`pnpm run perf:compare`)は `perf-baselines/main.json` が無いと strict モードで
+失敗する。CI の `perf` ジョブが生成する artifact の `report.json` を取得し、
+`pnpm run perf:baseline:accept -- --report <path>` で `perf-baselines/main.json` に
+取り込んでコミットする。
 
 統合テストは `tests/integration/helpers/routeHarness.mjs` の Hono 互換ハーネスに
 ルート登録関数(`registerXxxRoutes`)を載せ、D1 / R2 / Durable Object をインメモリの
@@ -43,9 +56,9 @@ pnpm run dev:worker   # Worker dev server(別ターミナル)
 ## 品質ゲート
 
 `git push` 時に Lefthook が CI の `test` ジョブと同じゲート
-(fmt / lint / typecheck / unit test / 各種 audit / perf bench)を実行する。
-まとめて手元で回すなら `pnpm run ci:test`。緊急時のみ `LEFTHOOK=0 git push` でスキップできるが、
-CI では同じチェックが必ず走る。
+(fmt / lint / typecheck / coverage / 各種 audit / perf bench)に加えて integration test を実行する。
+まとめて手元で回すなら `pnpm run ci:test`(+ `pnpm run test:integration`)。緊急時のみ
+`LEFTHOOK=0 git push` でスキップできるが、CI では同じチェックが必ず走る。
 
 ## コミット規約
 
