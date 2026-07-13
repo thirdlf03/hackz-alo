@@ -5,13 +5,14 @@ headers are already enforced in the Worker when `ENVIRONMENT=production`.
 
 ## Already in Worker code
 
-| Protection                               | Where                                                                                                                   |
-| ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| `POST /api/sessions` 5/min/IP            | `sessionRoutes.ts` + KV                                                                                                 |
-| `POST /api/replays/*/chunks` 120/min/IP  | `replayRoutes.ts` + KV                                                                                                  |
-| `POST /api/replays/*/comments` 10/min/IP | `replayRoutes.ts` + KV                                                                                                  |
-| Security headers on all responses        | `securityHeaders.ts` (API + static assets via Worker)                                                                   |
-| Turnstile on session create (optional)   | Worker verifies when `TURNSTILE_SECRET_KEY` is set; Web sends token when `VITE_TURNSTILE_SITE_KEY` is set at build time |
+| Protection                               | Where                                                                                                                                                                                                                                                                                       |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `POST /api/sessions` 5/min/IP            | `sessionRoutes.ts` + KV                                                                                                                                                                                                                                                                     |
+| `POST /api/replays/*/chunks` 120/min/IP  | `replayRoutes.ts` + KV                                                                                                                                                                                                                                                                      |
+| `POST /api/replays/*/comments` 10/min/IP | `replayRoutes.ts` + KV                                                                                                                                                                                                                                                                      |
+| Security headers on all responses        | `securityHeaders.ts` (API + static assets via Worker)                                                                                                                                                                                                                                       |
+| CSP on HTML (document) responses         | `securityHeaders.ts` `contentSecurityPolicy` — `script-src`/`connect-src`/`frame-src` allow `https://challenges.cloudflare.com` (Turnstile widget), `img-src` allows `data:` (AI-assist screenshot preview), `media-src` allows `blob:` (replay video playback); not sent on JSON responses |
+| Turnstile on session create (optional)   | Worker verifies when `TURNSTILE_SECRET_KEY` is set; Web sends token when `VITE_TURNSTILE_SITE_KEY` is set at build time                                                                                                                                                                     |
 
 Dashboard Rate Limiting rules are optional extra defense; KV limits above apply even
 without dashboard rules.
@@ -79,6 +80,16 @@ VITE_TURNSTILE_SITE_KEY=your_site_key
 ```
 
 Until both Worker secret and site key exist, Turnstile is skipped and sessions work as today.
+
+### Post-deploy smoke bypass
+
+`POST /api/sessions` accepts an `x-admin-secret` header, compared to `ADMIN_SECRET` in
+constant time, as an alternative to a Turnstile token. This exists solely so the
+post-deploy smoke test (`scripts/deploy-smoke.mjs`, run from `deploy.yml` with
+`INCIDENT_SMOKE_ADMIN_SECRET: ${{ secrets.ADMIN_SECRET }}`) can create a real session in
+CI, where a production Turnstile token cannot be obtained. The bypass is inert unless
+`ADMIN_SECRET` is set and the header matches it exactly; every use emits a
+`smoke_turnstile_bypass` structured log (see `observability.md`).
 
 ## Access (Zero Trust)
 

@@ -67,8 +67,8 @@ import {
 import {SessionSseHub} from './sessionSseHub.js';
 import {SessionTimeline} from './sessionTimeline.js';
 import {
-  handleSessionTerminal,
   handleSessionTerminalInterrupt,
+  handleSessionTerminalRequest,
   mergeTerminalResize,
   type TerminalDimensions,
 } from './sessionTerminalHandlers.js';
@@ -450,20 +450,18 @@ export class SessionDurableObject implements DurableObject {
 
   private async terminal(request: Request) {
     const session = await this.requireSession();
-    // Unlike terminalResize/writeFile, this handshake is not gated by
-    // canOperateSandbox: the terminal output mirror is broadcast to every
-    // role (Observer/Scribe watch a read-only PTY tunnel), while
-    // proxySessionTerminal is a raw WS pass-through the server cannot
-    // inspect message-by-message. Input restriction to ops/facilitator is
-    // therefore enforced client-side as a cooperative-play rule (see
-    // canOperateSandbox docs); resize and file writes stay server-gated
-    // below since those go over discrete REST calls the server can check.
+    const room = await this.exercise.loadOrCreate(session);
     await this.touchClientActivity();
-    return handleSessionTerminal(
+    // Operate decision, hot-path pass-through vs. read-only relay, and
+    // the server-side enforcement rationale all live in
+    // handleSessionTerminalRequest (sessionTerminalHandlers.ts) — see its
+    // doc comment.
+    return handleSessionTerminalRequest(
       this.env,
       session,
       request,
-      this.terminalDimensions
+      this.terminalDimensions,
+      room
     );
   }
 
@@ -552,9 +550,10 @@ export class SessionDurableObject implements DurableObject {
   /**
    * Returns a 403 response when the participant may not operate the
    * sandbox (terminal resize, editor writes); undefined when allowed.
-   * Terminal *input* travels over the raw PTY WS tunnel established by
-   * terminal() above, which is intentionally not gated here — see the
-   * comment on terminal(). The `ops` role in the payload stands for the
+   * Terminal *input* is gated separately, inside terminal()'s own
+   * operate check (see its comment) rather than here — that gate has to
+   * be evaluated once at WebSocket-connect time, not per discrete REST
+   * call like this one. The `ops` role in the payload stands for the
    * allowed set (ops or facilitator) — see canOperateSandbox.
    */
   private async denySandboxOperation(

@@ -38,12 +38,19 @@ export interface TerminalSessionOptions {
    * When it returns false: resize() and the internal redraw-repair hack
    * become no-ops (xterm's `resize()` is wired by SandboxAddon straight
    * to a WS resize message once connected), and — as the last line of
-   * defense at the transport boundary — the addon's own `sendResize`/
-   * `sendData` are shadowed so nothing reaches the WS regardless of what
-   * triggered it, including SandboxAddon's own unconditional resize send
-   * on the "ready" control message and `terminal.focus()` routing local
-   * keystrokes into `sendData`. See the constructor for details. Defaults
-   * to always-allowed.
+   * defense at the transport boundary on this client — the addon's own
+   * `sendResize`/`sendData` are shadowed so nothing reaches the WS
+   * regardless of what triggered it, including SandboxAddon's own
+   * unconditional resize send on the "ready" control message and
+   * `terminal.focus()` routing local keystrokes into `sendData`. See the
+   * constructor for details. Defaults to always-allowed.
+   *
+   * This is defense in depth and immediate UX feedback, not the only
+   * enforcement: the server independently drops client -> sandbox input
+   * frames for connections without a valid write token
+   * (SessionDurableObject.terminal(), see terminalRelayPolicy.ts on the
+   * worker side), so a bypass of this client-side guard cannot reach the
+   * PTY for a read-token-only viewer.
    */
   canOperate?: () => boolean;
 }

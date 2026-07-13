@@ -1,3 +1,5 @@
+import {constantTimeEqual} from './constantTimeEqual.js';
+
 export function parseBearerToken(
   authorization: string | undefined
 ): string | undefined {
@@ -11,7 +13,7 @@ export function verifyWriteTokenHash(storedHash: string, tokenHash: string) {
   return (
     storedHash.length === 64 &&
     tokenHash.length === 64 &&
-    storedHash === tokenHash
+    constantTimeEqual(storedHash, tokenHash)
   );
 }
 

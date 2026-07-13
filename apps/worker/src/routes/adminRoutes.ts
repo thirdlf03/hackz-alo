@@ -1,6 +1,7 @@
 import type {WorkerApp} from '../http/context.js';
 import {readRouteJsonObject} from '../http/routeBody.js';
 import {err, ok} from '../http/response.js';
+import {constantTimeEqual} from '../pure/constantTimeEqual.js';
 
 const ADMIN_REPLAY_UPDATE_BODY_MAX_BYTES = 1024;
 
@@ -12,7 +13,11 @@ export function registerAdminRoutes(app: WorkerApp) {
     ) {
       const adminSecret = c.env.ADMIN_SECRET;
       const provided = c.req.header('x-admin-secret');
-      if (!adminSecret || provided !== adminSecret) {
+      if (
+        !adminSecret ||
+        !provided ||
+        !constantTimeEqual(provided, adminSecret)
+      ) {
         return c.json(err('unauthorized', 'admin access required'), 401);
       }
     }

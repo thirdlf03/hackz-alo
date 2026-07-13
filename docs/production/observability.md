@@ -25,6 +25,9 @@ Worker emits JSON lines for:
 - `retention_sweep`
 - `retention_sweep_failed`
 - `rate_limit_hit`
+- `smoke_turnstile_bypass` — `POST /api/sessions` accepted a valid `x-admin-secret`
+  in place of a Turnstile token (post-deploy smoke test only; see
+  `cloudflare-edge.md` Turnstile section)
 
 Each response includes `X-Request-Id`.
 

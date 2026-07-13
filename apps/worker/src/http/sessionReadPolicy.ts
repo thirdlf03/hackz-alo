@@ -13,18 +13,31 @@ export async function requireSessionReadAccess(
   c: WorkerContext,
   sessionId: string
 ) {
-  const tokens = readTokensFromRequest(c);
-  const hasWriteToken = await anyToken(tokens, (token) =>
-    verifySessionWriteTokenValue(c.env, sessionId, token)
-  );
+  const hasWriteToken = await hasSessionWriteAccess(c, sessionId);
   const hasReadToken =
     !hasWriteToken &&
-    (await anyToken(tokens, (token) =>
+    (await anyToken(readTokensFromRequest(c), (token) =>
       verifySessionReadTokenValue(c.env, sessionId, token)
     ));
   const decision = decideSessionReadPolicy({hasWriteToken, hasReadToken});
   if (decision.allowed) return undefined;
   return c.json(err('unauthorized', 'session read token required'), 401);
+}
+
+/**
+ * Whether the request carries a token (Authorization bearer or
+ * accessToken/readToken query param — see readTokensFromRequest) that is
+ * a *valid write token* for this session. Used by the ws/terminal route
+ * to decide whether to grant sandbox operate access, in addition to the
+ * canOperateSandbox role check (see SessionDurableObject.terminal()).
+ */
+export async function hasSessionWriteAccess(
+  c: WorkerContext,
+  sessionId: string
+) {
+  return anyToken(readTokensFromRequest(c), (token) =>
+    verifySessionWriteTokenValue(c.env, sessionId, token)
+  );
 }
 
 async function verifySessionReadTokenValue(
@@ -47,7 +60,7 @@ async function verifySessionReadTokenValue(
   return verifyWriteTokenHash(row.token_hash, tokenHash);
 }
 
-function readTokensFromRequest(c: WorkerContext) {
+export function readTokensFromRequest(c: WorkerContext) {
   return [
     parseBearerToken(c.req.header('authorization')),
     cleanToken(c.req.query('accessToken')),

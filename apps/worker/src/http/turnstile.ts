@@ -1,4 +1,5 @@
 import type {Bindings} from '../types.js';
+import {constantTimeEqual} from '../pure/constantTimeEqual.js';
 import {
   buildTurnstileSiteverifyBody,
   readTurnstileSiteverifyErrorCodes,
@@ -8,6 +9,22 @@ import {logStructured} from './requestLog.js';
 
 const SITEVERIFY_URL =
   'https://challenges.cloudflare.com/turnstile/v0/siteverify';
+
+/**
+ * Lets the post-deploy smoke test (scripts/deploy-smoke.mjs) create a real
+ * session without a production Turnstile token, which CI cannot obtain.
+ * Requires the caller to present `env.ADMIN_SECRET` via the
+ * `x-admin-secret` header, compared in constant time; disabled entirely
+ * when ADMIN_SECRET is unset or empty (never trusts an empty match).
+ */
+export function shouldBypassTurnstileForSmoke(
+  env: Bindings,
+  providedSecret: string | undefined
+): boolean {
+  const adminSecret = env.ADMIN_SECRET;
+  if (!adminSecret || !providedSecret) return false;
+  return constantTimeEqual(providedSecret, adminSecret);
+}
 
 export async function verifyTurnstileToken(
   env: Bindings,
