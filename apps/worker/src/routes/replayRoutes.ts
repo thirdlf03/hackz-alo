@@ -45,6 +45,8 @@ import {
   uploadMultipartPart,
 } from '../storage/replayStorage.js';
 import {normalizeOptionalMs} from '../http/params.js';
+import {logStructured} from '../http/requestLog.js';
+import {purgeReplayChunksAfterFinalVideo} from '../storage/replayPurge.js';
 
 function replayIdParam(c: {
   req: {param: (name: string) => string | undefined};
@@ -81,6 +83,9 @@ export function registerReplayRoutes(app: WorkerApp) {
       if (denied) return denied;
       const replay = await getReplay(c.env, replayId);
       if (!replay) return c.json(err('not_found', 'replay not found'), 404);
+      if (replay.recording_status === 'ready' || replay.video_object_key) {
+        return c.json(err('conflict', 'replay is already finalized'), 409);
+      }
       const seq = parseSequence(c.req.query('seq'));
       if (seq === undefined) {
         return c.json(err('bad_request', 'invalid seq'), 400);
@@ -164,7 +169,9 @@ export function registerReplayRoutes(app: WorkerApp) {
     if (denied) return denied;
     const replay = await getReplay(c.env, replayId);
     if (!replay) return c.json(err('not_found', 'replay not found'), 404);
-    return c.json(ok(await completeMultipartUpload(c.env, replay.id)));
+    const result = await completeMultipartUpload(c.env, replay.id);
+    scheduleReplayChunkCleanup(c, replay.id);
+    return c.json(ok(result));
   });
 
   app.post(
@@ -205,6 +212,7 @@ export function registerReplayRoutes(app: WorkerApp) {
       videoDurationMs: normalizeOptionalMs(body.videoDurationMs),
       consentRecorded: body.consentRecorded === true,
     });
+    if (status === 'ready') scheduleReplayChunkCleanup(c, replay.id);
     return c.json(ok({replayId: replay.id, status}));
   });
 
@@ -380,4 +388,17 @@ function validateReplayEventsOrResponse(
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function scheduleReplayChunkCleanup(c: WorkerContext, replayId: string) {
+  c.executionCtx.waitUntil(
+    purgeReplayChunksAfterFinalVideo(c.env, replayId).catch(
+      (error: unknown) => {
+        logStructured('replay_chunk_cleanup_failed', {
+          replayId,
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
+    )
+  );
 }
