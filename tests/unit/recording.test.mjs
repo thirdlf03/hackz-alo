@@ -96,7 +96,7 @@ test('replayEventSummary formats session lifecycle labels', () => {
         payload: {result: 'retired'},
       })
     ),
-    '解雇'
+    '途中離脱'
   );
 });
 
@@ -106,17 +106,17 @@ test('replayEventSummary covers event label branches', () => {
     {
       type: 'session_end',
       payload: {result: 'false_resolve'},
-      expected: '未復旧のまま解雇',
+      expected: '未復旧のまま完了報告',
     },
     {
       type: 'session_end',
       payload: {result: 'failed'},
-      expected: '解雇',
+      expected: '未復旧で朝を迎えた',
     },
     {
       type: 'session_end',
       payload: {result: 'timeout'},
-      expected: '解雇',
+      expected: '時間切れ・未復旧で朝を迎えた',
     },
     {
       type: 'session_end',

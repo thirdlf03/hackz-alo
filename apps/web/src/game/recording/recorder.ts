@@ -49,7 +49,7 @@ export class CanvasRecorder {
 
   /**
    * @param audioStream 録画へ合成する音声(アラート音・ウォールーム音声の
-   *   ミックス)。省略時は従来どおり映像のみ(tech.md R30-R32)。
+   *   ミックス)。省略時は従来どおり映像のみ(docs/dev/tech/03-recording-and-replay.md R30-R32)。
    */
   start(audioStream?: MediaStream) {
     if (this.recorder && this.recorder.state !== 'inactive') return;
