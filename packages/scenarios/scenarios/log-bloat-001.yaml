@@ -2,6 +2,7 @@ id: log-bloat-001
 version: 1
 title: ログ雪崩の夜
 difficulty: intermediate
+difficultyScore: 250
 timeLimitMinutes: 12
 service:
   name: やまびこ API

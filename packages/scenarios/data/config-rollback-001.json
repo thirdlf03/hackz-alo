@@ -1,18 +1,18 @@
 {
-  "id": "bad-deploy-001",
+  "id": "config-rollback-001",
   "version": 1,
-  "title": "壊れたデプロイの夜",
-  "difficulty": "intermediate",
-  "difficultyScore": 220,
-  "timeLimitMinutes": 10,
+  "title": "昨日の設定に戻したい夜",
+  "difficulty": "beginner",
+  "difficultyScore": 150,
+  "timeLimitMinutes": 8,
   "service": {
     "name": "やまびこ API",
     "healthUrl": "http://localhost:8080/health"
   },
   "briefing": [
     "デプロイ直後に 5xx が出たら、まず「直前に何が変わったか」を疑う。",
-    "deploy.log とアプリ設定、そして前リリースとの差分が手がかり。",
-    "切り戻し(ロールバック)は立派な暫定復旧。"
+    "前リリースの設定ファイルと現在の設定を diff で見比べる練習をする。",
+    "切り戻し(ロールバック)も立派な復旧手段。"
   ],
   "startup": [
     {
@@ -60,7 +60,7 @@
   "triggers": [
     {
       "id": "bad-deploy",
-      "atMs": 45000,
+      "atMs": 60000,
       "type": "bad_deploy",
       "params": {}
     }
@@ -68,7 +68,7 @@
   "alerts": [
     {
       "id": "deploy-500",
-      "atMs": 70000,
+      "atMs": 90000,
       "severity": "critical",
       "message": "HTTP 500 spike after deploy",
       "source": "scenario"
@@ -87,17 +87,17 @@
   ],
   "runbooks": [
     {
-      "id": "runbook.deploy",
-      "title": "デプロイ起因障害の初動",
-      "body": "1. /workspace/logs/deploy.log で直近のデプロイ時刻とバージョンを確認する\n2. エラーログ(app.log)の内容を読み、どこへの接続が失敗しているか把握する\n3. アプリ設定 /workspace/etc/yamabiko-api.json を開き、前リリース\n   (/workspace/releases/yamabiko-api.previous.json)と見比べる\n4. 切り戻す(前リリースの設定を書き戻す)か、設定を修正する\n5. curl localhost:8080/health で復旧確認する(設定は自動反映、再起動不要)"
+      "id": "runbook.config-rollback",
+      "title": "設定ロールバックの手順",
+      "body": "1. tail /workspace/logs/deploy.log で直近のデプロイ時刻とバージョンを確認する\n2. diff /workspace/releases/yamabiko-api.previous.json /workspace/etc/yamabiko-api.json で何が変わったか確認する\n3. app.log でエラー内容(接続失敗など)を確認する\n4. cp /workspace/releases/yamabiko-api.previous.json /workspace/etc/yamabiko-api.json で前リリースに戻す\n5. curl localhost:8080/health で復旧確認する(設定は自動反映、再起動不要)"
     }
   ],
   "chatMessages": [
     {
-      "id": "boss-deploy",
-      "atMs": 95000,
+      "id": "boss-config-rollback",
+      "atMs": 110000,
       "from": "上司",
-      "body": "さっきのデプロイ？僕は何も変えてないよ。おやすみ。"
+      "body": "さっきのデプロイ、僕は見てないけど戻せば直るんじゃない？おやすみ。"
     }
   ],
   "navigationSteps": [
@@ -109,16 +109,24 @@
     },
     {
       "id": "nav-deploy-log",
-      "atMs": 50000,
+      "atMs": 65000,
       "hint": "直近のデプロイ履歴を確認する",
       "panel": "terminal",
       "suggestedCommand": "tail /workspace/logs/deploy.log"
     },
     {
-      "id": "nav-config",
-      "atMs": 80000,
-      "hint": "設定を前リリースと見比べる",
-      "panel": "editor"
+      "id": "nav-diff",
+      "atMs": 85000,
+      "hint": "前リリースとの差分を diff で確認する",
+      "panel": "terminal",
+      "suggestedCommand": "diff /workspace/releases/yamabiko-api.previous.json /workspace/etc/yamabiko-api.json"
+    },
+    {
+      "id": "nav-rollback",
+      "atMs": 100000,
+      "hint": "前リリースの設定に戻す",
+      "panel": "terminal",
+      "suggestedCommand": "cp /workspace/releases/yamabiko-api.previous.json /workspace/etc/yamabiko-api.json"
     }
   ]
 }

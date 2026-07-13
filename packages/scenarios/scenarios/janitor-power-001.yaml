@@ -1,15 +1,16 @@
 id: janitor-power-001
 version: 1
 title: 掃除のおばちゃんが電源を抜いた夜
-difficulty: intermediate
-timeLimitMinutes: 5
+difficulty: beginner
+difficultyScore: 170
+timeLimitMinutes: 8
 service:
   name: やまびこ API
   healthUrl: http://localhost:8080/health
 briefing:
+  - 初級の卒業試験。復旧は簡単だが、原因の裏付けを取ってから報告すること。
   - 深夜のデータセンターには掃除の方が巡回しており、コンセント周りに触れることがある。
-  - API が突然落ちた。まずは影響を確認し、それから「なぜ落ちたか」の手がかりを app.log から拾う。
-  - 原因の裏付けは、直すことと同じくらい大事な仕事。
+  - まずは影響を確認し、それから「なぜ落ちたか」の手がかりを app.log から拾う。原因の裏付けは、直すことと同じくらい大事な仕事。
 startup:
   - id: api
     command: PORT=8080 node /workspace/services/yamabiko-api/server.mjs

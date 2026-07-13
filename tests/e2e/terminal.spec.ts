@@ -2,7 +2,7 @@ import {test} from '@playwright/test';
 import {
   acceptRecordingConsent,
   focusGameCanvas,
-  openDemoScenarioBriefing,
+  openDefaultScenarioBriefing,
   retireFromGame,
   runTerminalCommand,
   setSaveRecording,
@@ -19,7 +19,7 @@ test('terminal command input records command_detected on replay timeline', async
   page,
   request,
 }) => {
-  const session = await openDemoScenarioBriefing(page);
+  const session = await openDefaultScenarioBriefing(page);
   await acceptRecordingConsent(page);
   await setSaveRecording(page, false);
   await startGameFromBriefing(page);
@@ -46,7 +46,7 @@ test('terminal interrupt recovers prompt for another command', async ({
   page,
   request,
 }) => {
-  const session = await openDemoScenarioBriefing(page);
+  const session = await openDefaultScenarioBriefing(page);
   await acceptRecordingConsent(page);
   await setSaveRecording(page, false);
   await startGameFromBriefing(page);

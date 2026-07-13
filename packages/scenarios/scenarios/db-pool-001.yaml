@@ -2,6 +2,7 @@ id: db-pool-001
 version: 1
 title: DB プールが呼吸できない夜
 difficulty: intermediate
+difficultyScore: 230
 timeLimitMinutes: 10
 service:
   name: やまびこ API

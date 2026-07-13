@@ -3,6 +3,7 @@
   "version": 1,
   "title": "キーボードに酒をこぼした夜",
   "difficulty": "intermediate",
+  "difficultyScore": 260,
   "timeLimitMinutes": 12,
   "service": {
     "name": "やまびこ API",

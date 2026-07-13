@@ -2,6 +2,7 @@ id: api-hang-001
 version: 1
 title: 固まった API の夜
 difficulty: intermediate
+difficultyScore: 210
 timeLimitMinutes: 10
 service:
   name: やまびこ API

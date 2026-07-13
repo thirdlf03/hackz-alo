@@ -20,7 +20,6 @@ const CANVAS_LABEL = '録画対象のゲーム画面';
 const CONSENT_CHECKBOX = /録画し、振り返りに使うことに同意する/;
 const SAVE_CHECKBOX = /録画データをサーバーに保存する/;
 const DEFAULT_SCENARIO = /API が寝落ち/;
-const DEMO_SCENARIO = /デモ: 1分復旧ドリル/;
 
 const DESIGN_WIDTH = logicalWidth;
 const DESIGN_HEIGHT = logicalHeight;
@@ -78,10 +77,6 @@ export async function openDefaultScenarioBriefing(
   options: {perf?: boolean} = {}
 ) {
   return openScenarioBriefing(page, options);
-}
-
-export async function openDemoScenarioBriefing(page: Page) {
-  return openScenarioBriefing(page, {scenarioName: DEMO_SCENARIO});
 }
 
 export async function acceptRecordingConsent(page: Page) {

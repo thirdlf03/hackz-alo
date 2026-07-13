@@ -3,6 +3,7 @@
   "version": 1,
   "title": "Runbook が「気合いで直す」に化けた夜",
   "difficulty": "intermediate",
+  "difficultyScore": 290,
   "timeLimitMinutes": 10,
   "service": {
     "name": "やまびこ API",

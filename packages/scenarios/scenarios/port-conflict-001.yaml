@@ -2,6 +2,7 @@ id: port-conflict-001
 version: 1
 title: ポート 8080 を奪われた夜
 difficulty: advanced
+difficultyScore: 310
 timeLimitMinutes: 12
 service:
   name: やまびこ API

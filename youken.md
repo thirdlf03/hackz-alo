@@ -864,10 +864,10 @@ timeline_events:
 
 ### 実装済み
 
-- シナリオ 18 本
-  - 初級 3 本(demo-tutorial-001, disk-full-001, process-stop-001)
-  - 中級 10 本(api-hang-001 を含む)
-  - 上級 5 本(port-conflict-001 を含む)
+- シナリオ 20 本
+  - 初級 7 本(process-stop-001, disk-full-001, hang-basics-001, config-rollback-001, alert-triage-001, cable-jumprope-001, janitor-power-001)
+  - 中級 9 本(api-hang-001 を含む)
+  - 上級 4 本(port-conflict-001 を含む)
 - 実症状ベースの障害注入
   - 障害はマーカーファイルではなくサンドボックスの実状態を変える(プロセスの kill / SIGSTOP、DB 実接続の飽和、実際に読まれる設定ファイルの破壊、ポート占有)
   - ヘルスチェックは実挙動(DB への実 TCP 接続、ログボリュームのクォータ)から決まる
@@ -881,7 +881,7 @@ timeline_events:
 
 ### 今後(重点)
 
-- 初級シナリオの拡充(3 本 → 6 本以上)。手軽な入口を厚くする
+- 上級シナリオの拡充(4 本 → さらに厚く)。手応えのある難度の高い題材を増やす
 - UI 文言の日本語統一
 - リプレイ共有
 - シナリオエディタ / ユーザー作成シナリオ

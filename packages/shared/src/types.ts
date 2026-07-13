@@ -393,6 +393,8 @@ export interface ScenarioDefinition {
   version: number;
   title: string;
   difficulty: Difficulty;
+  /** 難易度区分内の表示順・細かい難易度を表す整数(小さいほど易しい)。 */
+  difficultyScore: number;
   timeLimitMinutes: number;
   service: {
     name: string;

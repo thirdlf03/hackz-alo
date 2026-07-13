@@ -3,6 +3,7 @@
   "version": 1,
   "title": "再起動しても直らない夜",
   "difficulty": "intermediate",
+  "difficultyScore": 270,
   "timeLimitMinutes": 10,
   "service": {
     "name": "やまびこ API",

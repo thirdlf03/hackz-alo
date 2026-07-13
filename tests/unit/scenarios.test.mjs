@@ -3,6 +3,7 @@ import {readdir, readFile} from 'node:fs/promises';
 import path from 'node:path';
 import {test} from 'node:test';
 import {fileURLToPath} from 'node:url';
+import {tsImport} from 'tsx/esm/api';
 import {validateScenarioDefinition} from '../../packages/shared/src/schema.ts';
 
 const rootDir = path.resolve(
@@ -13,7 +14,7 @@ const scenarioDataDir = path.join(rootDir, 'packages/scenarios/data');
 
 test('all scenario data validates against shared contract', async () => {
   const scenarios = await loadScenarios();
-  assert.equal(scenarios.length, 18);
+  assert.equal(scenarios.length, 20);
 
   const ids = new Set();
   for (const {file, scenario} of scenarios) {
@@ -36,6 +37,45 @@ test('scenario data exposes configured difficulty buckets', async () => {
   assert.equal(difficulties.has('beginner'), true);
   assert.equal(difficulties.has('intermediate'), true);
   assert.equal(difficulties.has('advanced'), true);
+});
+
+test('all scenarios have a positive integer difficultyScore', async () => {
+  const scenarios = await loadScenarios();
+  for (const {file, scenario} of scenarios) {
+    assert.equal(
+      Number.isInteger(scenario.difficultyScore),
+      true,
+      `${file} difficultyScore should be an integer`
+    );
+    assert.equal(
+      scenario.difficultyScore > 0,
+      true,
+      `${file} difficultyScore should be positive`
+    );
+  }
+});
+
+test('scenarios export is sorted by difficulty bucket then difficultyScore', async () => {
+  const {scenarios} = await tsImport(
+    '../../packages/scenarios/src/index.ts',
+    import.meta.url
+  );
+  const difficultyOrder = {beginner: 0, intermediate: 1, advanced: 2};
+
+  const actual = scenarios.map((scenario) => scenario.id);
+  const expected = scenarios
+    .slice()
+    .sort((a, b) => {
+      const difficultyDiff =
+        difficultyOrder[a.difficulty] - difficultyOrder[b.difficulty];
+      if (difficultyDiff !== 0) return difficultyDiff;
+      const scoreDiff = a.difficultyScore - b.difficultyScore;
+      if (scoreDiff !== 0) return scoreDiff;
+      return a.id.localeCompare(b.id);
+    })
+    .map((scenario) => scenario.id);
+
+  assert.deepEqual(actual, expected);
 });
 
 test('scenario validator rejects incomplete success conditions', () => {
@@ -195,6 +235,7 @@ function validScenario(overrides = {}) {
     version: 1,
     title: 'Test Scenario',
     difficulty: 'beginner',
+    difficultyScore: 100,
     timeLimitMinutes: 10,
     service: {
       name: 'Test API',

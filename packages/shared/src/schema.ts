@@ -78,6 +78,8 @@ export function validateScenarioDefinition(
     errors.push('difficulty must be beginner, intermediate, or advanced');
   }
 
+  requirePositiveInteger(value, 'difficultyScore', errors);
+
   if (!isObject(value.service)) {
     errors.push('service must be an object');
   } else {

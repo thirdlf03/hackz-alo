@@ -2,15 +2,16 @@
   "id": "cable-jumprope-001",
   "version": 1,
   "title": "LANケーブル縄跳びの夜",
-  "difficulty": "intermediate",
-  "timeLimitMinutes": 8,
+  "difficulty": "beginner",
+  "difficultyScore": 140,
+  "timeLimitMinutes": 10,
   "service": {
     "name": "やまびこ API",
     "healthUrl": "http://localhost:8080/health"
   },
   "briefing": [
     "API は生きているのに 5xx が返る。そんな時は依存先を疑う。",
-    "API → DB の経路のどこで壊れているのかを順番に切り分ける。",
+    "この回で学ぶのは、API 自体の異常なのか、依存先(DB)の異常なのかを見分ける力。",
     "障害の原因は、技術的とは限らない。"
   ],
   "startup": [
@@ -126,6 +127,19 @@
       "hint": "依存先の状態を確認する",
       "panel": "terminal",
       "suggestedCommand": "yamactl status fake-db"
+    },
+    {
+      "id": "nav-runbook",
+      "atMs": 85000,
+      "hint": "依存先の切り分け Runbook を開いて手順を追う",
+      "panel": "runbook"
+    },
+    {
+      "id": "nav-restart",
+      "atMs": 95000,
+      "hint": "依存先が死んでいたら復旧する",
+      "panel": "terminal",
+      "suggestedCommand": "yamactl restart fake-db"
     }
   ]
 }

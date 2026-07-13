@@ -2,6 +2,7 @@ id: kodama-batch-001
 version: 1
 title: こだまが返ってこないバッチ
 difficulty: intermediate
+difficultyScore: 240
 timeLimitMinutes: 8
 service:
   name: やまびこ batch

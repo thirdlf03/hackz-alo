@@ -1,18 +1,18 @@
 {
-  "id": "alert-spam-001",
+  "id": "alert-triage-001",
   "version": 1,
-  "title": "アラートがうるさすぎる夜",
-  "difficulty": "intermediate",
-  "difficultyScore": 280,
-  "timeLimitMinutes": 12,
+  "title": "アラートを全部は信じない夜",
+  "difficulty": "beginner",
+  "difficultyScore": 160,
+  "timeLimitMinutes": 10,
   "service": {
     "name": "やまびこ API",
     "healthUrl": "http://localhost:8080/health"
   },
   "briefing": [
-    "通知が鳴りやまない。撤去し忘れた古いノイズ発生源(通知デーモン)が残っている疑いがある。",
-    "ノイズに紛れて、本物の障害も同時に起きている。見逃さないこと。",
-    "監視パネルと app.log を併用し、ノイズと本物を切り分けて優先度を付ける。"
+    "通知が次々と鳴る。撤去し忘れたノイズ発生源(通知デーモン)が原因かもしれない。",
+    "ノイズの中に本物の障害が紛れていることがある。",
+    "アラートの件数に飛びつく前に、SERVICE HEALTH のような実指標を起点に本物を特定する。"
   ],
   "startup": [
     {
@@ -60,15 +60,15 @@
   "triggers": [
     {
       "id": "spam",
-      "atMs": 45000,
+      "atMs": 60000,
       "type": "alert_spam",
       "params": {
-        "count": 32
+        "count": 12
       }
     },
     {
       "id": "real-stop",
-      "atMs": 75000,
+      "atMs": 120000,
       "type": "process_stop",
       "params": {
         "processId": "api"
@@ -78,49 +78,35 @@
   "alerts": [
     {
       "id": "noise-1",
-      "atMs": 50000,
+      "atMs": 65000,
       "severity": "warning",
       "message": "CPU fan is dancing",
       "source": "monitor"
     },
     {
       "id": "noise-2",
-      "atMs": 52000,
+      "atMs": 70000,
       "severity": "critical",
       "message": "Energy drink stock critically low",
       "source": "monitor"
     },
     {
       "id": "noise-3",
-      "atMs": 54000,
+      "atMs": 75000,
       "severity": "warning",
       "message": "Janitor camera lens fogged",
       "source": "monitor"
     },
     {
       "id": "noise-4",
-      "atMs": 56000,
+      "atMs": 80000,
       "severity": "warning",
       "message": "Fridge door open for 3 minutes",
       "source": "monitor"
     },
     {
-      "id": "noise-5",
-      "atMs": 58000,
-      "severity": "critical",
-      "message": "Wing deployment detected on operator",
-      "source": "scenario"
-    },
-    {
-      "id": "noise-6",
-      "atMs": 60000,
-      "severity": "warning",
-      "message": "Keyboard moisture sensor tripped",
-      "source": "monitor"
-    },
-    {
       "id": "real-down",
-      "atMs": 82000,
+      "atMs": 135000,
       "severity": "critical",
       "message": "やまびこ API health check failed",
       "source": "monitor"
@@ -143,17 +129,17 @@
   ],
   "runbooks": [
     {
-      "id": "runbook.alert-spam",
-      "title": "アラートスパム対応",
-      "body": "1. 大量に鳴っていても、まず SERVICE HEALTH のような実指標を優先して見る\n2. app.log にノイズを吐き続けているプロセスがいないか確認する(ps / pgrep)\n3. ノイズ源を止めたら、ログに残る「本物」の障害の痕跡を探す\n4. 見つかった障害に応じて復旧する(例: yamactl restart api)\n5. curl localhost:8080/health で復旧確認する"
+      "id": "runbook.alert-triage",
+      "title": "アラートトリアージの基本",
+      "body": "1. 件数に驚かず、まず SERVICE HEALTH のような実指標を確認する\n2. app.log を見て、ノイズを吐き続けているプロセスがいないか探す(ps aux | grep node)\n3. ノイズ源を止める(pkill -f alert-flood-daemon.mjs)\n4. ノイズの陰に本物の障害がないか、app.log と health を確認する\n5. 見つかった障害を復旧する(例: yamactl restart api)\n6. curl localhost:8080/health で復旧確認する"
     }
   ],
   "chatMessages": [
     {
-      "id": "pager-duty",
-      "atMs": 70000,
+      "id": "pager-triage",
+      "atMs": 90000,
       "from": "Pager",
-      "body": "32件鳴ってます。全部見なくていいです。"
+      "body": "12件鳴ってます。落ち着いて。"
     }
   ],
   "navigationSteps": [
@@ -165,22 +151,29 @@
     },
     {
       "id": "nav-spam-file",
-      "atMs": 50000,
+      "atMs": 65000,
       "hint": "ノイズを吐き続けているプロセスがいないか探す",
       "panel": "terminal",
       "suggestedCommand": "ps aux | grep node"
     },
     {
+      "id": "nav-kill-spam",
+      "atMs": 85000,
+      "hint": "ノイズ源を止める",
+      "panel": "terminal",
+      "suggestedCommand": "pkill -f alert-flood-daemon.mjs"
+    },
+    {
       "id": "nav-real",
-      "atMs": 78000,
+      "atMs": 125000,
       "hint": "ノイズの陰で本物の障害が起きていないか、app.log と health を確認する",
       "panel": "terminal",
       "suggestedCommand": "tail -n 50 /workspace/logs/app.log"
     },
     {
       "id": "nav-runbook",
-      "atMs": 90000,
-      "hint": "アラートスパム Runbook を開く",
+      "atMs": 140000,
+      "hint": "アラートトリアージ Runbook を開く",
       "panel": "runbook"
     }
   ]

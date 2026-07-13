@@ -1,18 +1,18 @@
 {
-  "id": "api-hang-001",
+  "id": "hang-basics-001",
   "version": 1,
-  "title": "固まった API の夜",
-  "difficulty": "intermediate",
-  "difficultyScore": 210,
-  "timeLimitMinutes": 10,
+  "title": "返事をくれない API の夜",
+  "difficulty": "beginner",
+  "difficultyScore": 130,
+  "timeLimitMinutes": 8,
   "service": {
     "name": "やまびこ API",
     "healthUrl": "http://localhost:8080/health"
   },
   "briefing": [
     "プロセスが「死んでいる」のと「固まっている」のは別の障害。",
-    "curl は返ってこない。でもプロセスは生きている。その状態を切り分ける。",
-    "ps の STAT 列が読めると強い。"
+    "yamactl status では動いて見えるのに、curl が返ってこないことがある。",
+    "curl --max-time でタイムアウトを明示して、状態を切り分ける練習をする。"
   ],
   "startup": [
     {
@@ -60,7 +60,7 @@
   "triggers": [
     {
       "id": "hang",
-      "atMs": 60000,
+      "atMs": 90000,
       "type": "process_hang",
       "params": {
         "processId": "api"
@@ -70,14 +70,14 @@
   "alerts": [
     {
       "id": "latency",
-      "atMs": 80000,
-      "severity": "critical",
+      "atMs": 110000,
+      "severity": "warning",
       "message": "API latency p95 is above 5s",
       "source": "monitor"
     },
     {
       "id": "health-fail",
-      "atMs": 95000,
+      "atMs": 130000,
       "severity": "critical",
       "message": "やまびこ API health check failed",
       "source": "monitor"
@@ -96,32 +96,46 @@
   ],
   "runbooks": [
     {
-      "id": "runbook.hang",
-      "title": "ハングの切り分け",
-      "body": "1. curl --max-time 3 localhost:8080/health で応答を見る\n   (返ってこない=タイムアウトも重要な情報)\n2. yamactl status api。プロセスが生きているのに応答しないなら「ハング」\n3. ps -o pid,stat,cmd で状態を確認する。STAT が T なら停止シグナルで固まっている\n4. 直近の app.log に前兆(GC pause など)がないか見る\n5. yamactl restart api で強制再起動し、health で復旧確認する"
+      "id": "runbook.hang-basics",
+      "title": "ハング(固まり)の切り分け",
+      "body": "1. curl --max-time 3 localhost:8080/health を実行する(タイムアウトも重要な情報)\n2. yamactl status api でプロセスの生死を確認する。動いているのに応答しないなら「ハング」\n3. ps -o pid,stat,cmd で状態を見る。STAT が T なら停止シグナルで固まっている\n4. app.log に前兆(GC pause など)がないか確認する\n5. yamactl restart api で再起動し、health で復旧確認する"
     }
   ],
   "chatMessages": [
     {
-      "id": "boss-hang",
-      "atMs": 115000,
+      "id": "boss-hang-basics",
+      "atMs": 150000,
       "from": "上司",
-      "body": "落ちてはいないんでしょ？なら大丈夫じゃない。おやすみ。"
+      "body": "落ちてはいないんでしょ？なら平気そうだけど。おやすみ。"
     }
   ],
   "navigationSteps": [
     {
-      "id": "nav-latency",
-      "atMs": 0,
-      "hint": "Latency p95 が急上昇していないか見る",
-      "panel": "metrics"
+      "id": "nav-status",
+      "atMs": 30000,
+      "hint": "yamactl status api でプロセスの生死を確認する(動いて見える点に注意)",
+      "panel": "terminal",
+      "suggestedCommand": "yamactl status api"
     },
     {
       "id": "nav-curl",
-      "atMs": 65000,
-      "hint": "タイムアウト付きで応答を確認する",
+      "atMs": 95000,
+      "hint": "タイムアウト付きで応答を確認する。固まっていれば返ってこない",
       "panel": "terminal",
       "suggestedCommand": "curl --max-time 3 localhost:8080/health"
+    },
+    {
+      "id": "nav-ps",
+      "atMs": 110000,
+      "hint": "ps aux | grep node で状態を確認する。STAT が T なら停止シグナルで固まっている",
+      "panel": "terminal",
+      "suggestedCommand": "ps aux | grep node"
+    },
+    {
+      "id": "nav-runbook",
+      "atMs": 130000,
+      "hint": "ハングの切り分け Runbook で復旧手順を確認する",
+      "panel": "runbook"
     }
   ]
 }

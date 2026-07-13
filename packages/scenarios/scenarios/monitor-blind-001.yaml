@@ -2,6 +2,7 @@ id: monitor-blind-001
 version: 1
 title: 監視が見えない夜
 difficulty: advanced
+difficultyScore: 320
 timeLimitMinutes: 15
 service:
   name: やまびこ API

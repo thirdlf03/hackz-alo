@@ -1,7 +1,7 @@
 import {expect, test, type APIRequestContext} from '@playwright/test';
 import {
   acceptRecordingConsent,
-  openDemoScenarioBriefing,
+  openDefaultScenarioBriefing,
   retireFromGame,
   setSaveRecording,
   startGameFromBriefing,
@@ -123,7 +123,7 @@ test.describe('replay playback journeys', () => {
     request,
   }) => {
     test.setTimeout(180_000);
-    const session = await openDemoScenarioBriefing(page);
+    const session = await openDefaultScenarioBriefing(page);
     await acceptRecordingConsent(page);
     await setSaveRecording(page, false);
     await startGameFromBriefing(page);
@@ -173,7 +173,7 @@ test.describe('replay playback journeys', () => {
     page,
     request,
   }) => {
-    const session = await openDemoScenarioBriefing(page);
+    const session = await openDefaultScenarioBriefing(page);
     await acceptRecordingConsent(page);
     await setSaveRecording(page, true);
     await startGameFromBriefing(page);
@@ -202,7 +202,7 @@ test.describe('replay playback journeys', () => {
     page,
     request,
   }) => {
-    const session = await openDemoScenarioBriefing(page);
+    const session = await openDefaultScenarioBriefing(page);
     await acceptRecordingConsent(page);
     await setSaveRecording(page, false);
     await startGameFromBriefing(page);

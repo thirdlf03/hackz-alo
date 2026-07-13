@@ -3,6 +3,7 @@
   "version": 1,
   "title": "混沌の深夜シフト",
   "difficulty": "advanced",
+  "difficultyScore": 340,
   "timeLimitMinutes": 15,
   "service": {
     "name": "やまびこ API",

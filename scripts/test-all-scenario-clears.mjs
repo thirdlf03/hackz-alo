@@ -22,17 +22,28 @@ const SALES_KDM_FIXED = `やまびこ帳 売上集計バッチ
 
 /** @type {Record<string, { commands?: string[], files?: Array<{ path: string, content: string }>, waitGameMs: number }>} */
 const FIXES = {
-  "demo-tutorial-001": {
-    waitGameMs: 15_000,
-    commands: ["yamactl restart api", "curl -s localhost:8080/health"]
-  },
   "process-stop-001": {
-    waitGameMs: 60_000,
+    waitGameMs: 30_000,
     commands: ["yamactl restart api"]
   },
   "disk-full-001": {
     waitGameMs: 60_000,
     commands: ["rm -f /workspace/logs/debug.log", "yamactl restart api"]
+  },
+  "hang-basics-001": {
+    waitGameMs: 105_000,
+    commands: ["yamactl restart api", "curl -s --max-time 5 localhost:8080/health"]
+  },
+  "config-rollback-001": {
+    waitGameMs: 75_000,
+    commands: [
+      "cp /workspace/releases/yamabiko-api.previous.json /workspace/etc/yamabiko-api.json",
+      "curl -s localhost:8080/health"
+    ]
+  },
+  "alert-triage-001": {
+    waitGameMs: 165_000,
+    commands: ["pkill -f alert-flood-daemon.mjs", "yamactl restart api"]
   },
   "kodama-batch-001": {
     waitGameMs: 90_000,

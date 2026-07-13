@@ -3,6 +3,7 @@
   "version": 1,
   "title": "ログが世界を埋め尽くす夜",
   "difficulty": "beginner",
+  "difficultyScore": 120,
   "timeLimitMinutes": 5,
   "service": {
     "name": "やまびこ API",
@@ -11,7 +12,7 @@
   "briefing": [
     "やまびこ API はログを /workspace/logs に出す。",
     "ディスク使用率が高いと API は 500 を返し始める。",
-    "肥大化しているログを特定して対処してから復旧確認する。"
+    "df で全体を見て、du で怪しいログを絞り込み、tail で中身を確認する。この3つのコマンドを覚える回だと思ってほしい。"
   ],
   "startup": [
     {
