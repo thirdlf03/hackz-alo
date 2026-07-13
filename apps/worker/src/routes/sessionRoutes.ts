@@ -13,6 +13,11 @@ import {createWriteToken, hashWriteToken} from '../pure/writeAuth.js';
 import {purgeReplayStorage} from '../storage/replayPurge.js';
 import type {Bindings} from '../types.js';
 import {getSessionDoStub} from '../effect/sessionDoStub.js';
+import {generateIceServers} from '../effect/cloudflareTurn.js';
+import {sendPagerNotification} from '../effect/pagerPush.js';
+import {buildPagerNotificationPayload} from '../pure/pagerNotification.js';
+import {upsertPagerSubscription} from '../repositories/pagerSubscriptionRepository.js';
+import {createSessionProxyRequest} from '../http/sessionProxyRequest.js';
 
 const difficulties = new Set<Difficulty>([
   'beginner',
@@ -26,10 +31,17 @@ const sessionActionsWithoutDbLookup = new Set([
   'logs',
   'storage',
   'exercise',
+  'participant-cursor',
+  'terminal',
+  'terminal-resize',
+  'signal',
 ]);
 const SESSION_CREATE_BODY_MAX_BYTES = 8 * 1024;
 const SESSION_CONTROL_BODY_MAX_BYTES = 8 * 1024;
 const SESSION_FILE_BODY_MAX_BYTES = 1024 * 1024;
+const SESSION_PAGER_BODY_MAX_BYTES = 4096;
+const RTC_SIGNAL_BODY_MAX_BYTES = 64 * 1024;
+const SESSION_READ_TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
 
 export function registerSessionRoutes(app: WorkerApp) {
   app.post('/api/sessions', async (c) => {
@@ -63,6 +75,7 @@ export function registerSessionRoutes(app: WorkerApp) {
       scenarioId?: string;
       difficulty?: string;
       turnstileToken?: string;
+      participantId?: string;
     };
     if (!(await verifyTurnstileToken(c.env, body.turnstileToken, clientIp))) {
       return c.json(err('forbidden', 'turnstile verification failed'), 403);
@@ -121,6 +134,9 @@ export function registerSessionRoutes(app: WorkerApp) {
         sessionId,
         replayId,
         scenarioId: scenario.id,
+        ...(typeof body.participantId === 'string'
+          ? {participantId: body.participantId}
+          : {}),
       }
     );
     if (!bootstrapResponse.ok) return bootstrapResponse;
@@ -159,11 +175,88 @@ export function registerSessionRoutes(app: WorkerApp) {
     const sessionId = c.req.param('sessionId');
     const record = await getSession(c.env, sessionId);
     if (!record) return c.json(err('not_found', 'session not found'), 404);
-    return proxySession(c, 'start', {
+    const parsedBody = await readRouteJsonObject(
+      c,
+      SESSION_CONTROL_BODY_MAX_BYTES,
+      {emptyValue: {}}
+    );
+    if (parsedBody instanceof Response) return parsedBody;
+    const body = parsedBody as {participantId?: string};
+    const response = await proxySession(c, 'start', {
       sessionId,
       replayId: record.replay_id,
       scenarioId: record.scenario_id,
+      originUrl: new URL(c.req.url).origin,
+      ...(typeof body.participantId === 'string'
+        ? {participantId: body.participantId}
+        : {}),
     });
+    if (response.ok) {
+      scheduleSessionPagerAlerts(c, sessionId, record.scenario_id);
+    }
+    return response;
+  });
+  app.post('/api/sessions/:sessionId/read-tokens', async (c) => {
+    const sessionId = c.req.param('sessionId');
+    const denied = await requireSessionWriteAccess(c, sessionId);
+    if (denied) return denied;
+    const record = await getSession(c.env, sessionId);
+    if (!record) return c.json(err('not_found', 'session not found'), 404);
+    const readToken = createWriteToken();
+    const tokenHash = await hashWriteToken(readToken);
+    const now = new Date().toISOString();
+    const expiresAt = new Date(
+      Date.now() + SESSION_READ_TOKEN_TTL_MS
+    ).toISOString();
+    await c.env.DB.prepare(
+      `insert into session_read_tokens (id, session_id, token_hash, scope, expires_at, created_at)
+       values (?, ?, ?, 'read', ?, ?)`
+    )
+      .bind(
+        `rtok_${crypto.randomUUID().replaceAll('-', '')}`,
+        sessionId,
+        tokenHash,
+        expiresAt,
+        now
+      )
+      .run();
+    return c.json(ok({readToken}));
+  });
+  app.post('/api/sessions/:sessionId/pager', async (c) => {
+    const denied = await requireSessionWriteAccess(c, c.req.param('sessionId'));
+    if (denied) return denied;
+    const sessionId = c.req.param('sessionId');
+    const parsedBody = await readRouteJsonObject(
+      c,
+      SESSION_PAGER_BODY_MAX_BYTES,
+      {emptyValue: {}}
+    );
+    if (parsedBody instanceof Response) return parsedBody;
+    const body = parsedBody as {
+      endpoint?: string;
+      expirationTime?: number | null;
+      keys?: {p256dh?: string; auth?: string};
+    };
+    if (typeof body.endpoint !== 'string' || body.endpoint.length === 0) {
+      return c.json(err('bad_request', 'endpoint is required'), 400);
+    }
+    if (
+      !body.keys ||
+      typeof body.keys.p256dh !== 'string' ||
+      typeof body.keys.auth !== 'string'
+    ) {
+      return c.json(
+        err('bad_request', 'keys.p256dh and keys.auth are required'),
+        400
+      );
+    }
+    await upsertPagerSubscription(c.env, {
+      sessionId,
+      endpoint: body.endpoint,
+      subscriptionJson: JSON.stringify(body),
+      createdAt: Date.now(),
+    });
+    return c.json(ok({registered: true}));
   });
   app.post('/api/sessions/:sessionId/resolve', async (c) => {
     const denied = await requireSessionWriteAccess(c, c.req.param('sessionId'));
@@ -332,6 +425,15 @@ export function registerSessionRoutes(app: WorkerApp) {
       injectId: c.req.param('injectId'),
     });
   });
+  app.post('/api/sessions/:sessionId/exercise/phase', async (c) => {
+    const denied = await requireSessionWriteAccess(c, c.req.param('sessionId'));
+    if (denied) return denied;
+    const body = await readRouteJsonObject(c, SESSION_CONTROL_BODY_MAX_BYTES, {
+      emptyValue: {},
+    });
+    if (body instanceof Response) return body;
+    return proxySession(c, 'phase', body);
+  });
   app.post('/api/sessions/:sessionId/incident-log', async (c) => {
     const denied = await requireSessionWriteAccess(c, c.req.param('sessionId'));
     if (denied) return denied;
@@ -353,6 +455,27 @@ export function registerSessionRoutes(app: WorkerApp) {
   app.get('/api/sessions/:sessionId/aar', async (c) =>
     proxySessionRead(c, 'aar')
   );
+  app.post('/api/sessions/:sessionId/rtc/turn-credentials', async (c) => {
+    const denied = await requireSessionWriteAccess(c, c.req.param('sessionId'));
+    if (denied) return denied;
+    const record = await getSession(c.env, c.req.param('sessionId'));
+    if (!record) return c.json(err('not_found', 'session not found'), 404);
+    const body = await readRouteJsonObject(c, SESSION_CONTROL_BODY_MAX_BYTES, {
+      emptyValue: {},
+    });
+    if (body instanceof Response) return body;
+    return c.json(ok({iceServers: await generateIceServers(c.env)}));
+  });
+  app.post('/api/sessions/:sessionId/rtc/signal', async (c) => {
+    const denied = await requireSessionWriteAccess(c, c.req.param('sessionId'));
+    if (denied) return denied;
+    // SDP オファーを含むため、通常の制御ボディより大きめの上限を許す。
+    const body = await readRouteJsonObject(c, RTC_SIGNAL_BODY_MAX_BYTES, {
+      emptyValue: {},
+    });
+    if (body instanceof Response) return body;
+    return proxySession(c, 'signal', body);
+  });
 }
 
 function resolveRequestedScenario(body: {
@@ -397,16 +520,7 @@ async function proxySession(c: WorkerContext, action: string, body?: unknown) {
   const stub = getSessionDoStub(c.env.SESSION_DO, sessionId);
   const target = new URL(c.req.url);
   target.pathname = `/internal/sessions/${sessionId}/${action}`;
-  const request =
-    body === undefined
-      ? new Request(new Request(target, c.req.raw), {
-          headers: traceHeaders(c.req.raw.headers),
-        })
-      : new Request(target, {
-          method: c.req.method === 'GET' ? 'POST' : c.req.method,
-          headers: traceHeaders({'content-type': 'application/json'}),
-          body: JSON.stringify(body),
-        });
+  const request = createSessionProxyRequest(c.req.raw, target, body);
   return stub.fetch(request);
 }
 
@@ -471,6 +585,29 @@ function scheduleSessionPrepare(
           message: messageFrom(error),
         });
       })
+  );
+}
+
+function scheduleSessionPagerAlerts(
+  c: WorkerContext,
+  sessionId: string,
+  scenarioId: string
+) {
+  const scenario = getScenario(scenarioId);
+  if (!scenario) return;
+  const origin = new URL(c.req.url).origin;
+  const payload = buildPagerNotificationPayload(
+    scenario,
+    `${origin}/`,
+    sessionId
+  );
+  c.executionCtx.waitUntil(
+    sendPagerNotification(c.env, sessionId, payload).catch((error: unknown) => {
+      logStructured('pager_alerts_failed', {
+        sessionId,
+        message: messageFrom(error),
+      });
+    })
   );
 }
 

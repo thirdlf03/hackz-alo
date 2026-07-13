@@ -47,6 +47,20 @@ export interface ProcessStopTrigger {
   params: {processId: string};
 }
 
+export interface ProcessHangTrigger {
+  id: string;
+  atMs: number;
+  type: 'process_hang';
+  params: {processId: string};
+}
+
+export interface PortConflictTrigger {
+  id: string;
+  atMs: number;
+  type: 'port_conflict';
+  params: {port?: number; processId?: string};
+}
+
 export interface DiskFullTrigger {
   id: string;
   atMs: number;
@@ -54,10 +68,10 @@ export interface DiskFullTrigger {
   params: {path: string; bytes: number};
 }
 
-export interface UnlangBatchFailureTrigger {
+export interface KodamaBatchFailureTrigger {
   id: string;
   atMs: number;
-  type: 'unlang_batch_failure';
+  type: 'kodama_batch_failure';
   params: {jobId: string; path: string; specInComments?: boolean};
 }
 
@@ -72,28 +86,21 @@ export interface BadDeployTrigger {
   id: string;
   atMs: number;
   type: 'bad_deploy';
-  params: {configPath: string};
+  params: {configPath?: string};
 }
 
 export interface DbPoolExhaustTrigger {
   id: string;
   atMs: number;
   type: 'db_pool_exhaust';
-  params: {maxConnections: number};
-}
-
-export interface MemoryLeakTrigger {
-  id: string;
-  atMs: number;
-  type: 'memory_leak';
-  params: {targetPercent: number};
+  params: {connections?: number; maxConnections?: number};
 }
 
 export interface DnsMisconfigTrigger {
   id: string;
   atMs: number;
   type: 'dns_misconfig';
-  params: {hostsPath: string};
+  params: {hostsPath?: string};
 }
 
 export interface MonitorBlindTrigger {
@@ -121,14 +128,14 @@ export interface CableJumpropeTrigger {
   id: string;
   atMs: number;
   type: 'cable_jumprope';
-  params: {hostsPath?: string};
+  params: {processId?: string};
 }
 
-export interface KeyboardSpillTrigger {
+export interface RunawayLoadgenTrigger {
   id: string;
   atMs: number;
-  type: 'keyboard_spill';
-  params: {noise?: string};
+  type: 'runaway_loadgen';
+  params: {targetUrl?: string};
 }
 
 export interface AlertSpamTrigger {
@@ -147,18 +154,19 @@ export interface RunbookGaslightTrigger {
 
 export type ScenarioTrigger =
   | ProcessStopTrigger
+  | ProcessHangTrigger
+  | PortConflictTrigger
   | DiskFullTrigger
-  | UnlangBatchFailureTrigger
+  | KodamaBatchFailureTrigger
   | QueueBacklogTrigger
   | BadDeployTrigger
   | DbPoolExhaustTrigger
-  | MemoryLeakTrigger
   | DnsMisconfigTrigger
   | MonitorBlindTrigger
   | CompositeRestartLoopTrigger
   | JanitorPowerPullTrigger
   | CableJumpropeTrigger
-  | KeyboardSpillTrigger
+  | RunawayLoadgenTrigger
   | AlertSpamTrigger
   | RunbookGaslightTrigger;
 
@@ -167,7 +175,7 @@ export type NavigationPanel =
   | 'terminal'
   | 'editor'
   | 'runbook'
-  | 'slack';
+  | 'chat';
 
 export interface NavigationStep {
   id: string;
@@ -197,6 +205,15 @@ export type ExercisePhase =
   | 'aar';
 
 export interface ParticipantCursor {
+  x: number;
+  y: number;
+  visible: boolean;
+  updatedAt: string;
+}
+
+export interface ParticipantCursorEvent {
+  sessionId: string;
+  participantId: string;
   x: number;
   y: number;
   visible: boolean;
@@ -242,6 +259,8 @@ export interface ExerciseInject {
   fired: boolean;
   firedAt?: string | undefined;
   firedByParticipantId?: string | undefined;
+  atMs?: number | undefined;
+  roleHint?: ParticipantRole | undefined;
 }
 
 export type IncidentLogEntryKind =
@@ -282,6 +301,7 @@ export interface AfterActionReport {
 export interface ExerciseSnapshot {
   sessionId: string;
   phase: ExercisePhase;
+  hostParticipantId: string | null;
   participants: ParticipantPresence[];
   tasks: ExerciseTask[];
   injects: ExerciseInject[];
@@ -319,29 +339,62 @@ export type SuccessCondition =
   | {type: 'http_status'; url: string; status: number}
   | {type: 'disk_usage_below'; path: string; valuePercent: number}
   | {type: 'process_running'; processId: string}
-  | {type: 'marker_absent'; path: string}
+  | {type: 'process_absent'; processId: string}
   | {type: 'log_absent'; path: string; pattern: string}
-  | {type: 'unlang_batch_ok'; jobId: string};
+  | {type: 'kodama_batch_ok'; jobId: string};
 
 export interface RunbookDefinition {
   id: string;
   title: string;
   body: string;
   availableAtMs?: number;
+  /** Sandbox path whose live content should override `body` once fetched. */
+  file?: string;
 }
 
-export interface SlackMessageDefinition {
+export interface ChatMessageDefinition {
   id: string;
   atMs: number;
   from: string;
   body: string;
 }
 
+export type ScenarioTopologyNodeKind =
+  | 'external'
+  | 'service'
+  | 'datastore'
+  | 'batch';
+
+export interface ScenarioTopologyNode {
+  /** Unique within the graph. */
+  id: string;
+  /** Display name (Japanese allowed). */
+  label: string;
+  kind: ScenarioTopologyNodeKind;
+  /** Reference to scenario.startup[].id. Only set for nodes backed by a real process. */
+  processId?: string;
+}
+
+export interface ScenarioTopologyEdge {
+  /** Caller node id (from depends on to). */
+  from: string;
+  to: string;
+}
+
+export interface ScenarioTopology {
+  nodes: ScenarioTopologyNode[];
+  edges: ScenarioTopologyEdge[];
+}
+
+export type ServiceHealth = 'healthy' | 'degraded' | 'down';
+
 export interface ScenarioDefinition {
   id: string;
   version: number;
   title: string;
   difficulty: Difficulty;
+  /** 難易度区分内の表示順・細かい難易度を表す整数(小さいほど易しい)。 */
+  difficultyScore: number;
   timeLimitMinutes: number;
   service: {
     name: string;
@@ -357,21 +410,26 @@ export interface ScenarioDefinition {
   alerts: AlertDefinition[];
   successConditions: SuccessCondition[];
   runbooks: RunbookDefinition[];
-  slackMessages: SlackMessageDefinition[];
+  chatMessages: ChatMessageDefinition[];
   navigationSteps?: NavigationStep[];
   exercise?: ScenarioExerciseDefinition;
+  topology?: ScenarioTopology;
 }
 
 export interface MetricsSnapshot {
   at: number;
-  cpu: number;
-  memory: number;
+  /** null when the monitoring source is blind (agent dead or data stale). */
+  cpu: number | null;
+  /** null when the monitoring source is blind (agent dead or data stale). */
+  memory: number | null;
   disk: number;
   http5xxRate: number;
   latencyP95Ms: number;
   rps: number;
   dbConnections: number;
   queueDepth: number;
+  /** Live sandbox file content for file-backed runbooks, keyed by runbook id. */
+  runbookFiles?: Record<string, string>;
 }
 
 export type MetricsSource = 'loading' | 'live' | 'offline';
@@ -409,6 +467,8 @@ export interface GameRenderState {
       edgeRttMs: number | null;
       edgeRttHistory: number[];
       alerts: AlertDefinition[];
+      /** Per scenario.topology node id. Wiring from worker state is a follow-up task. */
+      serviceHealth?: Record<string, ServiceHealth>;
     };
     center: {
       activeTool: 'terminal' | 'editor';
@@ -416,17 +476,19 @@ export interface GameRenderState {
       editor: EditorPanelState;
     };
     right: {
-      activePanelTab: 'runbook' | 'slack';
+      activePanelTab: 'runbook' | 'chat';
       activeRunbook?: RunbookDefinition | undefined;
       activeRunbookIndex: number;
-      slackMessages: SlackMessageDefinition[];
+      chatMessages: ChatMessageDefinition[];
+      /** Live sandbox file content for file-backed runbooks, keyed by runbook id. */
+      runbookFileContents?: Record<string, string>;
     };
   };
   navigation: GameNavigationState;
   notifications: NotificationState;
-  seenSlackIds: string[];
-  playerSlackMessages: SlackMessageDefinition[];
-  slackCompose: {
+  seenChatIds: string[];
+  playerChatMessages: ChatMessageDefinition[];
+  chatCompose: {
     active: boolean;
     draft: string;
   };
@@ -440,6 +502,8 @@ export interface GameRenderState {
   };
   commandInputFocused: boolean;
   cursor: {x: number; y: number; visible: boolean};
+  /** Local multiplayer participant id; remote cursor draw skips this id. */
+  localParticipantId?: string;
   room: {
     participants: ParticipantPresence[];
     tasks: ExerciseTask[];

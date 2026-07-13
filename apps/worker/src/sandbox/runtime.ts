@@ -3,6 +3,7 @@ export {
   fetchSessionMetrics,
   fetchSessionStorage,
   listSessionFiles,
+  readSandboxFileRaw,
   readSessionFile,
   writeSessionFile,
 } from './sessionData.js';

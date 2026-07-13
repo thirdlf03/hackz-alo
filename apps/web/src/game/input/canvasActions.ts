@@ -5,15 +5,17 @@ import {
   containsCanvasPoint,
   expandedMonitorLayout,
   inputDockRects,
-  monitorContentHeight,
+  monitorContentRegion,
   monitorContentWidth,
+  monitorContentHeight,
+  monitorHeaderHeight,
   monitorLayout,
   monitorMagnifyAt,
   navigationOverlayRect,
   notificationBellRegion,
   rightPanelPrimaryTabAt,
   runbookTabAt,
-  slackComposeAt,
+  chatComposeAt,
   type MonitorId,
   type RightPanelTab,
 } from '../render/canvasLayout.js';
@@ -34,9 +36,9 @@ export type CanvasAction =
   | {type: 'dismiss_navigation'; stepId: string}
   | {type: 'close_expanded_monitor'}
   | {type: 'toggle_expanded_monitor'; monitor: MonitorId}
-  | {type: 'slack_send'}
-  | {type: 'slack_compose'}
-  | {type: 'deactivate_slack_compose'}
+  | {type: 'chat_send'}
+  | {type: 'chat_compose'}
+  | {type: 'deactivate_chat_compose'}
   | {type: 'none'; absorb?: boolean};
 
 export function resolveCanvasAction(
@@ -102,14 +104,14 @@ export function resolveCanvasAction(
     return {type: 'dismiss_navigation', stepId: state.navigation.activeStepId};
   }
 
-  const slackTarget = slackComposeAt(
+  const chatTarget = chatComposeAt(
     point.x,
     point.y,
     state.monitors.right.activePanelTab,
     state.world.expandedMonitor
   );
-  if (slackTarget === 'send') return {type: 'slack_send'};
-  if (slackTarget === 'compose') return {type: 'slack_compose'};
+  if (chatTarget === 'send') return {type: 'chat_send'};
+  if (chatTarget === 'compose') return {type: 'chat_compose'};
 
   if (state.world.expandedMonitor) {
     if (!containsCanvasPoint(expandedMonitorLayout, point.x, point.y)) {
@@ -123,7 +125,7 @@ export function resolveCanvasAction(
     return {type: 'toggle_expanded_monitor', monitor: monitorMagnify};
   }
 
-  if (state.slackCompose.active) return {type: 'deactivate_slack_compose'};
+  if (state.chatCompose.active) return {type: 'deactivate_chat_compose'};
   return {type: 'none'};
 }
 
@@ -141,16 +143,16 @@ export function editorFileAt(
   }
   const expanded = state.world.expandedMonitor === 'terminal';
   const monitor = expanded ? expandedMonitorLayout : monitorLayout('terminal');
-  const contentX = monitor.x + 22;
-  const contentY = monitor.y + 64;
-  const contentWidth = monitor.width - 44;
-  const contentHeight = monitor.height - 80;
-  const scale = Math.min(
-    contentWidth / monitorContentWidth,
-    contentHeight / monitorContentHeight
+  const content = monitorContentRegion(
+    monitor,
+    monitorHeaderHeight('terminal')
   );
-  const localX = (x - contentX) / scale;
-  const localY = (y - contentY) / scale;
+  const scale = Math.min(
+    content.width / monitorContentWidth,
+    content.height / monitorContentHeight
+  );
+  const localX = (x - content.x) / scale;
+  const localY = (y - content.y) / scale;
   const fileListTop = 66;
   if (
     localX < 0 ||

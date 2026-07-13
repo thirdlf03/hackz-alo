@@ -22,13 +22,16 @@ const migrationPaths = [
   path.join(rootDir, 'migrations/0006_replay_consent.sql'),
   path.join(rootDir, 'migrations/0007_replay_visibility.sql'),
   path.join(rootDir, 'migrations/0008_session_read_tokens.sql'),
+  path.join(rootDir, 'migrations/0009_exercise_room.sql'),
+  path.join(rootDir, 'migrations/0010_worldview_rename.sql'),
+  path.join(rootDir, 'migrations/0011_service_health_changed_event.sql'),
 ];
 const sqliteAvailable = !spawnSync('sqlite3', ['-version'], {encoding: 'utf8'})
   .error;
 
 test('REPLAY_EVENT_TYPES matches migration CHECK constraint', async () => {
   const migrationSql = await readFile(
-    path.join(rootDir, 'migrations/0004_replay_event_types.sql'),
+    path.join(rootDir, 'migrations/0011_service_health_changed_event.sql'),
     'utf8'
   );
   const match = migrationSql.match(/type in \(([\s\S]*?)\)/);
@@ -37,7 +40,7 @@ test('REPLAY_EVENT_TYPES matches migration CHECK constraint', async () => {
   assert.deepEqual(
     [...REPLAY_EVENT_TYPES].toSorted(),
     migrationTypes.toSorted(),
-    'REPLAY_EVENT_TYPES must match migrations/0004_replay_event_types.sql'
+    'REPLAY_EVENT_TYPES must match migrations/0011_service_health_changed_event.sql'
   );
 });
 

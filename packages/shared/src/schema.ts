@@ -7,18 +7,19 @@ export type ValidationResult<T> =
 const difficulties = new Set(['beginner', 'intermediate', 'advanced']);
 const triggerTypes = new Set([
   'process_stop',
+  'process_hang',
+  'port_conflict',
   'disk_full',
-  'unlang_batch_failure',
+  'kodama_batch_failure',
   'queue_backlog',
   'bad_deploy',
   'db_pool_exhaust',
-  'memory_leak',
   'dns_misconfig',
   'monitor_blind',
   'composite_restart_loop',
   'janitor_power_pull',
   'cable_jumprope',
-  'keyboard_spill',
+  'runaway_loadgen',
   'alert_spam',
   'runbook_gaslight',
 ]);
@@ -27,7 +28,7 @@ const navigationPanels = new Set([
   'terminal',
   'editor',
   'runbook',
-  'slack',
+  'chat',
 ]);
 const alertSeverities = new Set(['info', 'warning', 'critical']);
 const alertSources = new Set(['scenario', 'monitor']);
@@ -43,9 +44,15 @@ const successTypes = new Set([
   'http_status',
   'disk_usage_below',
   'process_running',
-  'marker_absent',
+  'process_absent',
   'log_absent',
-  'unlang_batch_ok',
+  'kodama_batch_ok',
+]);
+const topologyNodeKinds = new Set([
+  'external',
+  'service',
+  'datastore',
+  'batch',
 ]);
 const idPattern = /^[a-zA-Z0-9._-]+$/;
 
@@ -70,6 +77,8 @@ export function validateScenarioDefinition(
   ) {
     errors.push('difficulty must be beginner, intermediate, or advanced');
   }
+
+  requirePositiveInteger(value, 'difficultyScore', errors);
 
   if (!isObject(value.service)) {
     errors.push('service must be an object');
@@ -97,6 +106,8 @@ export function validateScenarioDefinition(
     }
   });
   requireNonEmptyArray(value, 'startup', errors);
+
+  validateTopology(value, startupIds, errors);
 
   const triggerIds = new Set<string>();
   validateArray(value, 'triggers', errors, (item, path) => {
@@ -159,17 +170,20 @@ export function validateScenarioDefinition(
     if (item.availableAtMs !== undefined) {
       requireNonNegativeInteger(item, 'availableAtMs', errors, path);
     }
+    if (item.file !== undefined) {
+      requireAbsolutePath(item, 'file', errors, path);
+    }
   });
   requireNonEmptyArray(value, 'runbooks', errors);
 
-  const slackMessageIds = new Set<string>();
-  validateArray(value, 'slackMessages', errors, (item, path) => {
+  const chatMessageIds = new Set<string>();
+  validateArray(value, 'chatMessages', errors, (item, path) => {
     if (!isObject(item)) {
       errors.push(`${path} must be an object`);
       return;
     }
     requireId(item, 'id', errors, path);
-    rememberUnique(slackMessageIds, item.id, `${path}.id`, errors);
+    rememberUnique(chatMessageIds, item.id, `${path}.id`, errors);
     requireNonNegativeInteger(item, 'atMs', errors, path);
     requireString(item, 'from', errors, path);
     requireString(item, 'body', errors, path);
@@ -191,7 +205,7 @@ export function validateScenarioDefinition(
         (typeof item.panel !== 'string' || !navigationPanels.has(item.panel))
       ) {
         errors.push(
-          `${path}.panel must be metrics, terminal, editor, runbook, or slack`
+          `${path}.panel must be metrics, terminal, editor, runbook, or chat`
         );
       }
       if (
@@ -215,6 +229,71 @@ export function validateScenarioDefinition(
 
   if (errors.length > 0) return {ok: false, errors};
   return {ok: true, value: input as ScenarioDefinition};
+}
+
+function validateTopology(
+  value: Record<string, unknown>,
+  startupIds: Set<string>,
+  errors: string[]
+) {
+  if (value.topology === undefined) return;
+  if (!isObject(value.topology)) {
+    errors.push('topology must be an object');
+    return;
+  }
+  const topology = value.topology;
+
+  const nodeIds = new Set<string>();
+  validateArray(topology, 'nodes', errors, (item, path) => {
+    const fullPath = `topology.${path}`;
+    if (!isObject(item)) {
+      errors.push(`${fullPath} must be an object`);
+      return;
+    }
+    requireId(item, 'id', errors, `topology.${path}`);
+    if (typeof item.id === 'string' && item.id !== '') {
+      rememberUnique(nodeIds, item.id, `${fullPath}.id`, errors);
+    }
+    requireString(item, 'label', errors, `topology.${path}`);
+    if (typeof item.kind !== 'string' || !topologyNodeKinds.has(item.kind)) {
+      errors.push(
+        `${fullPath}.kind must be external, service, datastore, or batch`
+      );
+    }
+    if (item.processId !== undefined) {
+      if (typeof item.processId !== 'string' || item.processId === '') {
+        errors.push(`${fullPath}.processId must be a non-empty string`);
+      } else if (!startupIds.has(item.processId)) {
+        errors.push(`${fullPath}.processId must reference a startup id`);
+      }
+    }
+  });
+
+  validateArray(topology, 'edges', errors, (item, path) => {
+    const fullPath = `topology.${path}`;
+    if (!isObject(item)) {
+      errors.push(`${fullPath} must be an object`);
+      return;
+    }
+    requireString(item, 'from', errors, `topology.${path}`);
+    requireString(item, 'to', errors, `topology.${path}`);
+    const from = item.from;
+    const to = item.to;
+    if (typeof from === 'string' && from !== '' && !nodeIds.has(from)) {
+      errors.push(`${fullPath}.from must reference an existing node id`);
+    }
+    if (typeof to === 'string' && to !== '' && !nodeIds.has(to)) {
+      errors.push(`${fullPath}.to must reference an existing node id`);
+    }
+    if (
+      typeof from === 'string' &&
+      typeof to === 'string' &&
+      from !== '' &&
+      from === to
+    ) {
+      errors.push(`${fullPath} must not be a self loop (from equals to)`);
+    }
+  });
 }
 
 function validateExercise(exercise: Record<string, unknown>, errors: string[]) {
@@ -456,10 +535,16 @@ function validateTriggerParams(
 
   if (trigger.type === 'process_stop') {
     requireString(trigger.params, 'processId', errors, `${path}.params`);
+  } else if (trigger.type === 'process_hang') {
+    requireString(trigger.params, 'processId', errors, `${path}.params`);
+  } else if (trigger.type === 'port_conflict') {
+    if (trigger.params.port !== undefined) {
+      requirePort(trigger.params, 'port', errors, `${path}.params`);
+    }
   } else if (trigger.type === 'disk_full') {
     requireAbsolutePath(trigger.params, 'path', errors, `${path}.params`);
     requirePositiveInteger(trigger.params, 'bytes', errors, `${path}.params`);
-  } else if (trigger.type === 'unlang_batch_failure') {
+  } else if (trigger.type === 'kodama_batch_failure') {
     requireString(trigger.params, 'jobId', errors, `${path}.params`);
     requireAbsolutePath(trigger.params, 'path', errors, `${path}.params`);
     if (
@@ -470,19 +555,23 @@ function validateTriggerParams(
     }
   } else if (trigger.type === 'queue_backlog') {
     requirePositiveInteger(trigger.params, 'count', errors, `${path}.params`);
-  } else if (trigger.type === 'bad_deploy') {
-    requireAbsolutePath(trigger.params, 'configPath', errors, `${path}.params`);
   } else if (trigger.type === 'db_pool_exhaust') {
-    requirePositiveInteger(
-      trigger.params,
-      'maxConnections',
-      errors,
-      `${path}.params`
-    );
-  } else if (trigger.type === 'memory_leak') {
-    requirePercent(trigger.params, 'targetPercent', errors, `${path}.params`);
-  } else if (trigger.type === 'dns_misconfig') {
-    requireAbsolutePath(trigger.params, 'hostsPath', errors, `${path}.params`);
+    if (trigger.params.connections !== undefined) {
+      requirePositiveInteger(
+        trigger.params,
+        'connections',
+        errors,
+        `${path}.params`
+      );
+    }
+    if (trigger.params.maxConnections !== undefined) {
+      requirePositiveInteger(
+        trigger.params,
+        'maxConnections',
+        errors,
+        `${path}.params`
+      );
+    }
   } else if (trigger.type === 'monitor_blind') {
     if (
       !Array.isArray(trigger.params.blindMetrics) ||
@@ -499,17 +588,12 @@ function validateTriggerParams(
       requireString(trigger.params, 'processId', errors, `${path}.params`);
     }
   } else if (trigger.type === 'cable_jumprope') {
-    if (trigger.params.hostsPath !== undefined) {
-      requireAbsolutePath(
-        trigger.params,
-        'hostsPath',
-        errors,
-        `${path}.params`
-      );
+    if (trigger.params.processId !== undefined) {
+      requireString(trigger.params, 'processId', errors, `${path}.params`);
     }
-  } else if (trigger.type === 'keyboard_spill') {
-    if (trigger.params.noise !== undefined) {
-      requireString(trigger.params, 'noise', errors, `${path}.params`);
+  } else if (trigger.type === 'runaway_loadgen') {
+    if (trigger.params.targetUrl !== undefined) {
+      requireHttpUrl(trigger.params, 'targetUrl', errors, `${path}.params`);
     }
   } else if (trigger.type === 'alert_spam') {
     if (trigger.params.count !== undefined) {
@@ -535,12 +619,12 @@ function validateSuccessCondition(
     requirePercent(condition, 'valuePercent', errors, path);
   } else if (condition.type === 'process_running') {
     requireString(condition, 'processId', errors, path);
-  } else if (condition.type === 'marker_absent') {
-    requireAbsolutePath(condition, 'path', errors, path);
+  } else if (condition.type === 'process_absent') {
+    requireString(condition, 'processId', errors, path);
   } else if (condition.type === 'log_absent') {
     requireAbsolutePath(condition, 'path', errors, path);
     requireString(condition, 'pattern', errors, path);
-  } else if (condition.type === 'unlang_batch_ok') {
+  } else if (condition.type === 'kodama_batch_ok') {
     requireString(condition, 'jobId', errors, path);
   }
 }
@@ -576,7 +660,7 @@ function validateTimelineBounds(
   for (const [key, label] of [
     ['triggers', 'triggers'],
     ['alerts', 'alerts'],
-    ['slackMessages', 'slackMessages'],
+    ['chatMessages', 'chatMessages'],
     ['navigationSteps', 'navigationSteps'],
   ] as const) {
     const items = value[key];

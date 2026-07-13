@@ -1,0 +1,138 @@
+{
+  "id": "kodama-mystery-001",
+  "version": 1,
+  "title": "????",
+  "difficulty": "advanced",
+  "difficultyScore": 330,
+  "timeLimitMinutes": 15,
+  "service": {
+    "name": "やまびこ batch",
+    "healthUrl": "http://localhost:8080/health"
+  },
+  "briefing": [
+    "突如現れた謎の人物から、このサービスを運用してくれと頼まれた。",
+    "手元に Runbook はない。何が起きても自分で対処するしかない。",
+    "深夜バッチはこだまで書かれているらしい。"
+  ],
+  "startup": [
+    {
+      "id": "api",
+      "command": "PORT=8080 node /workspace/services/yamabiko-api/server.mjs",
+      "waitForPort": 8080
+    },
+    {
+      "id": "fake-db",
+      "command": "node /workspace/services/fake-db/server.mjs",
+      "waitForPort": 15432
+    }
+  ],
+  "topology": {
+    "nodes": [
+      {
+        "id": "user",
+        "label": "ユーザー",
+        "kind": "external"
+      },
+      {
+        "id": "api",
+        "label": "やまびこ API",
+        "kind": "service",
+        "processId": "api"
+      },
+      {
+        "id": "fake-db",
+        "label": "疑似データベース",
+        "kind": "datastore",
+        "processId": "fake-db"
+      },
+      {
+        "id": "batch",
+        "label": "夜間バッチ(sales-nightly)",
+        "kind": "batch"
+      }
+    ],
+    "edges": [
+      {
+        "from": "user",
+        "to": "api"
+      },
+      {
+        "from": "api",
+        "to": "fake-db"
+      },
+      {
+        "from": "api",
+        "to": "batch"
+      },
+      {
+        "from": "batch",
+        "to": "fake-db"
+      }
+    ]
+  },
+  "triggers": [
+    {
+      "id": "kodama",
+      "atMs": 90000,
+      "type": "kodama_batch_failure",
+      "params": {
+        "jobId": "sales-nightly",
+        "path": "/workspace/services/batch/sales.kdm"
+      }
+    }
+  ],
+  "alerts": [
+    {
+      "id": "batch-failed",
+      "atMs": 100000,
+      "severity": "critical",
+      "message": "sales-nightly batch failed",
+      "source": "scenario"
+    }
+  ],
+  "successConditions": [
+    {
+      "type": "kodama_batch_ok",
+      "jobId": "sales-nightly"
+    },
+    {
+      "type": "log_absent",
+      "path": "/workspace/logs/batch.log",
+      "pattern": "こだまが返ってきません"
+    }
+  ],
+  "runbooks": [
+    {
+      "id": "runbook.ar.page1",
+      "title": "صفحة 1 – السجل",
+      "availableAtMs": 90000,
+      "body": "استعادة sales-nightly\n\n1. فحص السجل\ntail -n 50 /workspace/logs/batch.log\n→ إذا ظهر «こだまが返ってきません»: خطأ وقت التشغيل في لغة こだま\n\n2. عرض الشيفرة المصدرية\ncat /workspace/services/batch/sales.kdm"
+    },
+    {
+      "id": "runbook.ar.page2",
+      "title": "صفحة 2 – الشيفرة المصدرية",
+      "availableAtMs": 93000,
+      "body": "إرشادات لغة こだま\n\n«わる» = قسمة\n«しずか» = 0\n«こだま» = 1\n\nإذا كان الطرف الأيمن من «わる» هو «しずか» (0) → قسمة على صفر → «こだまが返ってきません»\n\nمثال في sales.kdm:\nよぶ y = しずか  يبقى كما هو → x わる y يفشل"
+    },
+    {
+      "id": "runbook.ar.page3",
+      "title": "صفحة 3 – الإصلاح",
+      "availableAtMs": 96000,
+      "body": "الإصلاح والاختبار\n\n1. تصحيح الملف\nsed -i 's/よぶ y = しずか/よぶ y = こだま/' /workspace/services/batch/sales.kdm\n\nأو\nvim /workspace/services/batch/sales.kdm\n\n2. اختبار\nkodama run /workspace/services/batch/sales.kdm\n→ رقم = OK. «こだまが返ってきません» = ما زال معطلاً\n\n3. إفراغ السجل\n: > /workspace/logs/batch.log"
+    }
+  ],
+  "chatMessages": [
+    {
+      "id": "arabic-docs",
+      "atMs": 92000,
+      "from": "運用",
+      "body": "謎の人物からアラビア語の紙が3枚届いた。誰も読めない。"
+    },
+    {
+      "id": "keiri",
+      "atMs": 110000,
+      "from": "経理",
+      "body": "またこだまが返ってきません"
+    }
+  ]
+}

@@ -21,6 +21,7 @@ export function detectMetricThresholdCrossings(
   return THRESHOLDS.filter((item) => {
     const before = previous[item.key];
     const after = next[item.key];
+    if (before === null || after === null) return false;
     return before < item.threshold && after >= item.threshold;
   });
 }

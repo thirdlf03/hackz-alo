@@ -2,6 +2,11 @@ import {SandboxAddon} from '@cloudflare/sandbox/xterm';
 import {Terminal} from '@xterm/xterm';
 import type {TerminalMirrorState} from '@incident/shared';
 import {gamePalette} from '../render/gamePalette.js';
+import type {AddonSendChannels} from './addonTransportGuard.js';
+import {
+  guardAddonTransport,
+  guardTerminalFocus,
+} from './addonTransportGuard.js';
 import {tabCompletionCursorColumn} from './cursorRepair.js';
 import {installTerminalWebSocketDebug, terminalDebug} from './debug.js';
 import {
@@ -19,6 +24,8 @@ export type TerminalConnectionState =
 export interface TerminalSessionOptions {
   sessionId: string;
   accessToken?: string | undefined;
+  /** Sent as a WS query param for the server-side role gate. */
+  participantId?: string | undefined;
   cols?: number;
   rows?: number;
   onSnapshot: (snapshot: TerminalMirrorState) => void;
@@ -26,6 +33,19 @@ export interface TerminalSessionOptions {
   onOutput?: (summary: string) => void;
   onConnectionChange?: (state: TerminalConnectionState, error?: Error) => void;
   onResize?: (cols: number, rows: number) => void;
+  /**
+   * Live check for whether this participant may operate the shared PTY.
+   * When it returns false: resize() and the internal redraw-repair hack
+   * become no-ops (xterm's `resize()` is wired by SandboxAddon straight
+   * to a WS resize message once connected), and — as the last line of
+   * defense at the transport boundary — the addon's own `sendResize`/
+   * `sendData` are shadowed so nothing reaches the WS regardless of what
+   * triggered it, including SandboxAddon's own unconditional resize send
+   * on the "ready" control message and `terminal.focus()` routing local
+   * keystrokes into `sendData`. See the constructor for details. Defaults
+   * to always-allowed.
+   */
+  canOperate?: () => boolean;
 }
 
 export class TerminalSession {
@@ -62,7 +82,8 @@ export class TerminalSession {
       rows,
       cursorBlink: true,
       convertEol: true,
-      fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+      fontFamily:
+        "'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace",
       fontSize: 18,
       lineHeight: 1.22,
       letterSpacing: 0,
@@ -70,6 +91,22 @@ export class TerminalSession {
         background: gamePalette.bgTerminal,
         foreground: gamePalette.textTerminal,
         cursor: gamePalette.textTerminal,
+        black: '#5e7a66',
+        red: '#ff6b6b',
+        green: '#7cfc9a',
+        yellow: '#ffcf5c',
+        blue: '#8aa892',
+        magenta: '#d8f3dc',
+        cyan: '#b7f2c3',
+        white: '#d8f3dc',
+        brightBlack: '#8aa892',
+        brightRed: '#ff9a9a',
+        brightGreen: '#dcffe4',
+        brightYellow: '#ffcf5c',
+        brightBlue: '#8aa892',
+        brightMagenta: '#d8f3dc',
+        brightCyan: '#b7f2c3',
+        brightWhite: '#dcffe4',
       },
     });
 
@@ -82,6 +119,9 @@ export class TerminalSession {
         if (options.accessToken) {
           url.searchParams.set('accessToken', options.accessToken);
         }
+        if (options.participantId) {
+          url.searchParams.set('participantId', options.participantId);
+        }
         return url.toString();
       },
       onStateChange: (state, error) => {
@@ -93,12 +133,27 @@ export class TerminalSession {
         options.onConnectionChange?.(state, error);
         if (state === 'connected') {
           this.schedulePtyResizeSync();
-          options.onResize?.(this.terminal.cols, this.terminal.rows);
+          if (this.canOperate()) {
+            options.onResize?.(this.terminal.cols, this.terminal.rows);
+          }
           this.publishSnapshot();
         }
       },
     });
 
+    // See addonTransportGuard.ts for why this has to patch the addon
+    // instance rather than gate at TerminalSession's own call sites:
+    // `sendResize`/`sendData` are declared `private` in the vendor
+    // .d.ts (TS-only — the compiled JS has no visibility enforcement),
+    // hence the cast.
+    guardAddonTransport(this.addon as unknown as AddonSendChannels, () =>
+      this.canOperate()
+    );
+    // SandboxAddon calls `this.terminal?.focus()` unconditionally on
+    // every "ready" control message; without this, a read-only viewer's
+    // hidden offscreen xterm would steal real DOM focus on every
+    // connect/reconnect. See guardTerminalFocus for details.
+    guardTerminalFocus(this.terminal, () => this.canOperate());
     this.terminal.loadAddon(this.addon);
     this.terminal.open(this.container);
     this.publishSnapshot();
@@ -141,6 +196,7 @@ export class TerminalSession {
   }
 
   resize(cols: number, rows: number) {
+    if (!this.canOperate()) return;
     if (cols < 12 || rows < 10) return;
     if (this.terminal.cols === cols && this.terminal.rows === rows) return;
     this.terminal.resize(cols, rows);
@@ -172,6 +228,17 @@ export class TerminalSession {
   }
 
   private handleTerminalData(data: string) {
+    if (!this.canOperate()) {
+      // Defense in depth: sending is already blocked at the transport
+      // layer (guardAddonTransport) and DOM focus-stealing is blocked by
+      // guardTerminalFocus, but if either is ever bypassed this stops a
+      // read-only viewer's keystrokes from entering the *local* parsing
+      // pipeline below — accumulating into inputBuffer, pushing fake
+      // commandHistory entries, and firing onCommand, which
+      // useTerminalBridge turns into terminal_input/command_detected
+      // replay events that were never actually sent to the PTY.
+      return;
+    }
     if (data.includes('\u0003')) {
       terminalDebug('xterm.onData', {
         bytes: Array.from(data, (char) => char.charCodeAt(0)),
@@ -238,7 +305,12 @@ export class TerminalSession {
     }
   }
 
+  private canOperate(): boolean {
+    return this.options.canOperate ? this.options.canOperate() : true;
+  }
+
   private flushPtyResize() {
+    if (!this.canOperate()) return;
     const cols = this.terminal.cols;
     const rows = this.terminal.rows;
     if (cols < 13 || rows < 11) return;

@@ -1,11 +1,11 @@
 import type {GameRenderState, ScenarioDefinition} from '@incident/shared';
 import {
-  activateSlackCompose,
+  activateChatCompose,
   blurCommandInput,
-  deactivateSlackCompose,
+  deactivateChatCompose,
   dismissNavigationStep,
   focusCommandInput,
-  mergedSlackMessages,
+  mergedChatMessages,
   setActiveRunbook,
   setCenterTool,
   setRightPanelTab,
@@ -14,6 +14,7 @@ import {
 } from '../game/state/gameState.js';
 import {metricsPanelScrollRegion} from '../game/render/canvasLayout.js';
 import {resolveCanvasAction} from '../game/input/canvasActions.js';
+import {canOperateSandbox} from '../pure/rolePermissions.js';
 import type {ReplayEventEmitter} from '../game/events/emitReplayEvent.js';
 import type {FinishMode, Screen} from './AppScreens.js';
 import {containsPoint, toLogicalCanvasPoint} from './appUtils.js';
@@ -21,6 +22,7 @@ import {containsPoint, toLogicalCanvasPoint} from './appUtils.js';
 export function useCanvasInteraction(options: {
   screen: Screen;
   canvasRef: {current: HTMLCanvasElement | null};
+  chatInputRef?: {current: HTMLInputElement | null};
   rendererRef: {current: {scrollMetricsPanel(deltaY: number): void} | null};
   gameStateRef: {current: GameRenderState | undefined};
   sessionRef: {current: {sessionId: string; replayId: string} | undefined};
@@ -32,7 +34,7 @@ export function useCanvasInteraction(options: {
   ) => void;
   currentGameTimeMs: () => number;
   endSession: (mode: FinishMode) => Promise<void>;
-  submitSlackMessage: () => void;
+  submitChatMessage: () => void;
   loadEditorFiles: () => Promise<void>;
   openEditorFile: (path: string) => Promise<void>;
   onCursorMove?: (point: {x: number; y: number}) => void;
@@ -40,6 +42,7 @@ export function useCanvasInteraction(options: {
   const {
     screen,
     canvasRef,
+    chatInputRef,
     rendererRef,
     gameStateRef,
     sessionRef,
@@ -48,7 +51,7 @@ export function useCanvasInteraction(options: {
     patchGameStateRef,
     currentGameTimeMs,
     endSession,
-    submitSlackMessage,
+    submitChatMessage,
     loadEditorFiles,
     openEditorFile,
     onCursorMove,
@@ -76,8 +79,16 @@ export function useCanvasInteraction(options: {
         return void endSession(action.mode);
       }
       if (action.type === 'focus_command_input') {
+        // Mirrors the server-side sandbox role gate: participants who
+        // cannot operate the terminal can't focus the command input
+        // either (the dock shows the reason instead).
+        if (
+          !canOperateSandbox(state.room.participants, state.localParticipantId)
+        ) {
+          return;
+        }
         patchGameStateRef((current) =>
-          focusCommandInput(deactivateSlackCompose(current))
+          focusCommandInput(deactivateChatCompose(current))
         );
         return;
       }
@@ -107,7 +118,7 @@ export function useCanvasInteraction(options: {
           replayId,
           type: 'ui_panel_open',
           at,
-          payload: {panel: action.tab === 'slack' ? 'slack' : 'runbook'},
+          payload: {panel: action.tab === 'chat' ? 'chat' : 'runbook'},
         });
         return;
       }
@@ -131,8 +142,8 @@ export function useCanvasInteraction(options: {
         const unreadAlerts = state.monitors.left.alerts.filter(
           (alert) => !state.notifications.readAlertIds.includes(alert.id)
         );
-        const unreadSlack = mergedSlackMessages(state).filter(
-          (message) => !state.seenSlackIds.includes(message.id)
+        const unreadChat = mergedChatMessages(state).filter(
+          (message) => !state.seenChatIds.includes(message.id)
         );
         patchGameStateRef((current) => toggleNotificationPanel(current));
         void emitter.emit({
@@ -142,17 +153,17 @@ export function useCanvasInteraction(options: {
           payload: {panel: 'notifications'},
         });
         for (const alert of unreadAlerts) {
-          void emitter.emitOnce(`slack-read:${alert.id}`, {
+          void emitter.emitOnce(`chat-read:${alert.id}`, {
             replayId,
-            type: 'slack_message_read',
+            type: 'chat_message_read',
             at,
             payload: {alertId: alert.id, message: alert.message},
           });
         }
-        for (const message of unreadSlack) {
-          void emitter.emitOnce(`slack-read:${message.id}`, {
+        for (const message of unreadChat) {
+          void emitter.emitOnce(`chat-read:${message.id}`, {
             replayId,
-            type: 'slack_message_read',
+            type: 'chat_message_read',
             at,
             payload: {
               messageId: message.id,
@@ -192,24 +203,32 @@ export function useCanvasInteraction(options: {
         return;
       }
 
-      if (action.type === 'slack_send') {
-        submitSlackMessage();
+      if (action.type === 'chat_send') {
+        submitChatMessage();
         return;
       }
 
-      if (action.type === 'slack_compose') {
-        patchGameStateRef((current) => activateSlackCompose(current));
+      if (action.type === 'chat_compose') {
+        // HTML-in-Canvas 有効時は本物の <input> が compose 位置に実在するため
+        // focus() を移すだけでよい(onFocus が activateChatCompose を呼ぶ)。
+        // 非対応時は従来の疑似フォーカス状態を立てる。
+        const embedded = chatInputRef?.current;
+        if (embedded) {
+          embedded.focus();
+        } else {
+          patchGameStateRef((current) => activateChatCompose(current));
+        }
         void emitter.emit({
           replayId,
           type: 'ui_panel_open',
           at,
-          payload: {panel: 'slack_compose'},
+          payload: {panel: 'chat_compose'},
         });
         return;
       }
 
-      if (action.type === 'deactivate_slack_compose') {
-        patchGameStateRef((current) => deactivateSlackCompose(current));
+      if (action.type === 'deactivate_chat_compose') {
+        patchGameStateRef((current) => deactivateChatCompose(current));
       }
     }
   }

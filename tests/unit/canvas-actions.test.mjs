@@ -7,12 +7,17 @@ const {
   expandedMonitorLayout,
   inputDockRects,
   measureRunbookTabWidth,
+  monitorContentRegion,
+  monitorContentWidth,
+  monitorContentHeight,
+  monitorHeaderHeight,
   monitorLayout,
+  monitorMagnifyRegions,
   navigationOverlayRect,
   notificationBellRegion,
   runbookTabRegion,
-  slackComposeRegion,
-  slackSendButtonRegion,
+  chatComposeRegion,
+  chatSendButtonRegion,
 } = await tsImport(
   '../../apps/web/src/game/render/canvasLayout.ts',
   import.meta.url
@@ -56,11 +61,11 @@ test('resolveCanvasAction opens editor files from normal and expanded terminal v
 
   assert.equal(
     editorFileAt(normalPoint.x, normalPoint.y, state),
-    '/workspace/services/batch/sales.un'
+    '/workspace/services/batch/sales.kdm'
   );
   assert.deepEqual(resolveCanvasAction(normalPoint, state, baseScenario()), {
     type: 'open_editor_file',
-    path: '/workspace/services/batch/sales.un',
+    path: '/workspace/services/batch/sales.kdm',
   });
 
   const expandedState = {
@@ -70,7 +75,7 @@ test('resolveCanvasAction opens editor files from normal and expanded terminal v
   const expandedPoint = editorFilePoint(1, true);
   assert.deepEqual(
     resolveCanvasAction(expandedPoint, expandedState, baseScenario()),
-    {type: 'open_editor_file', path: '/workspace/run/deploy.json'}
+    {type: 'open_editor_file', path: '/workspace/etc/yamabiko-api.json'}
   );
 });
 
@@ -130,94 +135,95 @@ test('resolveCanvasAction absorbs expanded monitor interior and closes from outs
   });
 });
 
-test('resolveCanvasAction maps monitor magnify and slack compose targets', () => {
-  const terminal = monitorLayout('terminal');
+test('resolveCanvasAction maps monitor magnify and chat compose targets', () => {
   const state = createPlayState();
+  const terminalMagnify = monitorMagnifyRegions.find(
+    (region) => region.id === 'terminal'
+  );
 
   assert.deepEqual(
-    resolveCanvasAction(
-      {x: terminal.x + terminal.width - 28, y: terminal.y + 24},
-      state,
-      baseScenario()
-    ),
+    resolveCanvasAction(pointIn(terminalMagnify), state, baseScenario()),
     {type: 'toggle_expanded_monitor', monitor: 'terminal'}
   );
 
-  const slackState = {
+  const chatState = {
     ...state,
     monitors: {
       ...state.monitors,
-      right: {...state.monitors.right, activePanelTab: 'slack'},
+      right: {...state.monitors.right, activePanelTab: 'chat'},
     },
   };
   assert.deepEqual(
     resolveCanvasAction(
-      pointIn(slackComposeRegion()),
-      slackState,
+      pointIn(chatComposeRegion()),
+      chatState,
       baseScenario()
     ),
-    {type: 'slack_compose'}
+    {type: 'chat_compose'}
   );
   assert.deepEqual(
     resolveCanvasAction(
-      pointIn(slackSendButtonRegion()),
-      slackState,
+      pointIn(chatSendButtonRegion()),
+      chatState,
       baseScenario()
     ),
-    {type: 'slack_send'}
+    {type: 'chat_send'}
   );
 });
 
-test('resolveCanvasAction keeps slack compose interactive in expanded runbook view', () => {
+test('resolveCanvasAction keeps chat compose interactive in expanded runbook view', () => {
   const initial = createPlayState();
   const state = {
     ...initial,
     monitors: {
       ...initial.monitors,
-      right: {...initial.monitors.right, activePanelTab: 'slack'},
+      right: {...initial.monitors.right, activePanelTab: 'chat'},
     },
     world: {...initial.world, expandedMonitor: 'runbook'},
   };
 
   assert.deepEqual(
     resolveCanvasAction(
-      pointIn(slackComposeRegion('slack', 'runbook')),
+      pointIn(chatComposeRegion('chat', 'runbook')),
       state,
       baseScenario()
     ),
-    {type: 'slack_compose'}
+    {type: 'chat_compose'}
   );
   assert.deepEqual(
     resolveCanvasAction(
-      pointIn(slackSendButtonRegion('slack', 'runbook')),
+      pointIn(chatSendButtonRegion('chat', 'runbook')),
       state,
       baseScenario()
     ),
-    {type: 'slack_send'}
+    {type: 'chat_send'}
   );
 });
 
-test('resolveCanvasAction deactivates slack compose on outside clicks', () => {
+test('resolveCanvasAction deactivates chat compose on outside clicks', () => {
   const state = {
     ...createPlayState(),
-    slackCompose: {active: true, draft: 'hello'},
+    chatCompose: {active: true, draft: 'hello'},
   };
 
   assert.deepEqual(resolveCanvasAction({x: 10, y: 10}, state, baseScenario()), {
-    type: 'deactivate_slack_compose',
+    type: 'deactivate_chat_compose',
   });
 });
 
 function editorFilePoint(index, expanded = false) {
   const monitor = expanded ? expandedMonitorLayout : monitorLayout('terminal');
-  const contentX = monitor.x + 22;
-  const contentY = monitor.y + 64;
-  const contentWidth = monitor.width - 44;
-  const contentHeight = monitor.height - 80;
-  const scale = Math.min(contentWidth / 496, contentHeight / 540);
+  const content = monitorContentRegion(
+    monitor,
+    monitorHeaderHeight('terminal')
+  );
+  const scale = Math.min(
+    content.width / monitorContentWidth,
+    content.height / monitorContentHeight
+  );
   return {
-    x: contentX + 20 * scale,
-    y: contentY + (66 + 8 + index * 28 + 4) * scale,
+    x: content.x + 20 * scale,
+    y: content.y + (66 + 8 + index * 28 + 4) * scale,
   };
 }
 

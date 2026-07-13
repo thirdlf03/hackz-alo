@@ -3,19 +3,22 @@ import type {CanvasRenderSurface} from './canvasRenderSurface.js';
 import {buildCanvasViewModel, type CanvasViewModel} from './canvasViewModel.js';
 import {
   drawMetricsPanel as drawMetricsPanelContent,
+  drawMetricsPanelHeader,
   type MetricsPanelScroll,
 } from './canvasRenderMetrics.js';
-import {gamePalette as palette, uiFont} from './gamePalette.js';
+import {gamePalette as palette, monoFont, uiFont} from './gamePalette.js';
 import {
   expandedMonitorLayout,
   logicalHeight,
   logicalWidth,
+  monitorHeaderHeight,
   monitorLayouts,
   monitorContentHeight,
+  PANEL_PADDING,
 } from './canvasLayout.js';
 import {drawCenterPanel} from './canvasRenderCenterPanel.js';
 import {drawRightPanel} from './canvasRenderRightPanel.js';
-import {drawMonitor, drawMonitorFrame} from './canvasRenderScene.js';
+import {drawFlatPanel, drawMonitor} from './canvasRenderScene.js';
 
 export function drawExpandedMonitorOverlay(
   surface: CanvasRenderSurface,
@@ -35,22 +38,15 @@ export function drawExpandedMonitorOverlay(
   surface.ctx.fillRect(0, 0, logicalWidth, logicalHeight);
 
   const layout = expandedMonitorLayout;
-  drawMonitorFrame(
-    surface,
-    layout.x,
-    layout.y,
-    layout.width,
-    layout.height,
-    monitor.title,
-    {stand: false}
-  );
+  const headerHeight = monitorHeaderHeight(monitorId);
+  drawFlatPanel(surface, monitorId, layout, headerHeight);
   drawMonitor(
     surface,
     layout.x,
     layout.y,
     layout.width,
     layout.height,
-    monitor.title,
+    headerHeight,
     (content) => {
       if (monitorId === 'metrics') {
         drawMetricsPanelOnSurface(surface, state.monitors.left, content.height);
@@ -62,12 +58,31 @@ export function drawExpandedMonitorOverlay(
     }
   );
 
+  if (monitorId === 'metrics') {
+    drawMetricsPanelHeader(
+      surface,
+      layout,
+      headerHeight,
+      state.monitors.left.metrics
+    );
+  } else if (monitorId === 'terminal') {
+    const label =
+      state.monitors.center.activeTool === 'editor' ? 'EDITOR' : 'TERMINAL';
+    surface.ctx.fillStyle = palette.textLink;
+    surface.ctx.font = monoFont(16);
+    surface.ctx.fillText(
+      label,
+      layout.x + PANEL_PADDING,
+      layout.y + headerHeight / 2 + 6
+    );
+  }
+
   surface.ctx.fillStyle = palette.textMuted;
   surface.ctx.font = uiFont(14);
   surface.ctx.fillText(
     '背景をクリックで閉じる',
     layout.x + layout.width - 168,
-    layout.y + 28
+    layout.y - 14
   );
 }
 

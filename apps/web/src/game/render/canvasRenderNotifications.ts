@@ -126,7 +126,7 @@ export function drawNotificationPanel(
   surface.ctx.fillText('通知', panel.x + 18, panel.y + 30);
   surface.ctx.fillStyle = palette.textSecondary;
   surface.ctx.font = uiFont(14);
-  surface.ctx.fillText('障害アラート / Slack', panel.x + 18, panel.y + 50);
+  surface.ctx.fillText('障害アラート / チャット', panel.x + 18, panel.y + 50);
 
   const items = viewModel.notificationPanelItems;
 
@@ -191,7 +191,7 @@ export function drawNotificationPanel(
     surface.ctx.fill();
     surface.ctx.fillStyle = palette.textPrimary;
     surface.ctx.font = monoFont(14, 'bold');
-    surface.ctx.fillText('SLACK', panel.x + 40, y + 22);
+    surface.ctx.fillText('チャット', panel.x + 40, y + 22);
     surface.ctx.fillStyle = palette.textSecondary;
     surface.ctx.font = uiFont(14);
     wrapText(

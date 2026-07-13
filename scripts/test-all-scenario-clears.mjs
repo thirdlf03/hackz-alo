@@ -13,38 +13,64 @@ const COMMAND_DELAY_MS = 2500;
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SCENARIO_DIR = path.join(ROOT, "packages/scenarios/data");
 
-const SALES_UN_FIXED = `うんちく 売上集計バッチ
-うん x = 100
-うん y = うんあり
-うん z = x うんわり y
-うん！ z
+const SALES_KDM_FIXED = `やまびこ帳 売上集計バッチ
+よぶ x = 100
+よぶ y = こだま
+よぶ z = x わる y
+かえす z
 `;
 
 /** @type {Record<string, { commands?: string[], files?: Array<{ path: string, content: string }>, waitGameMs: number }>} */
 const FIXES = {
   "process-stop-001": {
-    waitGameMs: 60_000,
-    commands: ["unctl restart api"]
+    waitGameMs: 30_000,
+    commands: ["yamactl restart api"]
   },
   "disk-full-001": {
     waitGameMs: 60_000,
-    commands: ["rm -f /workspace/logs/debug.log", "unctl restart api"]
+    commands: ["rm -f /workspace/logs/debug.log", "yamactl restart api"]
   },
-  "unlang-batch-001": {
-    waitGameMs: 90_000,
-    files: [{ path: "/workspace/services/batch/sales.un", content: SALES_UN_FIXED }],
+  "hang-basics-001": {
+    waitGameMs: 105_000,
+    commands: ["yamactl restart api", "curl -s --max-time 5 localhost:8080/health"]
+  },
+  "config-rollback-001": {
+    waitGameMs: 75_000,
     commands: [
-      "unlang run /workspace/services/batch/sales.un",
+      "cp /workspace/releases/yamabiko-api.previous.json /workspace/etc/yamabiko-api.json",
+      "curl -s localhost:8080/health"
+    ]
+  },
+  "alert-triage-001": {
+    waitGameMs: 165_000,
+    commands: ["pkill -f alert-flood-daemon.mjs", "yamactl restart api"]
+  },
+  "kodama-batch-001": {
+    waitGameMs: 90_000,
+    files: [{ path: "/workspace/services/batch/sales.kdm", content: SALES_KDM_FIXED }],
+    commands: [
+      "kodama run /workspace/services/batch/sales.kdm",
       ": > /workspace/logs/batch.log"
     ]
   },
   "db-pool-001": {
     waitGameMs: 60_000,
-    commands: ["rm -f /workspace/run/db.pool.exhausted", "unctl restart api"]
+    commands: ["pkill -f report-batch.mjs", "curl -s localhost:8080/health"]
   },
   "bad-deploy-001": {
     waitGameMs: 45_000,
-    commands: ["rm -f /workspace/run/deploy.json", "curl -s localhost:8080/health"]
+    commands: [
+      "cp /workspace/releases/yamabiko-api.previous.json /workspace/etc/yamabiko-api.json",
+      "curl -s localhost:8080/health"
+    ]
+  },
+  "api-hang-001": {
+    waitGameMs: 75_000,
+    commands: ["yamactl restart api", "curl -s --max-time 5 localhost:8080/health"]
+  },
+  "port-conflict-001": {
+    waitGameMs: 50_000,
+    commands: ["pkill -f legacy-metrics-agent.mjs", "yamactl restart api"]
   },
   "log-bloat-001": {
     waitGameMs: 50_000,
@@ -52,59 +78,57 @@ const FIXES = {
   },
   "disk-restart-loop-001": {
     waitGameMs: 60_000,
-    commands: ["rm -f /workspace/logs/debug.log", "unctl restart api"]
+    commands: ["rm -f /workspace/logs/debug.log", "yamactl restart api"]
   },
   "monitor-blind-001": {
     waitGameMs: 90_000,
-    commands: ["rm -f /workspace/run/monitor.blind.json", "unctl restart api"]
+    commands: ["yamactl restart monitor-agent", "yamactl restart api"]
   },
-  "unlang-mystery-001": {
+  "kodama-mystery-001": {
     waitGameMs: 90_000,
-    files: [{ path: "/workspace/services/batch/sales.un", content: SALES_UN_FIXED }],
+    files: [{ path: "/workspace/services/batch/sales.kdm", content: SALES_KDM_FIXED }],
     commands: [
-      "unlang run /workspace/services/batch/sales.un",
+      "kodama run /workspace/services/batch/sales.kdm",
       ": > /workspace/logs/batch.log"
     ]
   },
   "janitor-power-001": {
     waitGameMs: 60_000,
-    commands: [
-      "rm -f /workspace/run/janitor.power.pulled /workspace/run/api.down",
-      "unctl restart api"
-    ]
+    commands: ["yamactl restart api"]
   },
   "cable-jumprope-001": {
     waitGameMs: 55_000,
-    commands: [
-      "rm -f /workspace/run/network.jumprope /workspace/run/hosts.override /workspace/run/api.down",
-      "unctl restart api"
-    ]
+    commands: ["yamactl restart fake-db", "curl -s localhost:8080/health"]
   },
   "keyboard-spill-001": {
     waitGameMs: 50_000,
-    commands: ["rm -f /workspace/run/keyboard.spill /workspace/run/terminal.noise"]
+    commands: ["pkill -f loadgen.mjs"]
   },
   "alert-spam-001": {
     waitGameMs: 120_000,
-    commands: ["rm -f /workspace/run/alert.spam.json", "unctl restart api"]
+    commands: ["pkill -f alert-flood-daemon.mjs", "yamactl restart api"]
   },
   "runbook-gaslight-001": {
     waitGameMs: 40_000,
-    commands: ["rm -f /workspace/run/runbook.gaslight.json"]
+    commands: [
+      "cp /workspace/docs/backups/service-recovery.md /workspace/docs/runbooks/service-recovery.md"
+    ]
   },
   "chaotic-night-001": {
     waitGameMs: 105_000,
     commands: [
-      "rm -f /workspace/run/alert.spam.json /workspace/run/runbook.gaslight.json /workspace/run/janitor.power.pulled /workspace/run/api.down",
+      "pkill -f alert-flood-daemon.mjs",
+      "cp /workspace/docs/backups/service-recovery.md /workspace/docs/runbooks/service-recovery.md",
       "rm -f /workspace/logs/debug.log",
-      "unctl restart api"
+      "yamactl restart api"
     ]
   }
 };
 
-async function api(route, opts = {}) {
+async function api(route, opts = {}, writeToken) {
+  const authHeader = writeToken ? { authorization: `Bearer ${writeToken}` } : {};
   const res = await fetch(`${API}${route}`, {
-    headers: { "content-type": "application/json", ...(opts.headers ?? {}) },
+    headers: { "content-type": "application/json", ...authHeader, ...(opts.headers ?? {}) },
     ...opts
   });
   const body = await res.json().catch(() => ({}));
@@ -118,8 +142,10 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function connectTerminal(sessionId) {
-  const ws = new WebSocket(`${API.replace(/^http/, "ws")}/api/sessions/${sessionId}/ws/terminal`);
+async function connectTerminal(sessionId, writeToken) {
+  const wsUrl = new URL(`${API.replace(/^http/, "ws")}/api/sessions/${sessionId}/ws/terminal`);
+  if (writeToken) wsUrl.searchParams.set("accessToken", writeToken);
+  const ws = new WebSocket(wsUrl);
   ws.binaryType = "arraybuffer";
   await new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error("terminal ready timeout")), 45_000);
@@ -143,9 +169,9 @@ async function connectTerminal(sessionId) {
   return ws;
 }
 
-async function runCommands(sessionId, commands) {
+async function runCommands(sessionId, commands, writeToken) {
   if (commands.length === 0) return;
-  const ws = await connectTerminal(sessionId);
+  const ws = await connectTerminal(sessionId, writeToken);
   try {
     for (const command of commands) {
       ws.send(new TextEncoder().encode(`${command}\n`));
@@ -157,12 +183,12 @@ async function runCommands(sessionId, commands) {
   }
 }
 
-async function writeFiles(sessionId, files) {
+async function writeFiles(sessionId, files, writeToken) {
   for (const file of files ?? []) {
     await api(`/api/sessions/${sessionId}/file`, {
       method: "PUT",
       body: JSON.stringify({ path: file.path, content: file.content })
-    });
+    }, writeToken);
   }
 }
 
@@ -172,12 +198,13 @@ async function testEarlyResolveBlocked(scenario) {
     body: JSON.stringify({ scenarioId: scenario.id })
   });
   const sessionId = created.data.sessionId;
+  const writeToken = created.data.writeToken;
   try {
-    await api(`/api/sessions/${sessionId}/start`, { method: "POST", body: "{}" });
-    const resolved = await api(`/api/sessions/${sessionId}/resolve`, { method: "POST", body: "{}" });
+    await api(`/api/sessions/${sessionId}/start`, { method: "POST", body: "{}" }, writeToken);
+    const resolved = await api(`/api/sessions/${sessionId}/resolve`, { method: "POST", body: "{}" }, writeToken);
     return resolved.data.ok !== true;
   } finally {
-    await api(`/api/sessions/${sessionId}`, { method: "DELETE" }).catch(() => undefined);
+    await api(`/api/sessions/${sessionId}`, { method: "DELETE" }, writeToken).catch(() => undefined);
   }
 }
 
@@ -190,21 +217,22 @@ async function testScenario(scenario) {
     body: JSON.stringify({ scenarioId: scenario.id })
   });
   const sessionId = created.data.sessionId;
+  const writeToken = created.data.writeToken;
 
   try {
-    await api(`/api/sessions/${sessionId}/start`, { method: "POST", body: "{}" });
+    await api(`/api/sessions/${sessionId}/start`, { method: "POST", body: "{}" }, writeToken);
     await api(`/api/sessions/${sessionId}/clock`, {
       method: "POST",
       body: JSON.stringify({ speed: GAME_SPEED })
-    });
+    }, writeToken);
 
     const waitWallMs = Math.ceil(fix.waitGameMs / GAME_SPEED) + 4_000;
     await sleep(waitWallMs);
 
-    await writeFiles(sessionId, fix.files);
-    await runCommands(sessionId, fix.commands ?? []);
+    await writeFiles(sessionId, fix.files, writeToken);
+    await runCommands(sessionId, fix.commands ?? [], writeToken);
 
-    const resolved = await api(`/api/sessions/${sessionId}/resolve`, { method: "POST", body: "{}" });
+    const resolved = await api(`/api/sessions/${sessionId}/resolve`, { method: "POST", body: "{}" }, writeToken);
     const failedChecks = (resolved.data.checks ?? []).filter((check) => !check.ok);
     return {
       id: scenario.id,
@@ -215,7 +243,7 @@ async function testScenario(scenario) {
       failedChecks
     };
   } finally {
-    await api(`/api/sessions/${sessionId}`, { method: "DELETE" }).catch(() => undefined);
+    await api(`/api/sessions/${sessionId}`, { method: "DELETE" }, writeToken).catch(() => undefined);
   }
 }
 
@@ -307,7 +335,6 @@ if (failures.length > 0) {
 console.log("\nAll scenarios cleared successfully.");
 
 const restartOnlyBlocked = [
-  "janitor-power-001",
   "cable-jumprope-001",
   "bad-deploy-001",
   "db-pool-001",
@@ -329,21 +356,22 @@ for (const scenarioId of restartOnlyBlocked) {
     body: JSON.stringify({ scenarioId })
   });
   const sessionId = created.data.sessionId;
+  const writeToken = created.data.writeToken;
   let blocked = false;
   try {
-    await api(`/api/sessions/${sessionId}/start`, { method: "POST", body: "{}" });
+    await api(`/api/sessions/${sessionId}/start`, { method: "POST", body: "{}" }, writeToken);
     await api(`/api/sessions/${sessionId}/clock`, {
       method: "POST",
       body: JSON.stringify({ speed: GAME_SPEED })
-    });
+    }, writeToken);
     await sleep(Math.ceil((fix.waitGameMs ?? 60_000) / GAME_SPEED) + 4000);
-    await runCommands(sessionId, ["unctl restart api"]);
-    const resolved = await api(`/api/sessions/${sessionId}/resolve`, { method: "POST", body: "{}" });
+    await runCommands(sessionId, ["yamactl restart api"], writeToken);
+    const resolved = await api(`/api/sessions/${sessionId}/resolve`, { method: "POST", body: "{}" }, writeToken);
     blocked = resolved.data.ok !== true;
   } catch {
     blocked = true;
   } finally {
-    await api(`/api/sessions/${sessionId}`, { method: "DELETE" }).catch(() => undefined);
+    await api(`/api/sessions/${sessionId}`, { method: "DELETE" }, writeToken).catch(() => undefined);
   }
   console.log(`- ${scenarioId}: ${blocked ? "blocked (good)" : "STILL CLEARS (bad)"}`);
   if (!blocked) restartGuardOk = false;

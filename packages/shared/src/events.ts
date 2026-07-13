@@ -32,10 +32,14 @@ export function replayEventSummary(event: ReplayEvent): string {
     return 'シナリオ開始';
   }
   if (event.type === 'session_end') {
-    if (event.payload.result === 'retired') return '解雇！';
-    if (event.payload.result === 'false_resolve') return '未復旧のまま解雇';
-    if (event.payload.result === 'failed') return '解雇！';
-    if (event.payload.result === 'timeout') return '解雇！';
+    if (event.payload.result === 'retired') return '途中離脱';
+    if (event.payload.result === 'false_resolve') {
+      return '未復旧のまま完了報告';
+    }
+    if (event.payload.result === 'failed') return '未復旧で朝を迎えた';
+    if (event.payload.result === 'timeout') {
+      return '時間切れ・未復旧で朝を迎えた';
+    }
     if (event.payload.result === 'aborted') return '強制終了';
     return 'セッション終了';
   }
@@ -61,7 +65,7 @@ export function replayEventSummary(event: ReplayEvent): string {
     return `command: ${event.payload.command}`;
   }
   if (event.type === 'player_note' && typeof event.payload.body === 'string') {
-    return `Slack報告: ${event.payload.body}`;
+    return `チャット報告: ${event.payload.body}`;
   }
   if (
     event.type === 'recovery_check' &&
@@ -102,6 +106,9 @@ export function replayEventSummary(event: ReplayEvent): string {
 function panelOpenSummary(panel: string) {
   if (panel === 'editor') return 'Editor を開いた';
   if (panel === 'notifications') return '通知パネルを開いた';
-  if (panel === 'slack_compose') return 'Slack 返信を開始';
+  // slack_compose は旧識別子。過去に記録されたリプレイの再生互換のためだけに残す。
+  if (panel === 'chat_compose' || panel === 'slack_compose') {
+    return 'チャット返信を開始';
+  }
   return `パネル: ${panel}`;
 }

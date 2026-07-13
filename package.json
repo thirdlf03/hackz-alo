@@ -8,6 +8,7 @@
     "test": "node --test tests/unit/*.mjs",
     "test:coverage": "node --test --test-concurrency=1 --experimental-test-coverage tests/unit/*.mjs",
     "test:e2e": "playwright test",
+    "test:vrt": "playwright test -c playwright.vrt.config.ts",
     "test:integration": "node --test tests/integration/*.mjs",
     "build:scenarios": "tsx scripts/build-scenarios.mjs",
     "db:migrate:local": "pnpm --filter @incident/worker run db:migrate:local",

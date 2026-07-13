@@ -18,7 +18,7 @@ test('lifecycleAlarmDeadline chooses idle or game-end deadline', () => {
     gameClockWallMs: 10_000,
     triggeredIds: [],
     firedAlertIds: [],
-    firedSlackIds: [],
+    firedChatIds: [],
     eventSeq: 0,
     bufferedEvents: [],
   };

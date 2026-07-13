@@ -9,8 +9,8 @@ export function classifyCommandEvent(
   | 'file_opened'
   | null {
   const normalized = command.trim();
-  if (/^unctl\s+restart\b/i.test(normalized)) return 'service_restart';
-  if (/^curl\b/i.test(normalized) || /^unctl\s+status\b/i.test(normalized)) {
+  if (/^yamactl\s+restart\b/i.test(normalized)) return 'service_restart';
+  if (/^curl\b/i.test(normalized) || /^yamactl\s+status\b/i.test(normalized)) {
     return 'recovery_check';
   }
   const fileMatch = normalized.match(

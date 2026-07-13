@@ -17,7 +17,7 @@ const runningSession = {
   gameClockWallMs: Date.now() - 60_000,
   triggeredIds: [],
   firedAlertIds: [],
-  firedSlackIds: [],
+  firedChatIds: [],
   eventSeq: 0,
   bufferedEvents: [],
 };

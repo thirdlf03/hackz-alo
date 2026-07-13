@@ -23,7 +23,7 @@ test('scenario select through resolve success after fault recovery', async ({
   await waitForSandboxReady(page);
   await setGameSpeed(page, 8);
   await page.waitForTimeout(8_000);
-  await waitForTerminalCommand(page, 'unctl restart api', {skipWarmup: true});
+  await waitForTerminalCommand(page, 'yamactl restart api', {skipWarmup: true});
   await page.waitForTimeout(3_000);
   await clickResolveButton(page);
   await waitForResolveSuccess(page);

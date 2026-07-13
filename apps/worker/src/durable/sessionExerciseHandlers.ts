@@ -1,18 +1,30 @@
-import type {ScenarioDefinition} from '@incident/shared';
+import type {
+  ParticipantCursorEvent,
+  ScenarioDefinition,
+} from '@incident/shared';
 import {getScenario} from '@incident/scenarios';
 import {readJsonObjectBody, RequestBodyError} from '../http/body.js';
-import {HttpError, jsonOk, messageFrom} from '../http/response.js';
+import {
+  HttpError,
+  hostRequiredResponse,
+  jsonOk,
+  messageFrom,
+  observerReadOnlyResponse,
+} from '../http/response.js';
 import {logStructured} from '../http/requestLog.js';
 import type {Bindings} from '../types.js';
 import {
   appendIncidentLog,
   buildExerciseSnapshot,
+  canContributeRecords,
+  canPerformRoleGatedAction,
   createExerciseRoom,
   createTask,
   fireInject,
   generateAfterActionReport,
   heartbeatParticipant,
   joinParticipant,
+  setExercisePhase,
   submitHotwash,
   updateParticipantCursor,
   updateParticipantRole,
@@ -41,12 +53,15 @@ export class SessionExerciseHub {
     );
   }
 
-  async loadOrCreate(session?: StoredSession) {
+  async loadOrCreate(session?: StoredSession, hostParticipantId?: string) {
     const existing =
       await this.deps.storage.get<StoredExerciseRoom>('exercise');
     if (existing) return existing;
     const resolved = session ?? (await this.deps.requireSession());
-    const created = createExerciseRoom(requireScenario(resolved.scenarioId));
+    const created = createExerciseRoom(
+      requireScenario(resolved.scenarioId),
+      hostParticipantId ?? null
+    );
     await this.deps.storage.put('exercise', created);
     return created;
   }
@@ -103,7 +118,29 @@ export class SessionExerciseHub {
       await this.loadOrCreate(session),
       body
     );
-    return this.saveResponse(session, room, 'presence');
+    // Cursor position is ephemeral; skip waiting for the write to be
+    // confirmed durable to keep the round-trip fast.
+    await this.deps.storage.put('exercise', room, {allowUnconfirmed: true});
+
+    const requestedId =
+      typeof body.participantId === 'string' ? body.participantId.trim() : '';
+    const participant = room.participants.find(
+      (entry) => entry.participantId === requestedId
+    );
+    if (!participant?.cursor) {
+      throw new HttpError(404, 'not_found', 'participant not found');
+    }
+
+    const event: ParticipantCursorEvent = {
+      sessionId: session.sessionId,
+      participantId: participant.participantId,
+      x: participant.cursor.x,
+      y: participant.cursor.y,
+      visible: participant.cursor.visible,
+      updatedAt: participant.cursor.updatedAt,
+    };
+    this.deps.sseHub.broadcast('cursor', event);
+    return jsonOk({ok: true});
   }
 
   async participantRole(request: Request) {
@@ -147,50 +184,101 @@ export class SessionExerciseHub {
   async taskCreate(request: Request) {
     const session = await this.deps.requireSession();
     const body = await readControlBody(request);
-    const room = createTask(await this.loadOrCreate(session), body);
-    return this.saveResponse(session, room, 'task');
+    const room = await this.loadOrCreate(session);
+    const decision = canContributeRecords(room, actorIdFrom(body));
+    if (!decision.allowed) return observerReadOnlyResponse();
+    return this.saveResponse(session, createTask(room, body), 'task');
   }
 
   async taskUpdate(request: Request) {
     const session = await this.deps.requireSession();
-    const body = (await readControlBody(request)) as {taskId?: unknown};
+    const body = await readControlBody(request);
     if (typeof body.taskId !== 'string') {
       throw new HttpError(400, 'bad_request', 'taskId is required');
     }
-    const room = updateTask(
-      await this.loadOrCreate(session),
-      body.taskId,
-      body
+    const room = await this.loadOrCreate(session);
+    const decision = canContributeRecords(room, actorIdFrom(body));
+    if (!decision.allowed) return observerReadOnlyResponse();
+    return this.saveResponse(
+      session,
+      updateTask(room, body.taskId, body),
+      'task'
     );
-    return this.saveResponse(session, room, 'task');
   }
 
   async injectFire(request: Request) {
     const session = await this.deps.requireSession();
-    const body = (await readControlBody(request)) as {injectId?: unknown};
+    const body = (await readControlBody(request)) as {
+      injectId?: unknown;
+      participantId?: unknown;
+    };
     if (typeof body.injectId !== 'string') {
       throw new HttpError(400, 'bad_request', 'injectId is required');
     }
-    const room = fireInject(
-      await this.loadOrCreate(session),
-      body.injectId,
-      body
+    const room = await this.loadOrCreate(session);
+    const participantId =
+      typeof body.participantId === 'string' ? body.participantId : undefined;
+    const decision = canPerformRoleGatedAction(room, participantId);
+    if (!decision.allowed) {
+      return hostRequiredResponse();
+    }
+    const fired = fireInject(room, body.injectId, body);
+    return this.saveResponse(session, fired, 'inject');
+  }
+
+  async phaseAdvance(request: Request) {
+    const session = await this.deps.requireSession();
+    const body = (await readControlBody(request)) as {
+      participantId?: unknown;
+      phase?: unknown;
+    };
+    const room = await this.loadOrCreate(session);
+    const participantId =
+      typeof body.participantId === 'string' ? body.participantId : undefined;
+    const decision = canPerformRoleGatedAction(room, participantId);
+    if (!decision.allowed) {
+      return hostRequiredResponse();
+    }
+    if (body.phase !== 'briefing') {
+      throw new HttpError(400, 'bad_request', 'unsupported phase transition');
+    }
+    if (room.phase !== 'lobby') {
+      return this.saveResponse(session, room, 'phase');
+    }
+    return this.saveResponse(
+      session,
+      setExercisePhase(room, 'briefing'),
+      'phase'
     );
-    return this.saveResponse(session, room, 'inject');
+  }
+
+  async fireScheduledInject(session: StoredSession, injectId: string) {
+    const room = await this.loadOrCreate(session);
+    const inject = room.injects.find((item) => item.id === injectId);
+    if (!inject || inject.fired) return;
+    await this.saveResponse(session, fireInject(room, injectId, {}), 'inject');
   }
 
   async incidentLog(request: Request) {
     const session = await this.deps.requireSession();
     const body = await readControlBody(request);
-    const room = appendIncidentLog(await this.loadOrCreate(session), body);
-    return this.saveResponse(session, room, 'incident_log');
+    const room = await this.loadOrCreate(session);
+    const decision = canContributeRecords(room, actorIdFrom(body));
+    if (!decision.allowed) return observerReadOnlyResponse();
+    return this.saveResponse(
+      session,
+      appendIncidentLog(room, body),
+      'incident_log'
+    );
   }
 
   async hotwash(request: Request) {
     const session = await this.deps.requireSession();
     const body = await readControlBody(request);
-    const room = submitHotwash(await this.loadOrCreate(session), body);
-    return this.saveResponse(session, room, 'hotwash');
+    const room = await this.loadOrCreate(session);
+    const decision = canContributeRecords(room, actorIdFrom(body));
+    if (!decision.allowed) return observerReadOnlyResponse();
+    return this.saveResponse(session, submitHotwash(room, body), 'hotwash');
   }
 
   async aar() {
@@ -208,6 +296,20 @@ export function requireScenario(id: string): ScenarioDefinition {
     throw new HttpError(400, 'bad_request', `unknown scenario: ${id}`);
   }
   return scenario;
+}
+
+/**
+ * Record endpoints identify the acting participant as
+ * `actorParticipantId` (tasks, incident log) or `participantId`
+ * (hotwash); accept either for the observer read-only gate.
+ */
+function actorIdFrom(body: Record<string, unknown>) {
+  if (typeof body.actorParticipantId === 'string') {
+    return body.actorParticipantId;
+  }
+  return typeof body.participantId === 'string'
+    ? body.participantId
+    : undefined;
 }
 
 async function readControlBody(request: Request) {

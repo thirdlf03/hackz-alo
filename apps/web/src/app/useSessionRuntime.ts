@@ -2,6 +2,7 @@ import {useEffect, useRef} from 'preact/hooks';
 import type {
   ExerciseSnapshot,
   GameRenderState,
+  ParticipantCursorEvent,
   ScenarioDefinition,
 } from '@incident/shared';
 import {
@@ -12,20 +13,26 @@ import {
 import {
   advanceGameState,
   createInitialGameState,
-  submitPlayerSlackMessage,
+  submitPlayerChatMessage,
 } from '../game/state/gameState.js';
 import type {ReplayEventEmitter} from '../game/events/emitReplayEvent.js';
 import {createEmptyTerminalMirror} from '../game/terminal/mirror.js';
 import {playAlertBeep} from '../game/recording/audio.js';
+import {resumeSharedAudioContext} from '../game/recording/audioMixer.js';
 import {collectStateTransitions} from '../game/events/sessionEvents.js';
 import type {ApiClientSurface} from '../api/client.js';
-import type {SessionClockResponse} from './appRuntime.js';
+import type {
+  SessionClockResponse,
+  SessionSnapshotResponse,
+} from './appRuntime.js';
 import type {FinishMode, Screen, ScenarioSummary} from './AppScreens.js';
 import {
   computeLiveGameTimeMs,
+  describeSessionActionError,
   readReplayIdFromSearch,
   toErrorMessage,
 } from './appUtils.js';
+import {useExercisePhaseSync} from './useExercisePhaseSync.js';
 import {useSessionBootstrap} from './useSessionBootstrap.js';
 import {useSessionClockSync} from './useSessionClockSync.js';
 import {useSessionGameLoop} from './useSessionGameLoop.js';
@@ -49,14 +56,17 @@ export function useSessionRuntime(options: {
   scenario: ScenarioDefinition | undefined;
   gameState: GameRenderState | undefined;
   gameSpeed: number;
+  exerciseSnapshot: ExerciseSnapshot | undefined;
   saveRecording: boolean;
   recordingConsent: boolean;
   isStarting: boolean;
   sandboxReady: boolean;
+  participantId: string;
   deepLinkReplayId: string | undefined;
   deepLinkValidated: boolean;
   recordingRef: {current: SessionRecordingBridge | undefined};
   terminalBridgeRef: {current: TerminalBridgeRef | undefined};
+  rtcSignalHandlerRef: {current: ((data: unknown) => void) | undefined};
   setScreen: (screen: Screen) => void;
   setSession: (
     session: {sessionId: string; replayId: string} | undefined
@@ -117,14 +127,17 @@ export function useSessionRuntime(options: {
     scenario,
     gameState,
     gameSpeed,
+    exerciseSnapshot,
     saveRecording,
     recordingConsent,
     isStarting,
     sandboxReady,
+    participantId,
     deepLinkReplayId,
     deepLinkValidated,
     recordingRef,
     terminalBridgeRef,
+    rtcSignalHandlerRef,
     setScreen,
     setSession,
     setScenario,
@@ -255,7 +268,9 @@ export function useSessionRuntime(options: {
     );
   }
 
-  const applyClockSnapshot = (clock: SessionClockResponse) => {
+  const applyClockSnapshot = (
+    clock: SessionClockResponse & Pick<SessionSnapshotResponse, 'serviceHealth'>
+  ) => {
     elapsedMsRef.current = clock.gameTimeMs;
     lastTickAtRef.current = performance.now();
     const previous = gameStateRef.current;
@@ -268,7 +283,8 @@ export function useSessionRuntime(options: {
       clock.gameSpeed,
       delta,
       clock.alerts,
-      clock.slackMessages
+      clock.chatMessages,
+      clock.serviceHealth
     );
     const prevAlertCount = previous.monitors.left.alerts.length;
     if (next.monitors.left.alerts.length > prevAlertCount) {
@@ -309,6 +325,42 @@ export function useSessionRuntime(options: {
     );
   };
 
+  const applyParticipantCursor = (event: ParticipantCursorEvent) => {
+    const current = gameStateRef.current;
+    if (!current) return;
+    const existing = current.room.participants.find(
+      (participant) => participant.participantId === event.participantId
+    );
+    if (!existing) return;
+    if (existing.cursor && event.updatedAt <= existing.cursor.updatedAt) {
+      // Stale event arrived out of order; a newer cursor position is
+      // already applied, so ignore this one to avoid snapping backwards.
+      return;
+    }
+    const participants = current.room.participants.map((participant) => {
+      if (participant.participantId !== event.participantId) return participant;
+      return {
+        ...participant,
+        online: true,
+        cursor: {
+          x: event.x,
+          y: event.y,
+          visible: event.visible,
+          updatedAt: event.updatedAt,
+        },
+      };
+    });
+    const next = {
+      ...current,
+      room: {
+        ...current.room,
+        participants,
+      },
+    };
+    gameStateRef.current = next;
+    setGameState(next);
+  };
+
   const bindings: SessionRuntimeBindings = {
     api,
     screen,
@@ -316,16 +368,22 @@ export function useSessionRuntime(options: {
     scenario,
     gameState,
     gameSpeed,
+    exerciseSnapshot,
+    isStarting,
+    participantId,
     refs,
     recordingRef,
     terminalBridgeRef,
     setGameState,
+    setScreen,
     setTimeline,
     patchGameStateRef,
     currentGameTimeMs,
     endSession,
     applyClockSnapshot,
     applyExerciseSnapshot,
+    applyParticipantCursor,
+    rtcSignalHandlerRef,
   };
 
   async function createSessionForScenario(scenarioId: string) {
@@ -338,7 +396,7 @@ export function useSessionRuntime(options: {
     setSandboxReady(false);
     try {
       terminalBridgeRef.current?.destroyTerminal();
-      const created = await api.createSession({scenarioId});
+      const created = await api.createSession({scenarioId, participantId});
       markJourney(INCIDENT_SPAN_NAMES.journeySessionCreated, {
         [INCIDENT_ATTRS.sessionId]: created.sessionId,
         [INCIDENT_ATTRS.replayId]: created.replayId,
@@ -361,7 +419,7 @@ export function useSessionRuntime(options: {
           created.sessionId,
           created.replayId,
           createEmptyTerminalMirror(),
-          {speed: gameSpeed}
+          {speed: gameSpeed, localParticipantId: participantId}
         )
       );
       setScreen('lobby');
@@ -401,13 +459,24 @@ export function useSessionRuntime(options: {
     ) {
       return;
     }
+    // user gesture 内で同期的に resume することで、録画開始までに
+    // AudioContext が 'running' になっている可能性を最大化する。
+    resumeSharedAudioContext();
     localStorage.setItem(CONSENT_KEY, '1');
     localStorage.setItem(SAVE_RECORDING_KEY, saveRecording ? '1' : '0');
     setHasRecordingConsent(true);
     setIsStarting(true);
     try {
-      await api.startSession(session.sessionId);
-      await terminalBridgeRef.current?.attachTerminalSession(session);
+      await api.startSession(session.sessionId, {participantId});
+      // Every role attaches to the shared terminal: the output mirror is
+      // broadcast to all participants (Observer/Scribe watch along),
+      // while sending input stays gated to ops/facilitator client-side
+      // (see pure/rolePermissions.ts canOperateSandbox, enforced in
+      // useTerminalBridge).
+      await terminalBridgeRef.current?.attachTerminalSession(
+        session,
+        exerciseSnapshot?.participants ?? []
+      );
       markJourney(INCIDENT_SPAN_NAMES.journeyTerminalReady, {
         [INCIDENT_ATTRS.sessionId]: session.sessionId,
       });
@@ -426,6 +495,7 @@ export function useSessionRuntime(options: {
             recordingStatus: saveRecording ? 'initializing' : 'idle',
             recordingSaveEnabled: saveRecording,
             speed: gameSpeed,
+            localParticipantId: participantId,
           }
         )
       );
@@ -435,26 +505,105 @@ export function useSessionRuntime(options: {
         [INCIDENT_ATTRS.scenarioId]: scenario.id,
       });
     } catch (error) {
-      setAppError(toErrorMessage(error));
+      setAppError(describeSessionActionError(error, 'start'));
     } finally {
       setIsStarting(false);
     }
   }
 
-  function submitSlackMessage() {
+  function advanceToBriefing() {
+    if (!session) return;
+    setScreen('briefing');
+    void api
+      .advanceExercisePhase(session.sessionId, {
+        participantId,
+        phase: 'briefing',
+      })
+      .catch((error: unknown) => {
+        setAppError(describeSessionActionError(error, 'phase'));
+      });
+  }
+
+  async function joinSessionFromInvite(
+    inviteSessionId: string,
+    writeToken: string
+  ) {
+    if (creatingSessionRef.current) return;
+    creatingSessionRef.current = true;
+    setAppError(undefined);
+    setDeepLinkReplayId(undefined);
+    setDeepLinkValidated(true);
+    setIsStarting(true);
+    setSandboxReady(false);
+    try {
+      terminalBridgeRef.current?.destroyTerminal();
+      api.setSessionAccessToken(writeToken);
+      const snapshot = await api.getSession(inviteSessionId);
+      api.resetEventSequence();
+      eventEmitterRef.current?.reset();
+      liveReplayEventIdsRef.current.clear();
+      recordingRef.current?.resetRecordingClock();
+      elapsedMsRef.current = 0;
+      lastTickAtRef.current = 0;
+      finishingRef.current = false;
+      tabBeaconSentRef.current = false;
+      setScenario(snapshot.scenario);
+      setSession({sessionId: snapshot.sessionId, replayId: snapshot.replayId});
+      setTimeline([]);
+      setGameState(
+        createInitialGameState(
+          snapshot.scenario,
+          snapshot.sessionId,
+          snapshot.replayId,
+          createEmptyTerminalMirror(),
+          {
+            sessionStatus: snapshot.status,
+            speed: gameSpeed,
+            localParticipantId: participantId,
+          }
+        )
+      );
+      setScreen('lobby');
+      sandboxPrepareSessionIdRef.current = snapshot.sessionId;
+      void api
+        .prepareSession(snapshot.sessionId)
+        .then(() => {
+          if (sandboxPrepareSessionIdRef.current === snapshot.sessionId) {
+            setSandboxReady(true);
+          }
+        })
+        .catch((error: unknown) => {
+          if (sandboxPrepareSessionIdRef.current !== snapshot.sessionId) return;
+          setSandboxReady(false);
+          setAppError(toErrorMessage(error));
+        });
+    } catch {
+      sandboxPrepareSessionIdRef.current = undefined;
+      api.setSessionAccessToken(undefined);
+      setAppError(
+        '招待リンクからの参加に失敗しました。セッションが見つからないか、リンクが無効です。'
+      );
+      setScreen('select');
+    } finally {
+      creatingSessionRef.current = false;
+      setIsStarting(false);
+    }
+  }
+
+  function submitChatMessage() {
     const state = gameStateRef.current;
     const replayId = sessionRef.current?.replayId;
     const emitter = eventEmitterRef.current;
     if (!state || !replayId || !emitter) return;
-    const body = state.slackCompose.draft.trim();
+    const body = state.chatCompose.draft.trim();
     if (!body) return;
     const at = currentGameTimeMs();
-    patchGameStateRef((current) => submitPlayerSlackMessage(current, body, at));
+    patchGameStateRef((current) => submitPlayerChatMessage(current, body, at));
     void emitter.emit({
       replayId,
       type: 'player_note',
       at,
-      payload: {body, channel: 'slack'},
+      payload: {body, channel: 'chat'},
     });
   }
 
@@ -485,6 +634,7 @@ export function useSessionRuntime(options: {
   useSessionLifecycleGuards(bindings);
   useSessionSse(bindings);
   useSessionGameLoop(bindings);
+  useExercisePhaseSync(bindings);
 
   return {
     gameStateRef,
@@ -494,9 +644,11 @@ export function useSessionRuntime(options: {
     patchGameStateRef,
     currentGameTimeMs,
     createSessionForScenario,
+    joinSessionFromInvite,
     startPlay,
+    advanceToBriefing,
     endSession,
-    submitSlackMessage,
+    submitChatMessage,
   };
 }
 

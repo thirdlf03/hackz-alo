@@ -1,0 +1,132 @@
+{
+  "id": "config-rollback-001",
+  "version": 1,
+  "title": "昨日の設定に戻したい夜",
+  "difficulty": "beginner",
+  "difficultyScore": 150,
+  "timeLimitMinutes": 8,
+  "service": {
+    "name": "やまびこ API",
+    "healthUrl": "http://localhost:8080/health"
+  },
+  "briefing": [
+    "デプロイ直後に 5xx が出たら、まず「直前に何が変わったか」を疑う。",
+    "前リリースの設定ファイルと現在の設定を diff で見比べる練習をする。",
+    "切り戻し(ロールバック)も立派な復旧手段。"
+  ],
+  "startup": [
+    {
+      "id": "api",
+      "command": "PORT=8080 node /workspace/services/yamabiko-api/server.mjs",
+      "waitForPort": 8080
+    },
+    {
+      "id": "fake-db",
+      "command": "node /workspace/services/fake-db/server.mjs",
+      "waitForPort": 15432
+    }
+  ],
+  "topology": {
+    "nodes": [
+      {
+        "id": "user",
+        "label": "ユーザー",
+        "kind": "external"
+      },
+      {
+        "id": "api",
+        "label": "やまびこ API",
+        "kind": "service",
+        "processId": "api"
+      },
+      {
+        "id": "fake-db",
+        "label": "疑似データベース",
+        "kind": "datastore",
+        "processId": "fake-db"
+      }
+    ],
+    "edges": [
+      {
+        "from": "user",
+        "to": "api"
+      },
+      {
+        "from": "api",
+        "to": "fake-db"
+      }
+    ]
+  },
+  "triggers": [
+    {
+      "id": "bad-deploy",
+      "atMs": 60000,
+      "type": "bad_deploy",
+      "params": {}
+    }
+  ],
+  "alerts": [
+    {
+      "id": "deploy-500",
+      "atMs": 90000,
+      "severity": "critical",
+      "message": "HTTP 500 spike after deploy",
+      "source": "scenario"
+    }
+  ],
+  "successConditions": [
+    {
+      "type": "http_status",
+      "url": "http://localhost:8080/health",
+      "status": 200
+    },
+    {
+      "type": "process_running",
+      "processId": "api"
+    }
+  ],
+  "runbooks": [
+    {
+      "id": "runbook.config-rollback",
+      "title": "設定ロールバックの手順",
+      "body": "1. tail /workspace/logs/deploy.log で直近のデプロイ時刻とバージョンを確認する\n2. diff /workspace/releases/yamabiko-api.previous.json /workspace/etc/yamabiko-api.json で何が変わったか確認する\n3. app.log でエラー内容(接続失敗など)を確認する\n4. cp /workspace/releases/yamabiko-api.previous.json /workspace/etc/yamabiko-api.json で前リリースに戻す\n5. curl localhost:8080/health で復旧確認する(設定は自動反映、再起動不要)"
+    }
+  ],
+  "chatMessages": [
+    {
+      "id": "boss-config-rollback",
+      "atMs": 110000,
+      "from": "上司",
+      "body": "さっきのデプロイ、僕は見てないけど戻せば直るんじゃない？おやすみ。"
+    }
+  ],
+  "navigationSteps": [
+    {
+      "id": "nav-5xx",
+      "atMs": 0,
+      "hint": "HTTP 5xx が上がっていないか監視画面で確認する",
+      "panel": "metrics"
+    },
+    {
+      "id": "nav-deploy-log",
+      "atMs": 65000,
+      "hint": "直近のデプロイ履歴を確認する",
+      "panel": "terminal",
+      "suggestedCommand": "tail /workspace/logs/deploy.log"
+    },
+    {
+      "id": "nav-diff",
+      "atMs": 85000,
+      "hint": "前リリースとの差分を diff で確認する",
+      "panel": "terminal",
+      "suggestedCommand": "diff /workspace/releases/yamabiko-api.previous.json /workspace/etc/yamabiko-api.json"
+    },
+    {
+      "id": "nav-rollback",
+      "atMs": 100000,
+      "hint": "前リリースの設定に戻す",
+      "panel": "terminal",
+      "suggestedCommand": "cp /workspace/releases/yamabiko-api.previous.json /workspace/etc/yamabiko-api.json"
+    }
+  ]
+}

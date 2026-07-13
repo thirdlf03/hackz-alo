@@ -42,7 +42,13 @@ export async function prepareScenarioSandbox(
       await installSandboxAssets(sandbox);
       await withSandboxExecSpan(env, sessionId, 'sandbox_setup', async () => {
         await sandbox.exec(
-          'mkdir -p /workspace/logs /workspace/run && rm -f /workspace/run/api.down /workspace/logs/debug.log /workspace/logs/batch.log',
+          'mkdir -p /workspace/logs /workspace/run /workspace/run/metrics /workspace/etc /workspace/releases && ' +
+            'rm -f /workspace/logs/debug.log /workspace/logs/batch.log /workspace/logs/deploy.log ' +
+            '/workspace/etc/yamabiko-api.json /workspace/etc/monitoring.json ' +
+            '/workspace/run/metrics/agent.json && ' +
+            "(pkill -f 'report-batch.mjs' || true) && (pkill -f 'legacy-metrics-agent.mjs' || true) && " +
+            "(pkill -f 'monitor-agent/agent.mjs' || true) && (pkill -f 'alert-flood-daemon.mjs' || true) && " +
+            "(pkill -f 'loadgen.mjs' || true)",
           {cwd: '/workspace'}
         );
       });

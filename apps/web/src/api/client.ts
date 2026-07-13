@@ -4,6 +4,7 @@ import type {
   ExerciseSnapshot,
   ExerciseTaskStatus,
   IncidentLogEntryKind,
+  ParticipantCursorEvent,
   ParticipantRole,
   ReplayEvent,
   ScenarioDefinition,
@@ -50,7 +51,9 @@ export type {
 interface SessionHandlers {
   onSnapshot?: (snapshot: SessionSnapshotResponse) => void;
   onExercise?: (snapshot: ExerciseSnapshot) => void;
+  onCursor?: (event: ParticipantCursorEvent) => void;
   onReplay?: (event: ReplayEvent) => void;
+  onRtcSignal?: (data: unknown) => void;
   onError?: (event: Event) => void;
 }
 
@@ -78,6 +81,7 @@ export interface ApiClientSurface
       SessionApi,
       | 'prepareSession'
       | 'startSession'
+      | 'getSession'
       | 'deleteSession'
       | 'getSessionClock'
       | 'updateSessionClock'
@@ -98,12 +102,15 @@ export interface ApiClientSurface
       | 'updateParticipantCursor'
       | 'updateParticipantRole'
       | 'setParticipantReady'
+      | 'advanceExercisePhase'
       | 'createTask'
       | 'updateTask'
       | 'fireInject'
       | 'appendIncidentLog'
       | 'submitHotwash'
       | 'getAfterActionReport'
+      | 'getRtcIceServers'
+      | 'sendRtcSignal'
     >,
     Pick<
       RecordingUploadApi,
@@ -116,6 +123,7 @@ export interface ApiClientSurface
   createSession(input: {
     difficulty?: Difficulty;
     scenarioId?: string;
+    participantId?: string;
   }): Promise<{
     sessionId: string;
     replayId: string;
@@ -129,6 +137,7 @@ export interface ApiClientSurface
   notifySessionTimeout(sessionId: string): void;
   resetEventSequence(replayId?: string): void;
   sessionAccessToken(): string | undefined;
+  setSessionAccessToken(token: string | undefined): void;
   getExerciseState(sessionId: string): Promise<ExerciseSnapshot>;
   joinParticipant(
     sessionId: string,
@@ -147,7 +156,7 @@ export interface ApiClientSurface
   updateParticipantCursor(
     sessionId: string,
     input: {participantId: string; x: number; y: number; visible?: boolean}
-  ): Promise<{exercise: ExerciseSnapshot}>;
+  ): Promise<{ok: true}>;
   updateParticipantRole(
     sessionId: string,
     input: {participantId: string; role: ParticipantRole}
@@ -155,6 +164,10 @@ export interface ApiClientSurface
   setParticipantReady(
     sessionId: string,
     input: {participantId: string; ready: boolean}
+  ): Promise<{exercise: ExerciseSnapshot}>;
+  advanceExercisePhase(
+    sessionId: string,
+    input: {participantId: string; phase: 'briefing'}
   ): Promise<{exercise: ExerciseSnapshot}>;
   createTask(
     sessionId: string,
@@ -172,12 +185,18 @@ export interface ApiClientSurface
       title?: string;
       status?: ExerciseTaskStatus;
       assigneeParticipantId?: string | null;
+      actorParticipantId?: string;
     }
   ): Promise<{exercise: ExerciseSnapshot}>;
   fireInject(
     sessionId: string,
     injectId: string,
-    input?: {title?: string; body?: string; actorParticipantId?: string}
+    input?: {
+      title?: string;
+      body?: string;
+      actorParticipantId?: string;
+      participantId?: string;
+    }
   ): Promise<{exercise: ExerciseSnapshot}>;
   appendIncidentLog(
     sessionId: string,
@@ -228,6 +247,7 @@ export class ApiClient {
     bindApiMethods(this, this.sessions, [
       'prepareSession',
       'startSession',
+      'getSession',
       'deleteSession',
       'getSessionClock',
       'updateSessionClock',
@@ -248,12 +268,15 @@ export class ApiClient {
       'updateParticipantCursor',
       'updateParticipantRole',
       'setParticipantReady',
+      'advanceExercisePhase',
       'createTask',
       'updateTask',
       'fireInject',
       'appendIncidentLog',
       'submitHotwash',
       'getAfterActionReport',
+      'getRtcIceServers',
+      'sendRtcSignal',
     ]);
     bindApiMethods(this, this.recordingUpload, [
       'uploadChunk',
@@ -264,7 +287,11 @@ export class ApiClient {
     ]);
   }
 
-  async createSession(input: {difficulty?: Difficulty; scenarioId?: string}) {
+  async createSession(input: {
+    difficulty?: Difficulty;
+    scenarioId?: string;
+    participantId?: string;
+  }) {
     const postSession = async (turnstileToken?: string) =>
       this.sessions.createSession({
         ...input,
@@ -317,6 +344,10 @@ export class ApiClient {
 
   sessionAccessToken() {
     return this.http.getWriteToken();
+  }
+
+  setSessionAccessToken(token: string | undefined) {
+    this.http.setWriteToken(token);
   }
 }
 

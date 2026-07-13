@@ -81,8 +81,8 @@ test('clamp and shortenPath normalize display values', () => {
   assert.equal(clamp(12, 0, 10), 10);
   assert.equal(clamp(-1, 0, 10), 0);
   assert.equal(
-    shortenPath('/workspace/services/batch/sales.un', 12),
-    '.../sales.un'
+    shortenPath('/workspace/services/batch/sales.kdm', 12),
+    '...sales.kdm'
   );
 });
 

@@ -29,7 +29,7 @@ test('pollSessionMetricsOnce maps API success to metrics outcomes', async () => 
           gameSpeed: 1,
           timeLimitMs: 300_000,
           alerts: [],
-          slackMessages: [],
+          chatMessages: [],
         }),
       },
       'sess_1'

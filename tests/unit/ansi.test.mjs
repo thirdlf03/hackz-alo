@@ -15,7 +15,7 @@ test('parseAnsiLine splits colored spans', () => {
   const spans = parseAnsiLine('\u001b[1m\u001b[31mfail\u001b[0m ok');
   assert.equal(spans.length, 2);
   assert.equal(spans[0]?.text, 'fail');
-  assert.equal(spans[0]?.color, '#f87171');
+  assert.equal(spans[0]?.color, '#ff6b6b');
   assert.equal(spans[0]?.bold, true);
   assert.equal(spans[1]?.text, ' ok');
 });

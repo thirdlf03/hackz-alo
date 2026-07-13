@@ -1,4 +1,4 @@
-import type {ApiResult} from '@incident/shared';
+import type {ApiResult, ParticipantRole} from '@incident/shared';
 
 export function ok<T>(data: T): ApiResult<T> {
   return {ok: true, data};
@@ -44,4 +44,26 @@ function json<T>(payload: ApiResult<T>, init: ResponseInit = {}) {
     ...init,
     headers,
   });
+}
+
+export function jsonResponse(payload: unknown, status: number) {
+  const headers = new Headers();
+  headers.set('content-type', 'application/json');
+  return new Response(JSON.stringify(payload), {status, headers});
+}
+
+export function hostRequiredResponse() {
+  return jsonResponse({error: 'host_required'}, 403);
+}
+
+export function participantsNotReadyResponse() {
+  return jsonResponse({error: 'participants_not_ready'}, 409);
+}
+
+export function roleRequiredResponse(requiredRole: ParticipantRole) {
+  return jsonResponse({error: 'role_required', requiredRole}, 403);
+}
+
+export function observerReadOnlyResponse() {
+  return jsonResponse({error: 'observer_read_only'}, 403);
 }

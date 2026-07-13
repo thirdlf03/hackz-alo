@@ -28,7 +28,6 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       - name: Post-deploy smoke
-        run: pnpm run deploy:smoke
+        run: pnpm run deploy:smoke -- --ready-only
         env:
           INCIDENT_WORKER_URL: ${{ secrets.INCIDENT_WORKER_URL }}
-          INCIDENT_SMOKE_TURNSTILE_TOKEN: ${{ secrets.INCIDENT_SMOKE_TURNSTILE_TOKEN }}

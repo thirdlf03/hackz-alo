@@ -6,11 +6,13 @@ import type {
   ExerciseTaskStatus,
   IncidentLogEntryKind,
   MetricsSnapshot,
+  ParticipantCursorEvent,
   ParticipantRole,
   ReplayEvent,
   ScenarioDefinition,
+  ServiceHealth,
   SessionStatus,
-  SlackMessageDefinition,
+  ChatMessageDefinition,
 } from '@incident/shared';
 import type {HttpClient} from './httpClient.js';
 
@@ -39,7 +41,7 @@ export interface SessionClockResponse {
   gameSpeed: number;
   timeLimitMs: number;
   alerts: AlertDefinition[];
-  slackMessages: SlackMessageDefinition[];
+  chatMessages: ChatMessageDefinition[];
 }
 
 export type SessionSnapshotResponse = SessionClockResponse & {
@@ -49,6 +51,7 @@ export type SessionSnapshotResponse = SessionClockResponse & {
   status: SessionStatus;
   elapsedMs: number;
   scenario: ScenarioDefinition;
+  serviceHealth?: Record<string, ServiceHealth>;
 };
 
 export class SessionApi {
@@ -58,6 +61,7 @@ export class SessionApi {
     difficulty?: Difficulty;
     scenarioId?: string;
     turnstileToken?: string;
+    participantId?: string;
   }) {
     return this.http.post<{
       sessionId: string;
@@ -67,10 +71,16 @@ export class SessionApi {
     }>('/api/sessions', input);
   }
 
-  startSession(sessionId: string) {
+  startSession(sessionId: string, input: {participantId?: string} = {}) {
     return this.http.post(
       `/api/sessions/${encodeURIComponent(sessionId)}/start`,
-      {}
+      input
+    );
+  }
+
+  getSession(sessionId: string) {
+    return this.http.get<SessionSnapshotResponse>(
+      `/api/sessions/${encodeURIComponent(sessionId)}`
     );
   }
 
@@ -99,7 +109,9 @@ export class SessionApi {
     handlers: {
       onSnapshot?: (snapshot: SessionSnapshotResponse) => void;
       onExercise?: (snapshot: ExerciseSnapshot) => void;
+      onCursor?: (event: ParticipantCursorEvent) => void;
       onReplay?: (event: ReplayEvent) => void;
+      onRtcSignal?: (data: unknown) => void;
       onError?: (event: Event) => void;
     }
   ) {
@@ -120,11 +132,19 @@ export class SessionApi {
         JSON.parse((event as MessageEvent<string>).data) as ReplayEvent
       );
     });
+    source.addEventListener('cursor', (event) => {
+      handlers.onCursor?.(
+        JSON.parse(
+          (event as MessageEvent<string>).data
+        ) as ParticipantCursorEvent
+      );
+    });
     for (const eventName of [
       'exercise_state',
       'presence',
       'task',
       'inject',
+      'phase',
       'incident_log',
       'hotwash',
     ]) {
@@ -134,8 +154,36 @@ export class SessionApi {
         );
       });
     }
+    source.addEventListener('rtc_signal', (event) => {
+      handlers.onRtcSignal?.(
+        JSON.parse((event as MessageEvent<string>).data) as unknown
+      );
+    });
     source.addEventListener('error', (event) => handlers.onError?.(event));
     return source;
+  }
+
+  /** WebRTC ウォールーム音声用の ICE サーバー(Cloudflare TURN)を取得する。 */
+  getRtcIceServers(sessionId: string) {
+    return this.http.post<{iceServers: unknown}>(
+      `/api/sessions/${encodeURIComponent(sessionId)}/rtc/turn-credentials`,
+      {}
+    );
+  }
+
+  sendRtcSignal(
+    sessionId: string,
+    input: {
+      fromParticipantId: string;
+      toParticipantId?: string;
+      kind: 'join' | 'offer' | 'answer' | 'ice' | 'leave';
+      payload?: unknown;
+    }
+  ) {
+    return this.http.post<{sent: boolean}>(
+      `/api/sessions/${encodeURIComponent(sessionId)}/rtc/signal`,
+      input
+    );
   }
 
   getExerciseState(sessionId: string) {
@@ -174,7 +222,7 @@ export class SessionApi {
     sessionId: string,
     input: {participantId: string; x: number; y: number; visible?: boolean}
   ) {
-    return this.http.post<{exercise: ExerciseSnapshot}>(
+    return this.http.post<{ok: true}>(
       `/api/sessions/${encodeURIComponent(sessionId)}/participants/cursor`,
       input
     );
@@ -196,6 +244,16 @@ export class SessionApi {
   ) {
     return this.http.post<{exercise: ExerciseSnapshot}>(
       `/api/sessions/${encodeURIComponent(sessionId)}/exercise/ready`,
+      input
+    );
+  }
+
+  advanceExercisePhase(
+    sessionId: string,
+    input: {participantId: string; phase: 'briefing'}
+  ) {
+    return this.http.post<{exercise: ExerciseSnapshot}>(
+      `/api/sessions/${encodeURIComponent(sessionId)}/exercise/phase`,
       input
     );
   }
@@ -222,6 +280,7 @@ export class SessionApi {
       title?: string;
       status?: ExerciseTaskStatus;
       assigneeParticipantId?: string | null;
+      actorParticipantId?: string;
     }
   ) {
     return this.http.post<{exercise: ExerciseSnapshot}>(
@@ -233,7 +292,12 @@ export class SessionApi {
   fireInject(
     sessionId: string,
     injectId: string,
-    input: {title?: string; body?: string; actorParticipantId?: string} = {}
+    input: {
+      title?: string;
+      body?: string;
+      actorParticipantId?: string;
+      participantId?: string;
+    } = {}
   ) {
     return this.http.post<{exercise: ExerciseSnapshot}>(
       `/api/sessions/${encodeURIComponent(sessionId)}/injects/${encodeURIComponent(injectId)}/fire`,
@@ -316,17 +380,27 @@ export class SessionApi {
     );
   }
 
-  writeSessionFile(sessionId: string, path: string, content: string) {
+  writeSessionFile(
+    sessionId: string,
+    path: string,
+    content: string,
+    participantId?: string
+  ) {
     return this.http.put<{path: string; byteLength: number}>(
       `/api/sessions/${encodeURIComponent(sessionId)}/file`,
-      {path, content}
+      {path, content, ...(participantId ? {participantId} : {})}
     );
   }
 
-  resizeTerminal(sessionId: string, cols: number, rows: number) {
+  resizeTerminal(
+    sessionId: string,
+    cols: number,
+    rows: number,
+    participantId?: string
+  ) {
     return this.http.post<{cols: number; rows: number}>(
       `/api/sessions/${encodeURIComponent(sessionId)}/terminal/resize`,
-      {cols, rows}
+      {cols, rows, ...(participantId ? {participantId} : {})}
     );
   }
 

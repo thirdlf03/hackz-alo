@@ -1,0 +1,146 @@
+{
+  "id": "kodama-batch-001",
+  "version": 1,
+  "title": "こだまが返ってこないバッチ",
+  "difficulty": "intermediate",
+  "difficultyScore": 240,
+  "timeLimitMinutes": 8,
+  "service": {
+    "name": "やまびこ batch",
+    "healthUrl": "http://localhost:8080/health"
+  },
+  "briefing": [
+    "深夜バッチはこだまで書かれている。",
+    "Runbook は曖昧だが、ソースのやまびこ帳に仕様が書いてあるかもしれない。",
+    "まず batch.log と sales.kdm を確認する。"
+  ],
+  "startup": [
+    {
+      "id": "api",
+      "command": "PORT=8080 node /workspace/services/yamabiko-api/server.mjs",
+      "waitForPort": 8080
+    },
+    {
+      "id": "fake-db",
+      "command": "node /workspace/services/fake-db/server.mjs",
+      "waitForPort": 15432
+    }
+  ],
+  "topology": {
+    "nodes": [
+      {
+        "id": "user",
+        "label": "ユーザー",
+        "kind": "external"
+      },
+      {
+        "id": "api",
+        "label": "やまびこ API",
+        "kind": "service",
+        "processId": "api"
+      },
+      {
+        "id": "fake-db",
+        "label": "疑似データベース",
+        "kind": "datastore",
+        "processId": "fake-db"
+      },
+      {
+        "id": "batch",
+        "label": "夜間バッチ(sales-nightly)",
+        "kind": "batch"
+      }
+    ],
+    "edges": [
+      {
+        "from": "user",
+        "to": "api"
+      },
+      {
+        "from": "api",
+        "to": "fake-db"
+      },
+      {
+        "from": "api",
+        "to": "batch"
+      },
+      {
+        "from": "batch",
+        "to": "fake-db"
+      }
+    ]
+  },
+  "triggers": [
+    {
+      "id": "break-sales-batch",
+      "atMs": 90000,
+      "type": "kodama_batch_failure",
+      "params": {
+        "jobId": "sales-nightly",
+        "path": "/workspace/services/batch/sales.kdm",
+        "specInComments": true
+      }
+    }
+  ],
+  "alerts": [
+    {
+      "id": "batch-failed",
+      "atMs": 120000,
+      "severity": "critical",
+      "message": "sales-nightly batch failed",
+      "source": "scenario"
+    }
+  ],
+  "successConditions": [
+    {
+      "type": "kodama_batch_ok",
+      "jobId": "sales-nightly"
+    },
+    {
+      "type": "log_absent",
+      "path": "/workspace/logs/batch.log",
+      "pattern": "こだまが返ってきません"
+    }
+  ],
+  "runbooks": [
+    {
+      "id": "runbook.kodama",
+      "title": "こだまバッチ調査",
+      "body": "こだま仕様表みてがんばれ。\n\nバッチファイルは /workspace/services/batch/sales.kdm\n\n直しただけで終わらせない。バッチログに失敗の記録が残ったままだと、\n監視は「まだ失敗している」と判断して発報を続ける。原因を直したら、\nその痕跡を片付けるところまでが復旧作業。"
+    },
+    {
+      "id": "runbook.kodama-spec",
+      "title": "こだま仕様表",
+      "body": "文\nやまびこ帳: コメント（無視）\nよぶ <name> = <expr>: 変数定義\nはかる <expr>: 式を評価\nかえす [<expr>]: 終了（省略時は直前の値）\n\n演算子（優先: かける/わる → たす/ひく）\nたす: +  ひく: -\nかける: *  わる: /（右辺 0 で error）\n\nリテラル: 数値 / しずか(0) / こだま(1) / 変数名 / ( )\n\nエラーはすべて「こだまが返ってきません」のみ表示\nkodama run <file> … 実行  kodama check <file> … 構文チェック\n\n例: よぶ price = 100、よぶ tax = こだま のとき price かける tax は price のまま"
+    }
+  ],
+  "chatMessages": [
+    {
+      "id": "mystery-error",
+      "atMs": 130000,
+      "from": "経理",
+      "body": "売上集計が止まってるんですが、こだまが返ってきません。"
+    }
+  ],
+  "navigationSteps": [
+    {
+      "id": "nav-batch-status",
+      "atMs": 0,
+      "hint": "バッチ失敗のアラートが出ていないか監視画面で確認する",
+      "panel": "metrics"
+    },
+    {
+      "id": "nav-batch-log",
+      "atMs": 95000,
+      "hint": "batch.log でエラー内容を確認する",
+      "panel": "terminal",
+      "suggestedCommand": "tail /workspace/logs/batch.log"
+    },
+    {
+      "id": "nav-batch-source",
+      "atMs": 105000,
+      "hint": "sales.kdm のソースをこだま仕様表と見比べる",
+      "panel": "editor"
+    }
+  ]
+}

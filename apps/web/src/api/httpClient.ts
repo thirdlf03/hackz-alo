@@ -1,4 +1,4 @@
-import type {ApiResult} from '@incident/shared';
+import type {ApiResult, ParticipantRole} from '@incident/shared';
 import {
   getBrowserPerf,
   INCIDENT_ATTRS,
@@ -8,6 +8,49 @@ import {
 
 const WRITE_TOKEN_STORAGE_KEY = 'incident-write-token';
 const READ_TOKEN_QUERY_PARAM = 'readToken';
+
+/**
+ * Thrown when the server rejects a session control action (start / inject
+ * fire) with a flat `{error, requiredRole?}` response instead of the
+ * standard `ApiResult` wrapper. Lets callers show a specific Japanese
+ * message instead of a generic failure.
+ */
+export class SessionActionError extends Error {
+  constructor(
+    readonly code: string,
+    readonly status: number,
+    readonly requiredRole?: ParticipantRole
+  ) {
+    super(code);
+  }
+}
+
+/**
+ * Thrown when the server rejects a request with the standard ApiResult
+ * `{ok:false, error:{code,message}}` envelope. Carries the error `code` and
+ * HTTP `status` so callers can distinguish specific failures (e.g. a replay
+ * chunk seq conflict) without pattern-matching on the message text, while
+ * `.message` keeps showing the server's human-readable text.
+ */
+export class ApiResultError extends Error {
+  constructor(
+    message: string,
+    readonly code: string,
+    readonly status: number
+  ) {
+    super(message);
+  }
+}
+
+function isFlatErrorPayload(
+  payload: unknown
+): payload is {error: string; requiredRole?: ParticipantRole} {
+  return (
+    typeof payload === 'object' &&
+    payload !== null &&
+    typeof (payload as {error?: unknown}).error === 'string'
+  );
+}
 
 export class HttpClient {
   private writeToken: string | undefined;
@@ -20,10 +63,9 @@ export class HttpClient {
   }
 
   getWriteToken() {
-    if (this.writeToken) return this.writeToken;
-    if (typeof sessionStorage === 'undefined') return undefined;
-    const stored = sessionStorage.getItem(WRITE_TOKEN_STORAGE_KEY);
-    this.writeToken = stored ?? undefined;
+    if (typeof sessionStorage === 'undefined') return this.writeToken;
+    this.writeToken =
+      sessionStorage.getItem(WRITE_TOKEN_STORAGE_KEY) ?? undefined;
     return this.writeToken;
   }
 
@@ -76,23 +118,41 @@ export class HttpClient {
       );
       span?.setAttribute(INCIDENT_ATTRS.httpStatusCode, response.status);
       if (init.method === 'DELETE' && response.status === 200) {
-        const payload: ApiResult<T> = await response.json();
-        if (!payload.ok) throw new Error(payload.error.message);
+        const payload = await this.parseResult<T>(response);
         span?.end();
-        return payload.data;
+        return payload;
       }
-      const payload: ApiResult<T> = await response.json();
-      if (!payload.ok) throw new Error(payload.error.message);
+      const payload = await this.parseResult<T>(response);
       span?.end();
-      return payload.data;
+      return payload;
     } catch (error) {
       span?.end({status: 'error', error});
       throw error;
     }
   }
 
+  private async parseResult<T>(response: Response): Promise<T> {
+    const payload: unknown = await response.json();
+    if (!response.ok && isFlatErrorPayload(payload)) {
+      throw new SessionActionError(
+        payload.error,
+        response.status,
+        payload.requiredRole
+      );
+    }
+    const result = payload as ApiResult<T>;
+    if (!result.ok) {
+      throw new ApiResultError(
+        result.error.message,
+        result.error.code,
+        response.status
+      );
+    }
+    return result.data;
+  }
+
   private withAuth(init: RequestInit = {}, path = '') {
-    const token = this.tokenForPath(path);
+    const token = this.tokenForPath(path, init.method);
     if (!token) {
       return init;
     }
@@ -103,7 +163,7 @@ export class HttpClient {
     return {...init, headers};
   }
 
-  private tokenForPath(path: string) {
+  private tokenForPath(path: string, method = 'GET') {
     if (path === '/api/sessions') return undefined;
     const normalizedPath = path.split('?')[0] ?? path;
     const protectsReplay =
@@ -112,17 +172,46 @@ export class HttpClient {
     const protectsSession = normalizedPath.startsWith('/api/sessions/');
     if (!protectsReplay && !protectsSession) return undefined;
 
-    const writeToken = this.getWriteToken();
-    if (writeToken) return writeToken;
-    return protectsReplay ? this.readTokenFromLocation() : undefined;
+    if (protectsReplay && this.isReplayReadRequest(normalizedPath, method)) {
+      const replayId = this.replayIdFromPath(normalizedPath);
+      const readToken = this.readTokenFromLocation(replayId);
+      if (readToken) return readToken;
+    }
+    return this.getWriteToken();
   }
 
-  private readTokenFromLocation() {
+  private readTokenFromLocation(requestedReplayId?: string) {
     if (typeof window === 'undefined') return undefined;
-    const token = new URLSearchParams(window.location.search)
-      .get(READ_TOKEN_QUERY_PARAM)
-      ?.trim();
+    const params = new URLSearchParams(window.location.search);
+    const linkedReplayId = params.get('replay')?.trim();
+    if (
+      linkedReplayId &&
+      requestedReplayId &&
+      linkedReplayId !== requestedReplayId
+    ) {
+      return undefined;
+    }
+    const token = params.get(READ_TOKEN_QUERY_PARAM)?.trim();
     return token && token.length > 0 ? token : undefined;
+  }
+
+  private isReplayReadRequest(path: string, method: string) {
+    const normalizedMethod = method.toUpperCase();
+    return (
+      normalizedMethod === 'GET' ||
+      normalizedMethod === 'HEAD' ||
+      (normalizedMethod === 'POST' && path.endsWith('/comments'))
+    );
+  }
+
+  private replayIdFromPath(path: string) {
+    const encodedReplayId = path.split('/')[3];
+    if (!encodedReplayId) return undefined;
+    try {
+      return decodeURIComponent(encodedReplayId);
+    } catch {
+      return undefined;
+    }
   }
 
   private startRequestSpan(

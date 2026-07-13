@@ -18,18 +18,43 @@ import {
   drawExpandedMonitorOverlay,
   drawMetricsPanelOnSurface,
 } from './canvasRenderOverlay.js';
+import {drawMetricsPanelHeader} from './canvasRenderMetrics.js';
 import {drawNotifications} from './canvasRenderNotifications.js';
 import {
+  drawFlatPanel,
   drawMonitor,
   drawMonitorMagnifyIcons,
-  drawMonitorFrame,
-  drawRoom,
-  withMonitorPose,
+  drawScreenBackground,
 } from './canvasRenderScene.js';
+import {drawTopologyMap} from './canvasRenderTopology.js';
 import type {AnsiSpan} from '../terminal/ansi.js';
-import type {CanvasRenderSurface} from './canvasRenderSurface.js';
-import officeMonitorBackdropUrl from '../../assets/office-monitor-backdrop.avif';
-import {logicalHeight, logicalWidth, monitorLayouts} from './canvasLayout.js';
+import type {
+  CanvasRenderSurface,
+  TopologyHealthCacheEntry,
+} from './canvasRenderSurface.js';
+import {
+  supportsDrawElementImage,
+  transformToCss,
+} from '../../pure/htmlInCanvas.js';
+import {
+  chatComposeRegion,
+  logicalHeight,
+  logicalWidth,
+  monitorHeaderHeight,
+  monitorLayout,
+  monitorLayouts,
+  TOPOLOGY_MAP_HEIGHT,
+} from './canvasLayout.js';
+
+interface DrawElementContext {
+  drawElementImage(
+    element: Element,
+    dx: number,
+    dy: number,
+    dwidth?: number,
+    dheight?: number
+  ): unknown;
+}
 
 export {
   centerEditorOverlayRegion,
@@ -48,9 +73,9 @@ export {
   rightPanelPrimaryTabAt,
   runbookTabAt,
   runbookTabRegion,
-  slackComposeAt,
-  slackComposeRegion,
-  slackSendButtonRegion,
+  chatComposeAt,
+  chatComposeRegion,
+  chatSendButtonRegion,
   type MonitorId,
   type RightPanelTab,
 } from './canvasLayout.js';
@@ -59,8 +84,6 @@ export class CanvasRenderer {
   private ctx: CanvasRenderingContext2D;
   private staticCanvas: HTMLCanvasElement;
   private staticCtx: CanvasRenderingContext2D;
-  private roomBackdrop: HTMLImageElement;
-  private roomBackdropLoaded = false;
   private lastRendered?: {
     state: GameRenderState;
     scenario?: ScenarioDefinition;
@@ -69,13 +92,26 @@ export class CanvasRenderer {
     string,
     {spans: AnsiSpan[]; plain: string}
   >();
+  private topologyHealthCache = new Map<string, TopologyHealthCacheEntry>();
   private metricsScrollY = 0;
   private metricsScrollMax = 0;
+  private readonly htmlInCanvasEnabled: boolean;
+  private chatInput: HTMLInputElement | null = null;
 
   constructor(private canvas: HTMLCanvasElement) {
     const ctx = canvas.getContext('2d');
     if (!ctx) throw new Error('2d canvas is required');
     this.ctx = ctx;
+    this.htmlInCanvasEnabled = supportsDrawElementImage(ctx);
+    if (this.htmlInCanvasEnabled) {
+      // IME 変換中など「DOM 側だけが変化した」ケースを拾い、ゲームループ外でも
+      // 再描画を要求する(既存の lastRendered 再描画機構を再利用)。
+      this.canvas.addEventListener('paint', () => {
+        if (this.lastRendered) {
+          this.draw(this.lastRendered.state, this.lastRendered.scenario);
+        }
+      });
+    }
     this.canvas.width = logicalWidth;
     this.canvas.height = logicalHeight;
     this.staticCanvas = document.createElement('canvas');
@@ -84,15 +120,6 @@ export class CanvasRenderer {
     const staticCtx = this.staticCanvas.getContext('2d');
     if (!staticCtx) throw new Error('2d canvas is required');
     this.staticCtx = staticCtx;
-    this.roomBackdrop = new Image();
-    this.roomBackdrop.onload = () => {
-      this.roomBackdropLoaded = true;
-      this.drawStaticLayer();
-      if (this.lastRendered) {
-        this.draw(this.lastRendered.state, this.lastRendered.scenario);
-      }
-    };
-    this.roomBackdrop.src = officeMonitorBackdropUrl;
     this.drawStaticLayer();
   }
 
@@ -102,9 +129,17 @@ export class CanvasRenderer {
       terminalLineCache: this.terminalLineCache,
       metricsScrollY: this.metricsScrollY,
       metricsScrollMax: this.metricsScrollMax,
-      roomBackdrop: this.roomBackdrop,
-      roomBackdropLoaded: this.roomBackdropLoaded,
+      topologyHealthCache: this.topologyHealthCache,
     };
+  }
+
+  /** HTML-in-Canvas 有効時に canvas 内へ埋め込むチャット入力欄を登録する。 */
+  setChatInput(input: HTMLInputElement | null) {
+    this.chatInput = input;
+  }
+
+  get embedsHtml() {
+    return this.htmlInCanvasEnabled;
   }
 
   scrollMetricsPanel(deltaY: number) {
@@ -123,6 +158,7 @@ export class CanvasRenderer {
     const viewModel = buildCanvasViewModel(state, scenario);
     const surface = this.surface();
     const ctx = this.ctx;
+    const nowMs = performance.now();
     ctx.save();
     try {
       ctx.setTransform(
@@ -137,31 +173,55 @@ export class CanvasRenderer {
       ctx.drawImage(this.staticCanvas, 0, 0);
       drawHeader(surface, state);
       for (const monitor of monitorLayouts) {
-        withMonitorPose(surface, monitor, () => {
-          drawMonitor(
-            surface,
-            monitor.x,
-            monitor.y,
-            monitor.width,
-            monitor.height,
-            monitor.title,
-            (content) => {
-              if (monitor.id === 'metrics') {
+        const headerHeight = monitorHeaderHeight(monitor.id);
+        drawMonitor(
+          surface,
+          monitor.x,
+          monitor.y,
+          monitor.width,
+          monitor.height,
+          headerHeight,
+          (content) => {
+            if (monitor.id === 'metrics') {
+              if (scenario?.topology) {
+                drawTopologyMap(
+                  surface,
+                  scenario.topology,
+                  state.monitors.left.serviceHealth,
+                  nowMs,
+                  content.width,
+                  TOPOLOGY_MAP_HEIGHT
+                );
+                ctx.save();
+                ctx.translate(0, TOPOLOGY_MAP_HEIGHT);
+                drawMetricsPanelOnSurface(
+                  surface,
+                  state.monitors.left,
+                  content.height - TOPOLOGY_MAP_HEIGHT
+                );
+                ctx.restore();
+              } else {
                 drawMetricsPanelOnSurface(
                   surface,
                   state.monitors.left,
                   content.height
                 );
-              } else if (monitor.id === 'terminal') {
-                drawCenterPanel(surface, state, content.width);
-              } else {
-                drawRightPanel(surface, state, viewModel);
               }
+            } else if (monitor.id === 'terminal') {
+              drawCenterPanel(surface, state, content.width);
+            } else {
+              drawRightPanel(surface, state, viewModel);
             }
-          );
-        });
+          }
+        );
       }
       drawCenterToolTabs(surface, state);
+      drawMetricsPanelHeader(
+        surface,
+        monitorLayout('metrics'),
+        monitorHeaderHeight('metrics'),
+        state.monitors.left.metrics
+      );
       drawMonitorMagnifyIcons(surface);
       drawAlerts(surface, state);
       if (state.warning && state.warning.flashMs > 0) {
@@ -173,6 +233,7 @@ export class CanvasRenderer {
       if (state.world.expandedMonitor) {
         drawExpandedMonitorOverlay(surface, state, scenario, viewModel);
       }
+      this.drawEmbeddedElements(state);
       drawCursor(surface, state);
     } finally {
       ctx.restore();
@@ -181,24 +242,52 @@ export class CanvasRenderer {
     this.metricsScrollMax = surface.metricsScrollMax;
   }
 
+  /**
+   * HTML-in-Canvas 有効時、チャット入力欄(本物の <input>)を canvas 上の
+   * compose 領域に描画し、戻り値 transform を DOM 要素へ適用してヒットテスト
+   * 位置を描画位置に一致させる。チャットタブ表示中のみ。非対応時は何もしない
+   * (従来の自前描画にフォールバック)。
+   */
+  private drawEmbeddedElements(state: GameRenderState) {
+    const input = this.chatInput;
+    if (!this.htmlInCanvasEnabled || !input) return;
+    if (state.monitors.right.activePanelTab !== 'chat') {
+      input.style.transform = 'translateY(-9999px)';
+      return;
+    }
+    const region = chatComposeRegion(
+      state.monitors.right.activePanelTab,
+      state.world.expandedMonitor
+    );
+    try {
+      const ctx = this.ctx as unknown as DrawElementContext;
+      const transform = ctx.drawElementImage(
+        input,
+        region.x,
+        region.y,
+        region.width,
+        region.height
+      );
+      input.style.transform = transformToCss(transform);
+    } catch {
+      // 実験的 API のため描画に失敗しても致命的にしない。
+    }
+  }
+
   private drawStaticLayer() {
     const previous = this.ctx;
     this.ctx = this.staticCtx;
     const surface = this.surface(this.staticCtx);
     try {
       this.ctx.clearRect(0, 0, logicalWidth, logicalHeight);
-      drawRoom(surface);
+      drawScreenBackground(surface);
       for (const monitor of monitorLayouts) {
-        withMonitorPose(surface, monitor, () => {
-          drawMonitorFrame(
-            surface,
-            monitor.x,
-            monitor.y,
-            monitor.width,
-            monitor.height,
-            monitor.title
-          );
-        });
+        drawFlatPanel(
+          surface,
+          monitor.id,
+          monitor,
+          monitorHeaderHeight(monitor.id)
+        );
       }
     } finally {
       this.ctx = previous;

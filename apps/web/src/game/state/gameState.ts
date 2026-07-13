@@ -20,12 +20,13 @@ interface InitialGameStateOptions {
   recordingStatus?: GameRenderState['recording']['status'];
   recordingSaveEnabled?: boolean;
   speed?: number;
+  localParticipantId?: string;
 }
 
 const DEFAULT_EDITOR_FILES: EditorPanelState['files'] = [
-  {path: '/workspace/services/batch/sales.un'},
-  {path: '/workspace/run/deploy.json'},
-  {path: '/workspace/run/hosts.override'},
+  {path: '/workspace/services/batch/sales.kdm'},
+  {path: '/workspace/etc/yamabiko-api.json'},
+  {path: '/workspace/releases/yamabiko-api.previous.json'},
   {path: '/workspace/run/job-queue.jsonl'},
 ];
 
@@ -44,7 +45,7 @@ function defaultEditor(): EditorPanelState {
 
 export {
   computeNarrativeHour,
-  mergedSlackMessages,
+  mergedChatMessages,
   unreadAlertCount,
   unreadNotificationCount,
   visibleRunbooks,
@@ -93,19 +94,22 @@ export function createInitialGameState(
         ...(activeRunbook
           ? {activeRunbook, activeRunbookIndex: 0}
           : {activeRunbookIndex: 0}),
-        slackMessages: [],
+        chatMessages: [],
       },
     },
     navigation: {dismissedStepIds: []},
     notifications: {panelOpen: false, readAlertIds: [], pulseMs: 0},
-    seenSlackIds: [],
-    playerSlackMessages: [],
-    slackCompose: {active: false, draft: ''},
+    seenChatIds: [],
+    playerChatMessages: [],
+    chatCompose: {active: false, draft: ''},
     openedRunbookIds: activeRunbook ? [activeRunbook.id] : [],
     alertFlashMs: 0,
     world: {narrativeHour: 0, expandedMonitor: null},
     commandInputFocused: false,
     cursor: {x: 960, y: 540, visible: true},
+    ...(options.localParticipantId
+      ? {localParticipantId: options.localParticipantId}
+      : {}),
     room: {
       participants: [],
       tasks: [],
@@ -128,24 +132,26 @@ export function advanceGameState(
   speed = state.clock.speed,
   deltaMs = 0,
   serverAlerts?: GameRenderState['monitors']['left']['alerts'],
-  serverSlack?: GameRenderState['monitors']['right']['slackMessages']
+  serverChat?: GameRenderState['monitors']['right']['chatMessages'],
+  serverServiceHealth?: GameRenderState['monitors']['left']['serviceHealth']
 ): GameRenderState {
   const alerts =
     serverAlerts ??
     (scenario
       ? scenario.alerts.filter((alert) => alert.atMs <= elapsedMs)
       : state.monitors.left.alerts);
-  const slackMessages =
-    serverSlack ??
+  const chatMessages =
+    serverChat ??
     (scenario
-      ? scenario.slackMessages.filter((message) => message.atMs <= elapsedMs)
-      : state.monitors.right.slackMessages);
+      ? scenario.chatMessages.filter((message) => message.atMs <= elapsedMs)
+      : state.monitors.right.chatMessages);
 
+  const runbookFileContents = state.monitors.right.runbookFileContents;
   const prevVisibleRunbooks = scenario
-    ? visibleRunbooks(scenario, state.clock.elapsedMs)
+    ? visibleRunbooks(scenario, state.clock.elapsedMs, runbookFileContents)
     : [];
   const nextVisibleRunbooks = scenario
-    ? visibleRunbooks(scenario, elapsedMs)
+    ? visibleRunbooks(scenario, elapsedMs, runbookFileContents)
     : [];
   const newRunbookArrived =
     nextVisibleRunbooks.length > prevVisibleRunbooks.length;
@@ -156,26 +162,23 @@ export function advanceGameState(
     state.navigation.dismissedStepIds
   );
   const newAlertArrived = alerts.length > state.monitors.left.alerts.length;
-  const previousSlackIds = new Set([
-    ...state.monitors.right.slackMessages.map((message) => message.id),
-    ...state.playerSlackMessages.map((message) => message.id),
+  const previousChatIds = new Set([
+    ...state.monitors.right.chatMessages.map((message) => message.id),
+    ...state.playerChatMessages.map((message) => message.id),
   ]);
-  const newSlackArrived = slackMessages.some(
-    (message) => !previousSlackIds.has(message.id)
+  const newChatArrived = chatMessages.some(
+    (message) => !previousChatIds.has(message.id)
   );
   const notificationPulseMs =
-    newAlertArrived || newSlackArrived || newRunbookArrived
+    newAlertArrived || newChatArrived || newRunbookArrived
       ? 2400
       : Math.max(0, state.notifications.pulseMs - deltaMs);
 
-  const activeRunbookStillVisible = state.monitors.right.activeRunbook
-    ? nextVisibleRunbooks.some(
-        (runbook) => runbook.id === state.monitors.right.activeRunbook?.id
-      )
-    : false;
-  const nextActiveRunbook = activeRunbookStillVisible
-    ? state.monitors.right.activeRunbook
-    : nextVisibleRunbooks[0];
+  const activeRunbookId = state.monitors.right.activeRunbook?.id;
+  const matchedActiveRunbook = activeRunbookId
+    ? nextVisibleRunbooks.find((runbook) => runbook.id === activeRunbookId)
+    : undefined;
+  const nextActiveRunbook = matchedActiveRunbook ?? nextVisibleRunbooks[0];
   const nextActiveRunbookIndex = nextActiveRunbook
     ? Math.max(
         0,
@@ -201,10 +204,16 @@ export function advanceGameState(
       left: {
         ...state.monitors.left,
         alerts,
+        ...((serverServiceHealth ?? state.monitors.left.serviceHealth)
+          ? {
+              serviceHealth:
+                serverServiceHealth ?? state.monitors.left.serviceHealth,
+            }
+          : {}),
       },
       right: {
         activePanelTab: state.monitors.right.activePanelTab,
-        slackMessages,
+        chatMessages,
         activeRunbookIndex: nextActiveRunbook ? nextActiveRunbookIndex : 0,
         ...(nextActiveRunbook ? {activeRunbook: nextActiveRunbook} : {}),
       },
@@ -271,6 +280,9 @@ export function applyLiveMetrics(
     edgeRttMs === null
       ? state.monitors.left.edgeRttHistory
       : appendEdgeRttHistory(state.monitors.left.edgeRttHistory, edgeRttMs);
+  const runbookFileContents = metrics.runbookFiles
+    ? {...state.monitors.right.runbookFileContents, ...metrics.runbookFiles}
+    : state.monitors.right.runbookFileContents;
   return {
     ...state,
     monitors: {
@@ -282,6 +294,10 @@ export function applyLiveMetrics(
         metricsSource: 'live',
         edgeRttMs: edgeRttMs ?? state.monitors.left.edgeRttMs,
         edgeRttHistory,
+      },
+      right: {
+        ...state.monitors.right,
+        ...(runbookFileContents ? {runbookFileContents} : {}),
       },
     },
   };
@@ -296,7 +312,7 @@ export function dismissNavigationStep(
 
 export function setRightPanelTab(
   state: GameRenderState,
-  tab: 'runbook' | 'slack'
+  tab: 'runbook' | 'chat'
 ): GameRenderState {
   return reduceGameState(state, {type: 'set_right_panel_tab', tab});
 }
@@ -333,8 +349,8 @@ export function toggleNotificationPanel(
   return reduceGameState(state, {type: 'toggle_notification_panel'});
 }
 
-export function activateSlackCompose(state: GameRenderState): GameRenderState {
-  return reduceGameState(state, {type: 'activate_slack_compose'});
+export function activateChatCompose(state: GameRenderState): GameRenderState {
+  return reduceGameState(state, {type: 'activate_chat_compose'});
 }
 
 export function focusCommandInput(state: GameRenderState): GameRenderState {
@@ -345,28 +361,40 @@ export function blurCommandInput(state: GameRenderState): GameRenderState {
   return reduceGameState(state, {type: 'blur_command_input'});
 }
 
-export function deactivateSlackCompose(
-  state: GameRenderState
-): GameRenderState {
-  return reduceGameState(state, {type: 'deactivate_slack_compose'});
+export function deactivateChatCompose(state: GameRenderState): GameRenderState {
+  return reduceGameState(state, {type: 'deactivate_chat_compose'});
 }
 
-export function setSlackDraft(
+export function setChatDraft(
   state: GameRenderState,
   draft: string
 ): GameRenderState {
-  return reduceGameState(state, {type: 'set_slack_draft', draft});
+  return reduceGameState(state, {type: 'set_chat_draft', draft});
 }
 
-export function submitPlayerSlackMessage(
+export function submitPlayerChatMessage(
   state: GameRenderState,
   body: string,
   atMs: number
 ): GameRenderState {
   return reduceGameState(state, {
-    type: 'submit_player_slack_message',
+    type: 'submit_player_chat_message',
     body,
     atMs,
+  });
+}
+
+export function appendNpcChatMessage(
+  state: GameRenderState,
+  body: string,
+  atMs: number,
+  from: string
+): GameRenderState {
+  return reduceGameState(state, {
+    type: 'append_npc_chat_message',
+    body,
+    atMs,
+    from,
   });
 }
 

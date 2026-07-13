@@ -3,7 +3,7 @@ import {
   acceptRecordingConsent,
   clickCenterTool,
   clickEditorFile,
-  openDemoScenarioBriefing,
+  openDefaultScenarioBriefing,
   retireFromGame,
   setSaveRecording,
   startGameFromBriefing,
@@ -17,7 +17,7 @@ test('editor file open edit save updates sandbox file and replay timeline', asyn
   page,
   request,
 }) => {
-  const session = await openDemoScenarioBriefing(page);
+  const session = await openDefaultScenarioBriefing(page);
   await acceptRecordingConsent(page);
   await setSaveRecording(page, false);
   await startGameFromBriefing(page);
@@ -42,7 +42,7 @@ test('editor file open edit save updates sandbox file and replay timeline', asyn
   ).toBe(true);
 
   await clickCenterTool(page, 'editor');
-  const editor = page.getByRole('textbox');
+  const editor = page.getByRole('textbox', {name: /を編集$/});
   await expect(editor).toBeVisible({timeout: 30_000});
 
   let openedPath: string | undefined;

@@ -5,14 +5,23 @@ import {
   extractTypedCommand,
   inputCaretX,
   roundRect,
+  truncateToWidth,
   wrapText,
   formatDifficulty,
   formatNarrativeClock,
   formatRecordingStatus,
   formatTime,
 } from './canvasDrawUtils.js';
-import {gamePalette as palette, uiFont, monoFont} from './gamePalette.js';
 import {
+  gamePalette as palette,
+  uiFont,
+  monoFont,
+  displayFont,
+} from './gamePalette.js';
+import {canOperateSandbox} from '../../pure/rolePermissions.js';
+import {
+  alertBandRect,
+  commandWarningRect,
   inputDockRects,
   logicalWidth,
   navigationOverlayRect,
@@ -56,6 +65,8 @@ export function drawHeader(
   );
 }
 
+/** The single, unmissable incident banner at the top of the play area,
+ * matching the 6a-5 mock's solid-red "!! 障害発生" bar exactly. */
 export function drawAlerts(
   surface: CanvasRenderSurface,
   state: GameRenderState
@@ -63,12 +74,42 @@ export function drawAlerts(
   const alert =
     state.monitors.left.alerts[state.monitors.left.alerts.length - 1];
   if (!alert) return;
-  surface.ctx.fillStyle = 'rgba(239, 68, 68, 0.92)';
-  roundRect(surface.ctx, 70, 778, 1780, 48, 8);
-  surface.ctx.fill();
-  surface.ctx.fillStyle = palette.textBadge;
-  surface.ctx.font = uiFont(22);
-  surface.ctx.fillText(alert.message, 104, 808);
+  const ctx = surface.ctx;
+  const box = alertBandRect;
+  const midY = box.y + box.height / 2 + 7;
+
+  ctx.fillStyle = palette.borderDanger;
+  roundRect(ctx, box.x, box.y, box.width, box.height, 3);
+  ctx.fill();
+
+  ctx.fillStyle = palette.textOnDangerStrong;
+  ctx.font = displayFont(19);
+  const label = '!! 障害発生';
+  ctx.fillText(label, box.x + 18, midY);
+  const labelWidth = ctx.measureText(label).width;
+
+  const remainingMs = Math.max(
+    0,
+    state.clock.timeLimitMs - state.clock.elapsedMs
+  );
+  const countdown = `復旧まで ${formatTime(remainingMs)}`;
+  ctx.font = monoFont(15, 'bold');
+  const countdownWidth = ctx.measureText(countdown).width;
+
+  const messageX = box.x + 18 + labelWidth + 16;
+  const messageMaxWidth =
+    box.x + box.width - 18 - countdownWidth - 16 - messageX;
+  ctx.fillStyle = palette.textOnDangerBody;
+  ctx.font = monoFont(16, 'bold');
+  ctx.fillText(
+    truncateToWidth(ctx, alert.message, Math.max(40, messageMaxWidth)),
+    messageX,
+    midY
+  );
+
+  ctx.fillStyle = palette.textOnDangerStrong;
+  ctx.font = monoFont(15, 'bold');
+  ctx.fillText(countdown, box.x + box.width - 18 - countdownWidth, midY);
 }
 
 export function drawInputDock(
@@ -78,12 +119,17 @@ export function drawInputDock(
   const input = inputDockRects.input;
   const button = inputDockRects.button;
   const enabled = state.session.status === 'running';
-  const focused = state.commandInputFocused;
+  const sandboxAllowed = canOperateSandbox(
+    state.room.participants,
+    state.localParticipantId
+  );
+  const inputEnabled = enabled && sandboxAllowed;
+  const focused = state.commandInputFocused && sandboxAllowed;
   const typed = extractTypedCommand(
     state.monitors.center.terminal.commandDraft
   );
   const caretVisible =
-    enabled && focused && Math.floor(performance.now() / 530) % 2 === 0;
+    inputEnabled && focused && Math.floor(performance.now() / 530) % 2 === 0;
 
   surface.ctx.fillStyle = palette.bgPanelDark;
   surface.ctx.fillRect(0, 850, logicalWidth, 170);
@@ -96,9 +142,9 @@ export function drawInputDock(
   roundRect(surface.ctx, input.x, input.y, input.width, input.height, 8);
   surface.ctx.fill();
   surface.ctx.strokeStyle =
-    enabled && focused
+    inputEnabled && focused
       ? palette.borderFocus
-      : enabled
+      : inputEnabled
         ? palette.borderDefault
         : palette.bgCard;
   surface.ctx.lineWidth = 2;
@@ -107,13 +153,17 @@ export function drawInputDock(
   const inputTextY = input.y + Math.round(input.height / 2) + 8;
   surface.ctx.font = monoFont(22);
   const textStartX = input.x + 20;
-  if (typed) {
+  if (typed && sandboxAllowed) {
     surface.ctx.fillStyle = palette.textTerminal;
     surface.ctx.fillText(typed, textStartX, inputTextY);
   } else if (!focused) {
     surface.ctx.fillStyle = palette.textMuted;
     surface.ctx.fillText(
-      enabled ? 'コマンドを入力…' : 'セッション開始後に入力できます',
+      !sandboxAllowed
+        ? 'ターミナル操作は Ops / Facilitator のみ'
+        : enabled
+          ? 'コマンドを入力…'
+          : 'セッション開始後に入力できます',
       textStartX,
       inputTextY
     );
@@ -208,6 +258,10 @@ export function drawNavigationOverlay(
   }
 }
 
+const remoteCursorDisplay = new Map<string, {x: number; y: number}>();
+const REMOTE_CURSOR_LERP = 0.32;
+const REMOTE_CURSOR_SNAP_PX = 400;
+
 export function drawCursor(
   surface: CanvasRenderSurface,
   state: GameRenderState
@@ -234,10 +288,28 @@ function drawParticipantCursors(
     palette.accentPink,
     palette.textClock,
   ];
+  const presentIds = new Set<string>();
   state.room.participants.forEach((participant, index) => {
+    if (participant.participantId === state.localParticipantId) return;
     if (!participant.cursor?.visible || !participant.online) return;
+    presentIds.add(participant.participantId);
     const color = colors[index % colors.length] ?? palette.accentCyan;
-    const {x, y} = participant.cursor;
+    const target = participant.cursor;
+    const previous = remoteCursorDisplay.get(participant.participantId);
+    let x = target.x;
+    let y = target.y;
+    if (previous) {
+      const dx = target.x - previous.x;
+      const dy = target.y - previous.y;
+      if (dx * dx + dy * dy > REMOTE_CURSOR_SNAP_PX * REMOTE_CURSOR_SNAP_PX) {
+        x = target.x;
+        y = target.y;
+      } else {
+        x = previous.x + dx * REMOTE_CURSOR_LERP;
+        y = previous.y + dy * REMOTE_CURSOR_LERP;
+      }
+    }
+    remoteCursorDisplay.set(participant.participantId, {x, y});
     surface.ctx.save();
     surface.ctx.globalAlpha = 0.82;
     surface.ctx.fillStyle = color;
@@ -251,6 +323,9 @@ function drawParticipantCursors(
     surface.ctx.fillText(participant.displayName, x + 16, y + 18);
     surface.ctx.restore();
   });
+  for (const id of remoteCursorDisplay.keys()) {
+    if (!presentIds.has(id)) remoteCursorDisplay.delete(id);
+  }
 }
 
 export function drawCommandWarning(
@@ -258,7 +333,7 @@ export function drawCommandWarning(
   warning: {message: string; flashMs: number}
 ) {
   const opacity = Math.min(1, warning.flashMs / 800);
-  const box = {x: 70, y: 118, width: logicalWidth - 140, height: 52};
+  const box = commandWarningRect;
   surface.ctx.fillStyle = `rgba(127, 29, 29, ${String(0.92 * opacity)})`;
   roundRect(surface.ctx, box.x, box.y, box.width, box.height, 8);
   surface.ctx.fill();

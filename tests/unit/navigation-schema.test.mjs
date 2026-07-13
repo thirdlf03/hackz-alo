@@ -8,6 +8,7 @@ test('navigation step schema validates optional fields', () => {
     version: 1,
     title: 'Nav',
     difficulty: 'beginner',
+    difficultyScore: 100,
     timeLimitMinutes: 10,
     service: {name: 'API', healthUrl: 'http://localhost:8080/health'},
     briefing: ['hello'],
@@ -18,7 +19,7 @@ test('navigation step schema validates optional fields', () => {
       {type: 'http_status', url: 'http://localhost:8080/health', status: 200},
     ],
     runbooks: [{id: 'rb', title: 'RB', body: 'body'}],
-    slackMessages: [],
+    chatMessages: [],
     navigationSteps: [
       {
         id: 'step-1',
@@ -38,6 +39,7 @@ test('exercise inject schema validates optional room events', () => {
     version: 1,
     title: 'Exercise',
     difficulty: 'intermediate',
+    difficultyScore: 200,
     timeLimitMinutes: 10,
     service: {name: 'API', healthUrl: 'http://localhost:8080/health'},
     briefing: ['hello'],
@@ -48,7 +50,7 @@ test('exercise inject schema validates optional room events', () => {
       {type: 'http_status', url: 'http://localhost:8080/health', status: 200},
     ],
     runbooks: [{id: 'rb', title: 'RB', body: 'body'}],
-    slackMessages: [],
+    chatMessages: [],
     exercise: {
       injects: [
         {
@@ -68,6 +70,7 @@ test('exercise inject schema validates optional room events', () => {
     version: 1,
     title: 'Exercise',
     difficulty: 'intermediate',
+    difficultyScore: 200,
     timeLimitMinutes: 10,
     service: {name: 'API', healthUrl: 'http://localhost:8080/health'},
     briefing: ['hello'],
@@ -78,7 +81,7 @@ test('exercise inject schema validates optional room events', () => {
       {type: 'http_status', url: 'http://localhost:8080/health', status: 200},
     ],
     runbooks: [{id: 'rb', title: 'RB', body: 'body'}],
-    slackMessages: [],
+    chatMessages: [],
     exercise: {
       injects: [{id: 'bad-role', title: 'x', body: 'y', roleHint: 'manager'}],
     },

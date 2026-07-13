@@ -81,7 +81,7 @@ test('snapshot and clock payload expose fired timeline state', () => {
     gameSpeed: 1,
     gameClockWallMs: 10_000,
     firedAlertIds: ['alert_1'],
-    firedSlackIds: ['slack_1'],
+    firedChatIds: ['chat_1'],
   };
 
   const snapshot = buildSessionSnapshot(session, scenario, 11_500);
@@ -92,8 +92,8 @@ test('snapshot and clock payload expose fired timeline state', () => {
     ['alert_1']
   );
   assert.deepEqual(
-    snapshot.slackMessages.map((message) => message.id),
-    ['slack_1']
+    snapshot.chatMessages.map((message) => message.id),
+    ['chat_1']
   );
   assert.equal(snapshot.scenario, scenario);
 
@@ -101,7 +101,7 @@ test('snapshot and clock payload expose fired timeline state', () => {
   assert.equal(clock.gameTimeMs, 3_000);
   assert.equal(clock.timeLimitMs, 600_000);
   assert.equal(clock.alerts.length, 1);
-  assert.equal(clock.slackMessages.length, 1);
+  assert.equal(clock.chatMessages.length, 1);
 });
 
 function testScenario() {
@@ -135,9 +135,9 @@ function testScenario() {
       {type: 'http_status', url: 'http://127.0.0.1:8080/health', status: 200},
     ],
     runbooks: [{id: 'runbook_1', title: 'Runbook', body: 'body'}],
-    slackMessages: [
-      {id: 'slack_1', atMs: 1_000, from: 'SRE', body: 'check'},
-      {id: 'slack_2', atMs: 2_000, from: 'SRE', body: 'later'},
+    chatMessages: [
+      {id: 'chat_1', atMs: 1_000, from: 'SRE', body: 'check'},
+      {id: 'chat_2', atMs: 2_000, from: 'SRE', body: 'later'},
     ],
   };
 }

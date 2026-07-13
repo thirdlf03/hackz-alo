@@ -1,15 +1,54 @@
-import type {GameRenderState, MetricsSource} from '@incident/shared';
+import type {
+  GameRenderState,
+  MetricsSnapshot,
+  MetricsSource,
+} from '@incident/shared';
+import type {CanvasRenderSurface} from './canvasRenderSurface.js';
 import {
   clamp,
   drawSparkline,
+  formatMetricValue,
   roundRect,
   summarizeMetricsHealth,
   truncateToWidth,
   type MetricsHealthSummary,
 } from './canvasDrawUtils.js';
 import {buildMetricSections} from '../../pure/metricsSections.js';
-import {METRICS_SCROLL_TOP, monitorContentHeight} from './canvasLayout.js';
+import {
+  METRICS_SCROLL_TOP,
+  monitorContentHeight,
+  PANEL_HEADER_TEXT_RIGHT_MARGIN,
+  PANEL_PADDING,
+} from './canvasLayout.js';
 import {gamePalette as palette, uiFont, monoFont} from './gamePalette.js';
+
+/** Chrome header row for the METRICS panel: mono label + live status,
+ * matching the 6a-5 mock's "METRICS ... ● CRITICAL" header line. */
+export function drawMetricsPanelHeader(
+  surface: CanvasRenderSurface,
+  rect: {x: number; y: number; width: number},
+  headerHeight: number,
+  metrics: MetricsSnapshot
+) {
+  if (headerHeight <= 0) return;
+  const ctx = surface.ctx;
+  const health = summarizeMetricsHealth(metrics);
+  const midY = rect.y + headerHeight / 2 + 6;
+
+  ctx.fillStyle = palette.textSecondary;
+  ctx.font = monoFont(16);
+  ctx.fillText('METRICS', rect.x + PANEL_PADDING, midY);
+
+  const statusText = `● ${health.label}`;
+  ctx.font = monoFont(15, 'bold');
+  const statusWidth = ctx.measureText(statusText).width;
+  ctx.fillStyle = health.color;
+  ctx.fillText(
+    statusText,
+    rect.x + rect.width - PANEL_HEADER_TEXT_RIGHT_MARGIN - statusWidth,
+    midY
+  );
+}
 
 export interface MetricsPanelScroll {
   scrollY: number;
@@ -80,11 +119,11 @@ function drawMetricCard(
   height: number,
   card: {
     label: string;
-    value: number;
+    value: number | null;
     suffix: string;
     max: number;
     color: string;
-    historyValues: number[];
+    historyValues: Array<number | null>;
   }
 ) {
   ctx.fillStyle = palette.bgPanel;
@@ -100,15 +139,19 @@ function drawMetricCard(
 
   ctx.fillStyle = palette.textPrimary;
   ctx.font = monoFont(22, 'bold');
-  ctx.fillText(`${String(card.value)}${card.suffix}`, x + 12, y + 44);
+  ctx.fillText(formatMetricValue(card.value, card.suffix), x + 12, y + 44);
 
+  const numericHistory = card.historyValues.filter(
+    (value): value is number => value !== null
+  );
+  const fallback = card.value !== null ? [card.value] : [];
   drawSparkline(
     ctx,
     x + 12,
     y + height - 31,
     width - 24,
     22,
-    card.historyValues.length > 0 ? card.historyValues : [card.value],
+    numericHistory.length > 0 ? numericHistory : fallback,
     card.color,
     card.max
   );

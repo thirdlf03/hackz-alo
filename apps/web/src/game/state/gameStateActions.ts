@@ -6,7 +6,7 @@ import type {
 
 export type GameStateAction =
   | {type: 'dismiss_navigation_step'; stepId: string}
-  | {type: 'set_right_panel_tab'; tab: 'runbook' | 'slack'}
+  | {type: 'set_right_panel_tab'; tab: 'runbook' | 'chat'}
   | {
       type: 'set_active_runbook';
       scenario: ScenarioDefinition;
@@ -21,15 +21,21 @@ export type GameStateAction =
       updater: (editor: EditorPanelState) => EditorPanelState;
     }
   | {type: 'toggle_notification_panel'}
-  | {type: 'activate_slack_compose'}
+  | {type: 'activate_chat_compose'}
   | {type: 'focus_command_input'}
   | {type: 'blur_command_input'}
-  | {type: 'deactivate_slack_compose'}
-  | {type: 'set_slack_draft'; draft: string}
+  | {type: 'deactivate_chat_compose'}
+  | {type: 'set_chat_draft'; draft: string}
   | {
-      type: 'submit_player_slack_message';
+      type: 'submit_player_chat_message';
       body: string;
       atMs: number;
+    }
+  | {
+      type: 'append_npc_chat_message';
+      body: string;
+      atMs: number;
+      from: string;
     }
   | {
       type: 'toggle_expanded_monitor';

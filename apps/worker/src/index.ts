@@ -11,10 +11,14 @@ import {requestIdMiddleware} from './http/writeAuthMiddleware.js';
 import {ok} from './http/response.js';
 import {registerAdminRoutes} from './routes/adminRoutes.js';
 import {registerHealthRoutes} from './routes/healthRoutes.js';
+import {registerPushRoutes} from './routes/pushRoutes.js';
 import {registerReplayRoutes} from './routes/replayRoutes.js';
 import {registerScenarioRoutes} from './routes/scenarioRoutes.js';
 import {registerSessionRoutes} from './routes/sessionRoutes.js';
-import {sweepExpiredReplays} from './storage/replayPurge.js';
+import {
+  sweepExpiredReplays,
+  sweepFinalizedReplayChunks,
+} from './storage/replayPurge.js';
 import {sweepStaleSessions} from './sessionSweep.js';
 import type {Bindings} from './types.js';
 
@@ -59,6 +63,7 @@ registerScenarioRoutes(app);
 registerSessionRoutes(app);
 registerReplayRoutes(app);
 registerAdminRoutes(app);
+registerPushRoutes(app);
 
 export default {
   async fetch(request: Request, env: Bindings, ctx: ExecutionContext) {
@@ -72,6 +77,7 @@ export default {
   },
   scheduled(_event: ScheduledEvent, env: Bindings, ctx: ExecutionContext) {
     ctx.waitUntil(sweepStaleSessions(env));
+    ctx.waitUntil(sweepFinalizedReplayChunks(env));
     const now = new Date();
     if (
       now.getUTCDay() === 0 &&

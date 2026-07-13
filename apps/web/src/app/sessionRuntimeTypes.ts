@@ -2,11 +2,16 @@ import type {MutableRef} from 'preact/hooks';
 import type {
   ExerciseSnapshot,
   GameRenderState,
+  ParticipantCursorEvent,
+  ParticipantPresence,
   ScenarioDefinition,
 } from '@incident/shared';
 import type {ApiClientSurface} from '../api/client.js';
 import type {ReplayEventEmitter} from '../game/events/emitReplayEvent.js';
-import type {SessionClockResponse} from './appRuntime.js';
+import type {
+  SessionClockResponse,
+  SessionSnapshotResponse,
+} from './appRuntime.js';
 import type {FinishMode, Screen, ScenarioSummary} from './AppScreens.js';
 
 export interface SessionRecordingBridge {
@@ -20,10 +25,13 @@ export interface SessionRecordingBridge {
 }
 
 export interface TerminalBridgeRef {
-  attachTerminalSession: (session: {
-    sessionId: string;
-    replayId: string;
-  }) => Promise<void>;
+  attachTerminalSession: (
+    session: {
+      sessionId: string;
+      replayId: string;
+    },
+    participants: ParticipantPresence[]
+  ) => Promise<void>;
   destroyTerminal: () => void;
 }
 
@@ -46,6 +54,9 @@ export interface SessionRuntimeBindings {
   scenario: ScenarioDefinition | undefined;
   gameState: GameRenderState | undefined;
   gameSpeed: number;
+  exerciseSnapshot: ExerciseSnapshot | undefined;
+  isStarting: boolean;
+  participantId: string;
   refs: SessionRuntimeRefs;
   recordingRef: {current: SessionRecordingBridge | undefined};
   terminalBridgeRef: {current: TerminalBridgeRef | undefined};
@@ -55,6 +66,7 @@ export interface SessionRuntimeBindings {
       | undefined
       | ((current: GameRenderState | undefined) => GameRenderState | undefined)
   ) => void;
+  setScreen: (screen: Screen) => void;
   setTimeline: (
     value:
       | Array<{at: number; label: string}>
@@ -69,8 +81,15 @@ export interface SessionRuntimeBindings {
   ) => void;
   currentGameTimeMs: () => number;
   endSession: (mode: FinishMode) => Promise<void>;
-  applyClockSnapshot: (clock: SessionClockResponse) => void;
+  // Accepts both the full SSE snapshot payload and the narrower POST /clock
+  // response; only the optional serviceHealth field needs to be readable.
+  applyClockSnapshot: (
+    clock: SessionClockResponse & Pick<SessionSnapshotResponse, 'serviceHealth'>
+  ) => void;
   applyExerciseSnapshot: (snapshot: ExerciseSnapshot) => void;
+  applyParticipantCursor: (event: ParticipantCursorEvent) => void;
+  /** ウォールーム音声(WebRTC)のシグナリング受信ハンドラ。 */
+  rtcSignalHandlerRef: {current: ((data: unknown) => void) | undefined};
 }
 
 export interface SessionRuntimeBootstrapOptions {

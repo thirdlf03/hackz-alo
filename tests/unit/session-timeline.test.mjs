@@ -60,7 +60,7 @@ test('SessionTimeline emits sandbox errors when trigger injection fails', async 
   });
 });
 
-test('SessionTimeline fires alerts and slack messages', async () => {
+test('SessionTimeline fires alerts and chat messages', async () => {
   const harness = createTimelineHarness(testSession({gameTimeMs: 100}));
   const scenario = testScenario({
     alerts: [
@@ -72,9 +72,9 @@ test('SessionTimeline fires alerts and slack messages', async () => {
         source: 'monitor',
       },
     ],
-    slackMessages: [
+    chatMessages: [
       {
-        id: 'slack_1',
+        id: 'chat_1',
         atMs: 0,
         from: 'SRE',
         body: 'checking',
@@ -86,7 +86,7 @@ test('SessionTimeline fires alerts and slack messages', async () => {
   await waitForTimers();
 
   assert.deepEqual(harness.session.firedAlertIds, ['alert_1']);
-  assert.deepEqual(harness.session.firedSlackIds, ['slack_1']);
+  assert.deepEqual(harness.session.firedChatIds, ['chat_1']);
   assert.deepEqual(
     harness.calls.emitted.map((event) => event.type),
     ['alert']
@@ -122,6 +122,45 @@ test('SessionTimeline reschedule clears pending timers', async () => {
   assert.deepEqual(harness.session.firedAlertIds, []);
 });
 
+test('SessionTimeline fires a due timed inject exactly once', async () => {
+  const harness = createTimelineHarness(testSession({gameTimeMs: 0}));
+  const scenario = testScenario({
+    exercise: {injects: [{id: 'inject-1', atMs: 0, title: 'x', body: 'y'}]},
+  });
+
+  harness.timeline.schedule(harness.session, scenario, []);
+  await waitForTimers();
+
+  assert.deepEqual(harness.calls.firedInjects, ['inject-1']);
+});
+
+test('SessionTimeline does not fire an inject before its atMs', async () => {
+  const harness = createTimelineHarness(testSession({gameTimeMs: 0}));
+  const scenario = testScenario({
+    exercise: {
+      injects: [{id: 'inject-1', atMs: 60_000, title: 'x', body: 'y'}],
+    },
+  });
+
+  harness.timeline.schedule(harness.session, scenario, []);
+  await waitForTimers();
+
+  assert.deepEqual(harness.calls.firedInjects, []);
+  harness.timeline.clear();
+});
+
+test('SessionTimeline does not reschedule an already-fired inject', async () => {
+  const harness = createTimelineHarness(testSession({gameTimeMs: 0}));
+  const scenario = testScenario({
+    exercise: {injects: [{id: 'inject-1', atMs: 0, title: 'x', body: 'y'}]},
+  });
+
+  harness.timeline.schedule(harness.session, scenario, ['inject-1']);
+  await waitForTimers();
+
+  assert.deepEqual(harness.calls.firedInjects, []);
+});
+
 function createTimelineHarness(initialSession, options = {}) {
   let session = initialSession;
   const calls = {
@@ -129,6 +168,7 @@ function createTimelineHarness(initialSession, options = {}) {
     emitted: [],
     injected: [],
     saved: [],
+    firedInjects: [],
   };
   const timeline = new SessionTimeline({
     loadSession: async () => session,
@@ -139,6 +179,9 @@ function createTimelineHarness(initialSession, options = {}) {
     injectFault: async (sessionId, type, params) => {
       calls.injected.push([sessionId, type, params]);
       if (options.injectError) throw options.injectError;
+    },
+    fireScheduledInject: async (injectId) => {
+      calls.firedInjects.push(injectId);
     },
     emit: async (input, type, at, actor, payload) => {
       calls.emitted.push({type, at, actor, payload});
@@ -163,7 +206,7 @@ function createTimelineHarness(initialSession, options = {}) {
       sessionId: input.sessionId,
       triggeredIds: input.triggeredIds,
       firedAlertIds: input.firedAlertIds,
-      firedSlackIds: input.firedSlackIds,
+      firedChatIds: input.firedChatIds,
     }),
     broadcastSse: (event, data) => {
       calls.broadcasts.push({event, data});
@@ -193,7 +236,7 @@ function testSession(overrides = {}) {
     gameSpeed: 1,
     triggeredIds: [],
     firedAlertIds: [],
-    firedSlackIds: [],
+    firedChatIds: [],
     eventSeq: 0,
     bufferedEvents: [],
     ...overrides,
@@ -214,7 +257,7 @@ function testScenario(overrides = {}) {
     alerts: [],
     successConditions: [],
     runbooks: [],
-    slackMessages: [],
+    chatMessages: [],
     ...overrides,
   };
 }

@@ -2,24 +2,28 @@ import type {
   GameRenderState,
   RunbookDefinition,
   ScenarioDefinition,
-  SlackMessageDefinition,
+  ChatMessageDefinition,
 } from '@incident/shared';
 
 export function visibleRunbooks(
   scenario: ScenarioDefinition,
-  elapsedMs: number
+  elapsedMs: number,
+  fileContents?: Record<string, string>
 ): RunbookDefinition[] {
-  return scenario.runbooks.filter(
-    (runbook) => (runbook.availableAtMs ?? 0) <= elapsedMs
-  );
+  return scenario.runbooks
+    .filter((runbook) => (runbook.availableAtMs ?? 0) <= elapsedMs)
+    .map((runbook) => {
+      const liveBody = runbook.file ? fileContents?.[runbook.id] : undefined;
+      return liveBody === undefined ? runbook : {...runbook, body: liveBody};
+    });
 }
 
-export function mergedSlackMessages(
+export function mergedChatMessages(
   state: GameRenderState
-): SlackMessageDefinition[] {
+): ChatMessageDefinition[] {
   return [
-    ...state.monitors.right.slackMessages,
-    ...state.playerSlackMessages,
+    ...state.monitors.right.chatMessages,
+    ...state.playerChatMessages,
   ].toSorted((a, b) => a.atMs - b.atMs);
 }
 
@@ -27,10 +31,10 @@ export function unreadNotificationCount(state: GameRenderState) {
   const unreadAlerts = state.monitors.left.alerts.filter(
     (alert) => !state.notifications.readAlertIds.includes(alert.id)
   ).length;
-  const unreadSlack = mergedSlackMessages(state).filter(
-    (message) => !state.seenSlackIds.includes(message.id)
+  const unreadChat = mergedChatMessages(state).filter(
+    (message) => !state.seenChatIds.includes(message.id)
   ).length;
-  return unreadAlerts + unreadSlack;
+  return unreadAlerts + unreadChat;
 }
 
 export function unreadAlertCount(state: GameRenderState) {

@@ -1,59 +1,78 @@
+/**
+ * 6a「ナイトシフト・アーケード」デザイントークン
+ * apps/web/src/styles/tokens.css の置き換え用。
+ * 変数名は既存実装と同一に保ち、値のみ 6a に差し替え。
+ * 末尾に 6a 追加トークンと gamePalette.ts 用の対応表あり。
+ *
+ * 色の役割ルール(厳守):
+ *   緑   = 通常 / 操作可能(プロンプト・主要ボタン・アクティブ)
+ *   黄   = 注意 / 進行中 / 時間
+ *   赤   = 障害 / 失敗 / クリティカルのみ
+ *   白〜灰 = 基本文字(緑がかったグレースケール)
+ */
 :root {
   color-scheme: dark;
 
   /* Surfaces */
-  --surface-base: #0a0e14;
-  --surface-raised: #101821;
-  --surface-overlay: rgba(12, 18, 25, 0.9);
-  --surface-topbar: rgba(9, 13, 18, 0.94);
-  --surface-button: #182230;
-  --surface-input: #0f172a;
-  --surface-speed: #0b1119;
-  --surface-error: #450a0a;
-  --surface-success-badge: #123226;
-  --surface-tutorial-badge: #14532d;
+  --surface-base: #050705;
+  --surface-raised: #0c130d;
+  --surface-overlay: rgba(6, 10, 7, 0.92);
+  --surface-topbar: #060a07;
+  --surface-button: #0c130d;
+  --surface-input: #030503;
+  --surface-speed: #0c130d;
+  --surface-error: #3a1515;
+  --surface-success-badge: #101c13;
+  --surface-tutorial-badge: #0c130d;
+  --surface-panel: #050805; /* 右サイドバー(team-panel)背景 */
 
-  /* Text — AAA 7:1 on --surface-base */
-  --text-primary: #f0f4f8;
-  --text-secondary: #c5d0dc;
-  --text-muted: #b0bcc8;
-  --text-accent: #7dffc8;
-  --text-warning: #ffe08a;
-  --text-link: #9ecbff;
-  --text-error: #fecaca;
-  --text-on-accent: #041410;
-  --text-success-badge: #d8f3e7;
-  --text-tutorial-badge: #a8f5c4;
+  /* Text */
+  --text-primary: #d8f3dc;
+  --text-secondary: #8aa892;
+  --text-muted: #5e7a66;
+  --text-accent: #7cfc9a;
+  --text-warning: #ffcf5c;
+  --text-link: #7cfc9a;
+  --text-error: #ff9a9a;
+  --text-on-accent: #050705;
+  --text-success-badge: #7cfc9a;
+  --text-tutorial-badge: #8aa892;
 
   /* Borders */
-  --border-default: #3a4758;
-  --border-subtle: #334155;
-  --border-muted: #344154;
-  --border-error: #7f1d1d;
-  --border-success: #23694e;
-  --border-focus: #5ec8ff;
-  --border-active-tab: #3b82f6;
+  --border-default: #2c5e38; /* 操作可能要素の枠 */
+  --border-subtle: #15291a; /* 静かなパネル・区切り */
+  --border-muted: #1d3a24; /* フレーム構造 */
+  --border-error: #ff6b6b;
+  --border-success: #2c5e38;
+  --border-focus: #7cfc9a;
+  --border-active-tab: #7cfc9a;
 
   /* Accent / state */
-  --accent-primary: #5eecc0;
-  --accent-tab: #1d4ed8;
-  --tone-green: #4ade80;
-  --tone-amber: #fbbf24;
-  --tone-red: #f87171;
+  --accent-primary: #7cfc9a;
+  --accent-primary-bright: #dcffe4; /* hover 時 */
+  --accent-tab: #d8f3dc; /* アクティブタブは白反転(旧: 青) */
+  --tone-green: #7cfc9a;
+  --tone-amber: #ffcf5c;
+  --tone-red: #ff6b6b;
 
   /* Focus */
-  --focus-ring-color: #5ec8ff;
+  --focus-ring-color: #7cfc9a;
   --focus-ring-width: 2px;
   --focus-ring-offset: 2px;
 
   /* Typography */
+  --font-family-body: 'IBM Plex Sans JP', system-ui, sans-serif;
+  --font-family-display:
+    'DotGothic16', monospace; /* 見出し・数値・主要ボタン */
+  --font-family-mono:
+    'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace; /* メタ情報・端末 */
   --font-body: 18px;
   --font-briefing: 20px;
   --font-caption: 16px;
-  --font-topbar-title: 28px;
-  --font-topbar-meta: 18px;
+  --font-topbar-title: 26px;
+  --font-topbar-meta: 15px;
   --touch-speed: 60px;
-  --line-height-body: 1.5;
+  --line-height-body: 1.6;
 
   /* Touch targets — WCAG 2.5.5 AAA */
   --touch-min: 44px;
@@ -61,6 +80,69 @@
   --play-viewport-height: calc(100dvh - var(--topbar-height));
 
   /* Canvas */
-  --canvas-bg: #050609;
-  --canvas-border: #263244;
+  --canvas-bg: #040604;
+  --canvas-border: #1d3a24;
+
+  /* ─── 6a 追加トークン ─── */
+
+  /* Terminal */
+  --terminal-text: #b7f2c3;
+  --terminal-prompt: #7cfc9a;
+  --terminal-bg: #030503;
+
+  /* 状態ランプ / レコーディング */
+  --lamp-on: #7cfc9a;
+  --lamp-off: #5e7a66;
+  --lamp-rec: #ff3b30;
+
+  /* アラート帯(画面内で最も強い要素) */
+  --alert-bar-bg: #ff6b6b;
+  --alert-bar-text: #2b0505;
+  --alert-bar-label: #3a0808;
+
+  /* 角丸 — 最小限。ピクセル感を保つ */
+  --radius-s: 2px; /* タブ・バッジ */
+  --radius-m: 3px; /* ボタン・入力欄 */
+  --radius-l: 4px; /* パネル */
+  --radius-card: 6px; /* 選択カード */
+  --radius-frame: 10px; /* 画面フレームのみ */
+
+  /* スキャンライン(body 背景に重ねる) */
+  --scanline: repeating-linear-gradient(
+    0deg,
+    rgba(0, 0, 0, 0.24) 0 1px,
+    transparent 1px 3px
+  );
+
+  /* カーソル点滅 */
+  --blink-duration: 1.1s;
 }
+
+/*
+ * gamePalette.ts 対応表(canvas 描画側)
+ * ─────────────────────────────
+ * bgRoomTop / bgRoomBottom  → #0c130d / #040604
+ * bgDesk                    → #060a07
+ * bgPanel / bgPanelDark     → #070c08 / #030503
+ * bgTerminal                → #030503
+ * bgCard / bgCardDark       → #0c130d / #050805
+ * bgInput                   → #030503
+ * bgWarning                 → rgba(58, 21, 21, 0.92)
+ * bgButtonPrimary           → #7cfc9a (text: #050705)
+ * bgButtonSecondary         → transparent + border #2c5e38
+ * bgButtonDanger            → transparent + border #5e2c2c
+ * bgMonitor(ベゼル)          → #0c130d + border #1d3a24
+ * textPrimary / Secondary   → #d8f3dc / #8aa892
+ * textMuted / Dim           → #5e7a66 / #5e7a66
+ * textTerminal / Muted      → #b7f2c3 / #7cfc9a
+ * textLink                  → #7cfc9a
+ * textClock                 → #ffcf5c
+ * borderDefault / Muted     → #2c5e38 / #15291a
+ * borderPanel               → #15291a
+ * borderFocus               → #7cfc9a
+ * borderDanger              → #ff6b6b
+ * statusHealthy / Warn / Critical → #7cfc9a / #ffcf5c / #ff6b6b
+ * statusRecording           → #ff3b30
+ * fonts.ui                  → 'IBM Plex Sans JP', system-ui  (見出しは DotGothic16)
+ * fonts.mono                → 'IBM Plex Mono', ui-monospace, Menlo
+ */

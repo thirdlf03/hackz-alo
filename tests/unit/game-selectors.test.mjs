@@ -4,7 +4,7 @@ import {tsImport} from 'tsx/esm/api';
 
 const {
   computeNarrativeHour,
-  mergedSlackMessages,
+  mergedChatMessages,
   unreadAlertCount,
   unreadNotificationCount,
   visibleRunbooks,
@@ -33,7 +33,7 @@ function baseScenario() {
       {id: 'early', title: 'Early', body: 'now'},
       {id: 'late', title: 'Late', body: 'later', availableAtMs: 90_000},
     ],
-    slackMessages: [],
+    chatMessages: [],
   };
 }
 
@@ -52,13 +52,13 @@ function baseState() {
         ],
       },
       right: {
-        slackMessages: [{id: 'slack-1', atMs: 2, from: 'SRE', body: 'ping'}],
+        chatMessages: [{id: 'chat-1', atMs: 2, from: 'SRE', body: 'ping'}],
       },
     },
-    playerSlackMessages: [
+    playerChatMessages: [
       {id: 'player-1', atMs: 3, from: 'あなた', body: 'pong'},
     ],
-    seenSlackIds: ['slack-1'],
+    seenChatIds: ['chat-1'],
     notifications: {readAlertIds: []},
   };
 }
@@ -75,15 +75,15 @@ test('visibleRunbooks filters runbooks by scenario timeline', () => {
   );
 });
 
-test('mergedSlackMessages merges server and player slack in chronological order', () => {
-  const messages = mergedSlackMessages(baseState());
+test('mergedChatMessages merges server and player chat in chronological order', () => {
+  const messages = mergedChatMessages(baseState());
   assert.deepEqual(
     messages.map((message) => message.id),
-    ['slack-1', 'player-1']
+    ['chat-1', 'player-1']
   );
 });
 
-test('unread counters ignore seen alerts and slack messages', () => {
+test('unread counters ignore seen alerts and chat messages', () => {
   const state = baseState();
   assert.equal(unreadAlertCount(state), 1);
   assert.equal(unreadNotificationCount(state), 2);
@@ -91,7 +91,7 @@ test('unread counters ignore seen alerts and slack messages', () => {
   const read = {
     ...state,
     notifications: {readAlertIds: ['alert-1']},
-    seenSlackIds: ['slack-1', 'player-1'],
+    seenChatIds: ['chat-1', 'player-1'],
   };
   assert.equal(unreadAlertCount(read), 0);
   assert.equal(unreadNotificationCount(read), 0);

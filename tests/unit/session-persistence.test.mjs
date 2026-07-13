@@ -132,7 +132,7 @@ function testSession(overrides = {}) {
     gameSpeed: 1,
     triggeredIds: [],
     firedAlertIds: [],
-    firedSlackIds: [],
+    firedChatIds: [],
     eventSeq: 0,
     bufferedEvents: [],
     ...overrides,

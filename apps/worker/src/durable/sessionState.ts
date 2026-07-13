@@ -5,6 +5,7 @@ import type {
   SessionStatus,
 } from '@incident/shared';
 import {computeGameTimeMs} from '../pure/sessionTime.js';
+import {computeServiceHealthMap} from '../pure/serviceHealthMap.js';
 
 export interface StoredSession {
   sessionId: string;
@@ -16,9 +17,10 @@ export interface StoredSession {
   gameTimeMs: number;
   gameSpeed: number;
   gameClockWallMs?: number;
+  pagerOriginUrl?: string;
   triggeredIds: string[];
   firedAlertIds: string[];
-  firedSlackIds: string[];
+  firedChatIds: string[];
   eventSeq: number;
   bufferedEvents: ReplayEvent[];
 }
@@ -43,7 +45,7 @@ export function createBriefingSession(input: SessionBootstrap): StoredSession {
     gameSpeed: 1,
     triggeredIds: [],
     firedAlertIds: [],
-    firedSlackIds: [],
+    firedChatIds: [],
     eventSeq: 0,
     bufferedEvents: [],
   };
@@ -98,13 +100,21 @@ export function buildSessionSnapshot(
   nowMs = Date.now()
 ) {
   const gameTimeMs = getGameTimeMs(session, nowMs);
+  const firedTriggers = scenario.triggers.filter((trigger) =>
+    session.triggeredIds.includes(trigger.id)
+  );
   return {
     ...session,
     gameTimeMs,
     elapsedMs: gameTimeMs,
     alerts: firedAlerts(scenario, session),
-    slackMessages: firedSlackMessages(scenario, session),
+    chatMessages: firedChatMessages(scenario, session),
     scenario,
+    serviceHealth: computeServiceHealthMap(
+      scenario.topology,
+      firedTriggers,
+      session.status === 'resolved'
+    ),
   };
 }
 
@@ -118,7 +128,7 @@ export function buildClockPayload(
     gameSpeed: session.gameSpeed,
     timeLimitMs: scenario.timeLimitMinutes * 60 * 1000,
     alerts: firedAlerts(scenario, session),
-    slackMessages: firedSlackMessages(scenario, session),
+    chatMessages: firedChatMessages(scenario, session),
   };
 }
 
@@ -131,11 +141,11 @@ function firedAlerts(
   );
 }
 
-function firedSlackMessages(
+function firedChatMessages(
   scenario: ScenarioDefinition,
   session: StoredSession
 ) {
-  return scenario.slackMessages.filter((message) =>
-    session.firedSlackIds.includes(message.id)
+  return scenario.chatMessages.filter((message) =>
+    session.firedChatIds.includes(message.id)
   );
 }

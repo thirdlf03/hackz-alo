@@ -1,5 +1,6 @@
 import type {ReplayEvent} from '@incident/shared';
 import type {ApiClientSurface} from '../../api/client.js';
+import {ApiResultError} from '../../api/httpClient.js';
 
 interface QueuedChunk {
   kind: 'chunk';
@@ -69,7 +70,15 @@ export class OfflineUploadQueue {
           }
           await this.delete(item.id);
           this.retryDelayMs = BASE_RETRY_MS;
-        } catch {
+        } catch (error) {
+          if (shouldDiscardOfflineUploadError(error)) {
+            // Conflicts and permanent auth/not-found failures can never
+            // succeed on retry. Drop stale items so they do not jam uploads
+            // for the current replay.
+            await this.delete(item.id);
+            this.degraded = true;
+            continue;
+          }
           this.retryDelayMs = Math.min(this.retryDelayMs * 2, MAX_RETRY_MS);
           await new Promise((resolve) =>
             setTimeout(resolve, this.retryDelayMs)
@@ -153,6 +162,20 @@ export class OfflineUploadQueue {
       };
     });
   }
+}
+
+export function shouldDiscardOfflineUploadError(error: unknown) {
+  return (
+    error instanceof ApiResultError &&
+    shouldDiscardOfflineUploadFailure(error.status, error.code)
+  );
+}
+
+export function shouldDiscardOfflineUploadFailure(
+  status: number,
+  code: string
+) {
+  return code === 'conflict' || [401, 403, 404].includes(status);
 }
 
 function estimateItemBytes(item: QueueItem) {

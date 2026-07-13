@@ -1,5 +1,4 @@
 import {
-  canDeclareRecovery,
   type ReplayEvent,
   type ScenarioDefinition,
   type SessionStatus,
@@ -9,13 +8,16 @@ import {
   INCIDENT_SPAN_NAMES,
   withWorkerSpan,
 } from '@incident/observability/worker';
-import {readJsonObjectBody, RequestBodyError} from '../http/body.js';
+import {readInternalJsonObject} from '../http/body.js';
 import {
   errorResponse,
   HttpError,
+  hostRequiredResponse,
   jsonErr,
   jsonOk,
   messageFrom,
+  participantsNotReadyResponse,
+  roleRequiredResponse,
 } from '../http/response.js';
 import {logStructured} from '../http/requestLog.js';
 import type {Bindings} from '../types.js';
@@ -29,6 +31,9 @@ import {
   touchSessionClientActivity,
 } from './sessionLifecycle.js';
 import {persistReplayStart, persistSession} from './sessionPersistence.js';
+import {handleSessionRtcSignal} from './sessionRtc.js';
+import {handleSessionPagerEvent} from './sessionPagerEvents.js';
+import {resolveSessionAction} from './sessionResolve.js';
 import {
   readSessionFileContent,
   readSessionFiles,
@@ -38,7 +43,12 @@ import {
   writeSessionFileContent,
   type MetricsCache,
 } from './sessionResourceHandlers.js';
-import {setExercisePhase} from '../pure/exerciseRoom.js';
+import {
+  areParticipantsReadyToStart,
+  canOperateSandbox,
+  canPerformRoleGatedAction,
+  setExercisePhase,
+} from '../pure/exerciseRoom.js';
 import {
   requireScenario,
   SessionExerciseHub,
@@ -53,7 +63,6 @@ import {
   startStoredSession,
   type SessionBootstrap,
   type StoredSession,
-  type SuccessCheck,
 } from './sessionState.js';
 import {SessionSseHub} from './sessionSseHub.js';
 import {SessionTimeline} from './sessionTimeline.js';
@@ -65,7 +74,6 @@ import {
 } from './sessionTerminalHandlers.js';
 import {
   destroySessionSandbox,
-  evaluateSuccessCondition,
   injectFault,
   prepareScenarioSandbox,
   startScenarioSandbox,
@@ -75,6 +83,12 @@ import {
 const SESSION_BOOTSTRAP_BODY_MAX_BYTES = 8 * 1024;
 const SESSION_CONTROL_BODY_MAX_BYTES = 8 * 1024;
 const SESSION_FILE_BODY_MAX_BYTES = 1024 * 1024;
+// Short TTL: only meant to absorb near-simultaneous double-fires of
+// prepareSandbox (server-scheduled prepare + client-triggered prepare),
+// not to serve as a long-lived cache — the sandbox container itself can
+// sleep after ~16 minutes of inactivity, so a longer TTL risks the DO's
+// in-memory cache drifting from the container's actual state.
+const SANDBOX_PREPARE_CACHE_TTL_MS = 60 * 1000;
 
 export class SessionDurableObject implements DurableObject {
   private metricsCache: MetricsCache = {cachedAt: 0};
@@ -82,7 +96,12 @@ export class SessionDurableObject implements DurableObject {
   private sseHub: SessionSseHub;
   private exercise: SessionExerciseHub;
   private sandboxPreparePromise?: Promise<SandboxPrepareResult>;
+  private sandboxPrepareCache?: {
+    result: SandboxPrepareResult;
+    expiresAt: number;
+  };
   private terminalDimensions: TerminalDimensions = {cols: 80, rows: 24};
+  private lastAlertPagerSentAt = 0;
 
   constructor(
     private state: DurableObjectState,
@@ -120,6 +139,18 @@ export class SessionDurableObject implements DurableObject {
       snapshotFor: (session) => this.snapshotFor(session),
       broadcastSse: (event, data) => {
         this.sseHub.broadcast(event, data);
+      },
+      onPagerEvent: (session, event) => {
+        this.lastAlertPagerSentAt = handleSessionPagerEvent(
+          this.env,
+          session,
+          event,
+          this.lastAlertPagerSentAt
+        );
+      },
+      fireScheduledInject: async (injectId) => {
+        const session = await this.requireSession();
+        await this.exercise.fireScheduledInject(session, injectId);
       },
     });
   }
@@ -187,9 +218,11 @@ export class SessionDurableObject implements DurableObject {
             taskCreate: (req) => this.exercise.taskCreate(req),
             taskUpdate: (req) => this.exercise.taskUpdate(req),
             injectFire: (req) => this.exercise.injectFire(req),
+            exercisePhase: (req) => this.exercise.phaseAdvance(req),
             incidentLog: (req) => this.exercise.incidentLog(req),
             hotwash: (req) => this.exercise.hotwash(req),
             aar: () => this.exercise.aar(),
+            rtcSignal: (req) => this.rtcSignal(req),
             snapshot: async () => jsonOk(await this.snapshot()),
           });
           if (response) {
@@ -209,13 +242,19 @@ export class SessionDurableObject implements DurableObject {
   }
 
   private async bootstrap(request: Request) {
-    const session = await this.loadOrCreate(await readBootstrap(request));
+    const body = (await readBootstrap(request)) as Partial<SessionBootstrap> & {
+      participantId?: string;
+    };
+    const session = await this.loadOrCreate(body);
     await this.state.storage.put('session', session);
     await persistSession(this.env, session);
     if (session.status === 'briefing') {
       await this.state.storage.setAlarm(Date.now() + BRIEFING_TIMEOUT_MS);
     }
-    await this.exercise.loadOrCreate(session);
+    await this.exercise.loadOrCreate(
+      session,
+      typeof body.participantId === 'string' ? body.participantId : undefined
+    );
     return jsonOk({session: this.snapshotFor(session)});
   }
 
@@ -230,6 +269,7 @@ export class SessionDurableObject implements DurableObject {
     const result = await this.prepareSandbox(session, scenario);
     logStructured('session_prepared', {
       sessionId: session.sessionId,
+      scenarioId: scenario.id,
       reused: result.reused,
       durationMs: Date.now() - startedAt,
     });
@@ -237,7 +277,10 @@ export class SessionDurableObject implements DurableObject {
   }
 
   private async start(request: Request) {
-    const body = await readBootstrap(request);
+    const body = (await readBootstrap(request)) as Partial<SessionBootstrap> & {
+      originUrl?: string;
+      participantId?: string;
+    };
     const session = await this.loadOrCreate(body);
     if (session.status === 'running') {
       return jsonOk({session: this.snapshotFor(session), startup: []});
@@ -250,9 +293,23 @@ export class SessionDurableObject implements DurableObject {
       );
     }
 
+    const room = await this.exercise.loadOrCreate(session);
+    const participantId =
+      typeof body.participantId === 'string' ? body.participantId : undefined;
+    const hostDecision = canPerformRoleGatedAction(room, participantId);
+    if (!hostDecision.allowed) {
+      return hostRequiredResponse();
+    }
+    if (!areParticipantsReadyToStart(room)) {
+      return participantsNotReadyResponse();
+    }
+
     const scenario = requireScenario(session.scenarioId);
     const started = new Date().toISOString();
     let running = startStoredSession(session, started, Date.now());
+    if (typeof body.originUrl === 'string' && body.originUrl.length > 0) {
+      running = {...running, pagerOriginUrl: body.originUrl};
+    }
     await this.state.storage.put('session', running);
     await persistSession(this.env, running);
     await persistReplayStart(this.env, running);
@@ -283,46 +340,31 @@ export class SessionDurableObject implements DurableObject {
       scenarioId: scenario.id,
       startup,
     });
-    await this.exercise.save(
+    const runningExerciseSnapshot = await this.exercise.save(
       running,
-      setExercisePhase(await this.exercise.loadOrCreate(running), 'running')
+      setExercisePhase(room, 'running')
     );
+    this.sseHub.broadcast('exercise_state', runningExerciseSnapshot);
     await this.touchClientActivity();
-    this.timeline.schedule(running, scenario);
+    const firedInjectIds = room.injects
+      .filter((inject) => inject.fired)
+      .map((inject) => inject.id);
+    this.timeline.schedule(running, scenario, firedInjectIds);
     return jsonOk({session: this.snapshotFor(running), startup});
   }
 
   private async resolve() {
     const session = await this.requireSession();
-    const scenario = requireScenario(session.scenarioId);
-    const incidentStarted = canDeclareRecovery(scenario, session.triggeredIds);
-    const checks: SuccessCheck[] = await Promise.all(
-      scenario.successConditions.map(async (condition) => ({
-        condition,
-        ok: await evaluateSuccessCondition(
-          this.env,
-          session.sessionId,
-          condition
-        ),
-      }))
-    );
-    const resolved = incidentStarted && checks.every((check) => check.ok);
-    const finished = await this.finishSession(
-      session,
-      resolved ? 'resolved' : 'failed',
-      resolved ? 'resolved' : 'false_resolve'
-    );
-    const result = await this.emit(
-      finished,
-      resolved ? 'incident_resolved' : 'session_end',
-      getGameTimeMs(finished),
-      resolved ? 'system' : 'player',
-      resolved ? {checks} : {result: 'false_resolve', checks}
-    );
-    return jsonOk({
-      ok: resolved,
-      checks,
-      session: this.snapshotFor(result),
+    return resolveSessionAction(session, {
+      env: this.env,
+      finishSession: (target, status, result) =>
+        this.finishSession(target, status, result),
+      emit: (target, type, at, actor, payload) =>
+        this.emit(target, type, at, actor, payload),
+      snapshotFor: (target) => this.snapshotFor(target),
+      broadcast: (event, data) => {
+        this.sseHub.broadcast(event, data);
+      },
     });
   }
 
@@ -387,7 +429,11 @@ export class SessionDurableObject implements DurableObject {
     };
     await this.state.storage.put('session', synced);
     const scenario = requireScenario(synced.scenarioId);
-    this.timeline.reschedule(synced, scenario);
+    const room = await this.exercise.loadOrCreate(synced);
+    const firedInjectIds = room.injects
+      .filter((inject) => inject.fired)
+      .map((inject) => inject.id);
+    this.timeline.reschedule(synced, scenario, firedInjectIds);
     await this.touchClientActivity();
     return jsonOk(this.clockPayload(synced));
   }
@@ -397,8 +443,21 @@ export class SessionDurableObject implements DurableObject {
     return this.sseHub.response(request);
   }
 
+  private async rtcSignal(request: Request) {
+    const session = await this.requireSession();
+    return handleSessionRtcSignal(request, session.sessionId, this.sseHub);
+  }
+
   private async terminal(request: Request) {
     const session = await this.requireSession();
+    // Unlike terminalResize/writeFile, this handshake is not gated by
+    // canOperateSandbox: the terminal output mirror is broadcast to every
+    // role (Observer/Scribe watch a read-only PTY tunnel), while
+    // proxySessionTerminal is a raw WS pass-through the server cannot
+    // inspect message-by-message. Input restriction to ops/facilitator is
+    // therefore enforced client-side as a cooperative-play rule (see
+    // canOperateSandbox docs); resize and file writes stay server-gated
+    // below since those go over discrete REST calls the server can check.
     await this.touchClientActivity();
     return handleSessionTerminal(
       this.env,
@@ -409,10 +468,16 @@ export class SessionDurableObject implements DurableObject {
   }
 
   private async terminalResize(request: Request) {
+    const session = await this.requireSession();
     const body = (await readInternalJsonObject(
       request,
       SESSION_CONTROL_BODY_MAX_BYTES
-    )) as {cols?: number; rows?: number};
+    )) as {cols?: number; rows?: number; participantId?: unknown};
+    const denied = await this.denySandboxOperation(
+      session,
+      typeof body.participantId === 'string' ? body.participantId : undefined
+    );
+    if (denied) return denied;
     this.terminalDimensions = mergeTerminalResize(
       this.terminalDimensions,
       body
@@ -427,10 +492,12 @@ export class SessionDurableObject implements DurableObject {
 
   private async metrics() {
     const session = await this.requireSession();
+    const scenario = requireScenario(session.scenarioId);
     const response = await readSessionMetrics(
       this.env,
       session,
-      this.metricsCache
+      this.metricsCache,
+      scenario
     );
     await this.touchClientActivity();
     return response;
@@ -471,10 +538,32 @@ export class SessionDurableObject implements DurableObject {
     const body = (await readInternalJsonObject(
       request,
       SESSION_FILE_BODY_MAX_BYTES
-    )) as {path?: unknown; content?: unknown};
+    )) as {path?: unknown; content?: unknown; participantId?: unknown};
+    const denied = await this.denySandboxOperation(
+      session,
+      typeof body.participantId === 'string' ? body.participantId : undefined
+    );
+    if (denied) return denied;
     const response = await writeSessionFileContent(this.env, session, body);
     await this.touchClientActivity();
     return response;
+  }
+
+  /**
+   * Returns a 403 response when the participant may not operate the
+   * sandbox (terminal resize, editor writes); undefined when allowed.
+   * Terminal *input* travels over the raw PTY WS tunnel established by
+   * terminal() above, which is intentionally not gated here — see the
+   * comment on terminal(). The `ops` role in the payload stands for the
+   * allowed set (ops or facilitator) — see canOperateSandbox.
+   */
+  private async denySandboxOperation(
+    session: StoredSession,
+    participantId: string | undefined
+  ) {
+    const room = await this.exercise.loadOrCreate(session);
+    const decision = canOperateSandbox(room, participantId);
+    return decision.allowed ? undefined : roleRequiredResponse('ops');
   }
 
   private clearMetricsCache() {
@@ -529,13 +618,27 @@ export class SessionDurableObject implements DurableObject {
     session: StoredSession,
     scenario: ScenarioDefinition
   ): Promise<SandboxPrepareResult> {
+    if (
+      this.sandboxPrepareCache &&
+      this.sandboxPrepareCache.expiresAt > Date.now()
+    ) {
+      return Promise.resolve(this.sandboxPrepareCache.result);
+    }
     this.sandboxPreparePromise ??= prepareScenarioSandbox(
       this.env,
       session.sessionId,
       scenario
-    ).finally(() => {
-      delete this.sandboxPreparePromise;
-    });
+    )
+      .then((result) => {
+        this.sandboxPrepareCache = {
+          result,
+          expiresAt: Date.now() + SANDBOX_PREPARE_CACHE_TTL_MS,
+        };
+        return result;
+      })
+      .finally(() => {
+        delete this.sandboxPreparePromise;
+      });
     return this.sandboxPreparePromise;
   }
 
@@ -632,19 +735,8 @@ export class SessionDurableObject implements DurableObject {
 async function readBootstrap(
   request: Request
 ): Promise<Partial<SessionBootstrap>> {
-  return (await readInternalJsonObject(
+  return await readInternalJsonObject(
     request,
     SESSION_BOOTSTRAP_BODY_MAX_BYTES
-  )) as Partial<SessionBootstrap>;
-}
-
-async function readInternalJsonObject(request: Request, maxBytes: number) {
-  try {
-    return await readJsonObjectBody(request, maxBytes, {emptyValue: {}});
-  } catch (error) {
-    if (error instanceof RequestBodyError) {
-      throw new HttpError(error.status, error.code, error.message);
-    }
-    throw error;
-  }
+  );
 }

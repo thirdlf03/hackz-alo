@@ -1,45 +1,78 @@
 #!/usr/bin/env node
-import {execFile} from 'node:child_process';
-import {appendFile, mkdir, rm, stat, writeFile} from 'node:fs/promises';
+import {execFile, spawn} from 'node:child_process';
+import {appendFile, mkdir, open, stat, writeFile} from 'node:fs/promises';
+import {existsSync} from 'node:fs';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {promisify} from 'node:util';
+import {
+  apiConfigPath,
+  previousReleasePath,
+  readApiConfig,
+} from '../services/yamabiko-api/config.mjs';
 
 const execFileAsync = promisify(execFile);
 
 const DEFAULT_WORKSPACE = process.env.WORKSPACE_DIR ?? '/workspace';
 const USAGE =
-  'usage: fault-injector.mjs process_stop|process_restore|disk_full|queue_backlog|unlang_batch_failure|janitor_power_pull|cable_jumprope|keyboard_spill|alert_spam|runbook_gaslight';
+  'usage: fault-injector.mjs process_stop|process_hang|port_conflict|disk_full|queue_backlog|kodama_batch_failure|bad_deploy|db_pool_exhaust|dns_misconfig|monitor_blind|composite_restart_loop|janitor_power_pull|cable_jumprope|runaway_loadgen|alert_spam|runbook_gaslight';
+
+const PROCESS_PATTERNS = {
+  api: 'yamabiko-api/server.mjs',
+  'fake-db': 'fake-db/server.mjs',
+};
+
+const RUNBOOK_FILE_PATH = 'docs/runbooks/service-recovery.md';
 
 export async function injectFault(fault, args = [], options = {}) {
   const workspace = options.workspace ?? DEFAULT_WORKSPACE;
+  const killProcess = options.killProcess ?? killByPattern;
+  const spawnProcess = options.spawnProcess ?? spawnDetached;
 
   await mkdir(path.join(workspace, 'logs'), {recursive: true});
   await mkdir(path.join(workspace, 'run'), {recursive: true});
 
   if (fault === 'process_stop') {
     const processId = args[0] ?? 'api';
-    if (processId !== 'api')
-      {throw new Error(`unsupported process ${processId}`);}
-    await writeFile(
-      path.join(workspace, 'run', 'api.down'),
-      new Date().toISOString()
-    );
+    const pattern = PROCESS_PATTERNS[processId];
+    if (!pattern) throw new Error(`unsupported process ${processId}`);
+    await killProcess(pattern, 'KILL');
     await appendFile(
       path.join(workspace, 'logs', 'app.log'),
-      'api process stopped by scenario\n'
+      `supervisor: ${processId} process exited unexpectedly (killed)\n`
     );
-    await stopApiProcess();
     return 'process_stop injected';
   }
 
-  if (fault === 'process_restore') {
-    await rm(path.join(workspace, 'run', 'api.down'), {force: true});
+  if (fault === 'process_hang') {
+    const processId = args[0] ?? 'api';
+    const pattern = PROCESS_PATTERNS[processId];
+    if (!pattern) throw new Error(`unsupported process ${processId}`);
     await appendFile(
       path.join(workspace, 'logs', 'app.log'),
-      'api process restored\n'
+      'event loop blocked: gc pause 32108ms and climbing\n'
     );
-    return 'process_restore injected';
+    // SIGSTOP freezes the process: it stays alive (visible in ps as state T)
+    // but stops answering — the classic down-vs-hang drill.
+    await killProcess(pattern, 'STOP');
+    return 'process_hang injected';
+  }
+
+  if (fault === 'port_conflict') {
+    const port = String(parseByteCount(args[0] ?? 8080));
+    await killProcess(PROCESS_PATTERNS.api, 'KILL');
+    await appendFile(
+      path.join(workspace, 'logs', 'app.log'),
+      'supervisor: api process exited unexpectedly (killed)\n'
+    );
+    await spawnProcess({
+      workspace,
+      script: 'services/tools/legacy-metrics-agent.mjs',
+      args: [],
+      env: {PORT: port},
+      logName: 'legacy-metrics-agent',
+    });
+    return 'port_conflict injected';
   }
 
   if (fault === 'disk_full') {
@@ -68,96 +101,108 @@ export async function injectFault(fault, args = [], options = {}) {
     return `queue_backlog injected (${count})`;
   }
 
-  if (fault === 'unlang_batch_failure') {
+  if (fault === 'kodama_batch_failure') {
     const target = normalizeWorkspacePath(
-      args[0] ?? path.join(workspace, 'services', 'batch', 'sales.un'),
+      args[0] ?? path.join(workspace, 'services', 'batch', 'sales.kdm'),
       workspace
     );
     const jobId = args[1] ?? 'sales-nightly';
     const specInComments = args[2] === 'spec-in-comments';
     await mkdir(path.dirname(target), {recursive: true});
     const brokenSource = specInComments
-      ? 'うんちく 売上集計バッチ\nうんちく うんわり=割り算。右辺がうんなし(0)だとエラー\nうんちく うんなし=0 / うんあり=1。エラーは「うんともすんとも」のみ\nうん x = 100\nうん y = うんなし\nうん z = x うんわり y\nうん！ z\n'
-      : 'うんちく 売上集計バッチ\nうん x = 100\nうん y = うんなし\nうん z = x うんわり y\nうん！ z\n';
+      ? 'やまびこ帳 売上集計バッチ\nやまびこ帳 わる=割り算。右辺がしずか(0)だとエラー\nやまびこ帳 しずか=0 / こだま=1。エラーは「こだまが返ってきません」のみ\nよぶ x = 100\nよぶ y = しずか\nよぶ z = x わる y\nかえす z\n'
+      : 'やまびこ帳 売上集計バッチ\nよぶ x = 100\nよぶ y = しずか\nよぶ z = x わる y\nかえす z\n';
     await writeFile(target, brokenSource);
     await appendFile(
       path.join(workspace, 'logs', 'batch.log'),
-      `${jobId}: うんともすんとも\n`
+      `${jobId}: こだまが返ってきません\n`
     );
     await appendFile(
       path.join(workspace, 'run', 'job-queue.jsonl'),
       `${JSON.stringify({id: jobId, status: 'failed'})}\n`
     );
-    return 'unlang_batch_failure injected';
+    return 'kodama_batch_failure injected';
   }
 
   if (fault === 'bad_deploy') {
-    const configPath = normalizeWorkspacePath(
-      args[0] ?? path.join(workspace, 'run', 'deploy.json'),
-      workspace
-    );
+    // A real (broken) release: back up the running config, then roll out a
+    // config pointing at the wrong DB port. The API genuinely starts failing
+    // with ECONNREFUSED; rollback = restore the previous release file.
+    const current = await readApiConfig(workspace);
+    const base = current.ok ? current.config : {};
+    await mkdir(path.dirname(previousReleasePath(workspace)), {
+      recursive: true,
+    });
+    await mkdir(path.dirname(apiConfigPath(workspace)), {recursive: true});
     await writeFile(
-      configPath,
-      JSON.stringify({
-        healthPath: '/broken-health',
-        deployedAt: new Date().toISOString(),
-      })
+      previousReleasePath(workspace),
+      `${JSON.stringify(base, null, 2)}\n`
     );
+    const broken = {
+      ...base,
+      version: 'v42',
+      dbPort: 5432,
+    };
+    await writeFile(
+      apiConfigPath(workspace),
+      `${JSON.stringify(broken, null, 2)}\n`
+    );
+    const deployedAt = new Date().toISOString();
     await appendFile(
-      path.join(workspace, 'logs', 'app.log'),
-      'bad deploy marker written\n'
+      path.join(workspace, 'logs', 'deploy.log'),
+      `${deployedAt} deploy v42 started (config update: db settings)\n${deployedAt} deploy v42 finished in 4s\n`
     );
     return 'bad_deploy injected';
   }
 
   if (fault === 'db_pool_exhaust') {
-    const maxConnections = parseByteCount(args[0] ?? 40);
-    await writeFile(
-      path.join(workspace, 'run', 'db.pool.exhausted'),
-      String(maxConnections)
-    );
-    await appendFile(
-      path.join(workspace, 'logs', 'app.log'),
-      `db pool exhausted (${maxConnections})\n`
-    );
-    return 'db_pool_exhaust injected';
-  }
-
-  if (fault === 'memory_leak') {
-    const targetPercent = parseByteCount(args[0] ?? 92);
-    await writeFile(
-      path.join(workspace, 'run', 'memory.leak'),
-      String(targetPercent)
-    );
-    await appendFile(
-      path.join(workspace, 'logs', 'app.log'),
-      `memory leak simulated at ${targetPercent}%\n`
-    );
-    return 'memory_leak injected';
+    const connections = String(parseByteCount(args[0] ?? 40));
+    await spawnProcess({
+      workspace,
+      script: 'services/batch/report-batch.mjs',
+      args: [connections],
+      env: {},
+      logName: 'report-batch',
+    });
+    return `db_pool_exhaust injected (report-batch holding ${connections})`;
   }
 
   if (fault === 'dns_misconfig') {
-    const hostsPath = normalizeWorkspacePath(
-      args[0] ?? path.join(workspace, 'run', 'hosts.override'),
-      workspace
+    // Point the API at a hostname that does not resolve; the connection
+    // attempt genuinely fails with a DNS error.
+    const current = await readApiConfig(workspace);
+    const base = current.ok ? current.config : {};
+    await mkdir(path.dirname(previousReleasePath(workspace)), {
+      recursive: true,
+    });
+    await mkdir(path.dirname(apiConfigPath(workspace)), {recursive: true});
+    await writeFile(
+      previousReleasePath(workspace),
+      `${JSON.stringify(base, null, 2)}\n`
     );
-    await writeFile(hostsPath, '127.0.0.1 localhost-broken\n');
+    await writeFile(
+      apiConfigPath(workspace),
+      `${JSON.stringify({...base, dbHost: 'db01.yamabiko.internal'}, null, 2)}\n`
+    );
     await appendFile(
       path.join(workspace, 'logs', 'app.log'),
-      'dns misconfig marker written\n'
+      'config reloaded: db host updated by night maintenance script\n'
     );
     return 'dns_misconfig injected';
   }
 
   if (fault === 'monitor_blind') {
-    const blindMetrics = JSON.parse(args[0] ?? '["cpu","memory"]');
-    await writeFile(
-      path.join(workspace, 'run', 'monitor.blind.json'),
-      JSON.stringify({blindMetrics})
-    );
+    let blindMetrics = ['cpu', 'memory'];
+    try {
+      const parsed = JSON.parse(args[0] ?? '["cpu","memory"]');
+      if (Array.isArray(parsed)) blindMetrics = parsed;
+    } catch {
+      // keep default flavor list; the real effect below does not depend on it
+    }
+    await killProcess('monitor-agent/agent.mjs', 'KILL');
     await appendFile(
       path.join(workspace, 'logs', 'app.log'),
-      `monitor blind: ${blindMetrics.join(',')}\n`
+      `monitor-agent process exited unexpectedly (${blindMetrics.join(',')} now blind)\n`
     );
     return 'monitor_blind injected';
   }
@@ -166,104 +211,74 @@ export async function injectFault(fault, args = [], options = {}) {
     const diskPath = args[0] ?? path.join(workspace, 'logs', 'debug.log');
     const bytes = parseByteCount(args[1] ?? 64 * 1024 * 1024);
     const processId = args[2] ?? 'api';
-    await injectFault('disk_full', [diskPath, String(bytes)], {workspace});
-    await injectFault('process_stop', [processId], {workspace});
-    await appendFile(
-      path.join(workspace, 'logs', 'app.log'),
-      'composite restart loop injected\n'
-    );
+    await injectFault('disk_full', [diskPath, String(bytes)], options);
+    await injectFault('process_stop', [processId], options);
     return 'composite_restart_loop injected';
   }
 
   if (fault === 'janitor_power_pull') {
     const processId = args[0] ?? 'api';
-    if (processId !== 'api')
-      {throw new Error(`unsupported process ${processId}`);}
-    const pulledAt = new Date().toISOString();
-    await writeFile(path.join(workspace, 'run', 'api.down'), pulledAt);
-    await writeFile(
-      path.join(workspace, 'run', 'janitor.power.pulled'),
-      JSON.stringify({pulledAt, culprit: 'janitor', redundantSystems: false})
-    );
+    const pattern = PROCESS_PATTERNS[processId];
+    if (!pattern) throw new Error(`unsupported process ${processId}`);
+    await killProcess(pattern, 'KILL');
     await appendFile(
       path.join(workspace, 'logs', 'app.log'),
-      'janitor unplugged api power during cleaning\n'
+      'supervisor: api process exited unexpectedly (power loss on rack B? janitor was seen unplugging things)\n'
     );
     return 'janitor_power_pull injected';
   }
 
   if (fault === 'cable_jumprope') {
-    const hostsPath = normalizeWorkspacePath(
-      args[0] ?? path.join(workspace, 'run', 'hosts.override'),
-      workspace
-    );
-    const disconnectedAt = new Date().toISOString();
-    await writeFile(hostsPath, '127.0.0.1 localhost-broken\n');
-    await writeFile(
-      path.join(workspace, 'run', 'network.jumprope'),
-      JSON.stringify({sport: 'jumprope', cable: 'eth0', disconnectedAt})
-    );
-    await writeFile(
-      path.join(workspace, 'run', 'api.down'),
-      `cable jumprope ${disconnectedAt}`
-    );
+    const processId = args[0] ?? 'fake-db';
+    const pattern = PROCESS_PATTERNS[processId];
+    if (!pattern) throw new Error(`unsupported process ${processId}`);
+    await killProcess(pattern, 'KILL');
     await appendFile(
       path.join(workspace, 'logs', 'app.log'),
-      'LAN cable unplugged for jumprope session\n'
+      'supervisor: fake-db process exited unexpectedly (LAN cable to db rack found unplugged; break room camera shows a jump-rope contest)\n'
     );
     return 'cable_jumprope injected';
   }
 
-  if (fault === 'keyboard_spill') {
-    const noise = args[0] ?? 'べちゃっxべちゃっ';
-    const spilledAt = new Date().toISOString();
-    await writeFile(
-      path.join(workspace, 'run', 'keyboard.spill'),
-      JSON.stringify({beverage: 'fridge sake', noise, spilledAt})
-    );
-    await writeFile(
-      path.join(workspace, 'run', 'terminal.noise'),
-      noise.repeat(3)
-    );
+  if (fault === 'runaway_loadgen') {
+    const targetUrl = args[0] ?? 'http://127.0.0.1:8080/orders';
+    await spawnProcess({
+      workspace,
+      script: 'services/tools/loadgen.mjs',
+      args: [targetUrl],
+      env: {},
+      logName: 'loadgen',
+    });
     await appendFile(
       path.join(workspace, 'logs', 'app.log'),
-      'keyboard spill detected on operator terminal\n'
+      `supervisor: unexpected traffic surge detected against ${targetUrl} (source unknown)\n`
     );
-    return 'keyboard_spill injected';
+    return 'runaway_loadgen injected';
   }
 
   if (fault === 'alert_spam') {
-    const count = parseByteCount(args[0] ?? 24);
-    const alerts = Array.from({length: count}, (_, index) => ({
-      id: `spam-${Date.now()}-${index}`,
-      severity: index % 3 === 0 ? 'critical' : 'warning',
-      message:
-        index % 2 === 0
-          ? 'CPU fan is dancing'
-          : 'Red Bull level below wing threshold',
-    }));
-    await writeFile(
-      path.join(workspace, 'run', 'alert.spam.json'),
-      JSON.stringify({count, alerts, injectedAt: new Date().toISOString()})
+    const count = String(parseByteCount(args[0] ?? 24));
+    await spawnProcess({
+      workspace,
+      script: 'services/tools/alert-flood-daemon.mjs',
+      args: [count],
+      env: {},
+      logName: 'alert-flood-daemon',
+    });
+    await appendFile(
+      path.join(workspace, 'logs', 'app.log'),
+      `noise alert daemon started (burst size ${count})\n`
     );
-    for (const alert of alerts.slice(0, 5)) {
-      await appendFile(
-        path.join(workspace, 'logs', 'app.log'),
-        `noise alert: ${alert.message}\n`
-      );
-    }
-    return `alert_spam injected (${count})`;
+    return `alert_spam injected (daemon spawned, burst ${count})`;
   }
 
   if (fault === 'runbook_gaslight') {
     const replacement = args[0] ?? '気合いで直す。根性。深呼吸。';
+    const target = path.join(workspace, RUNBOOK_FILE_PATH);
+    await mkdir(path.dirname(target), {recursive: true});
     await writeFile(
-      path.join(workspace, 'run', 'runbook.gaslight.json'),
-      JSON.stringify({
-        replacement,
-        gaslitAt: new Date().toISOString(),
-        originalIntegrity: 'compromised',
-      })
+      target,
+      `# service-recovery\n\n${replacement}\n\n(このドキュメントは改ざんされています)\n`
     );
     await appendFile(
       path.join(workspace, 'logs', 'app.log'),
@@ -275,9 +290,9 @@ export async function injectFault(fault, args = [], options = {}) {
   throw usageError();
 }
 
-async function stopApiProcess() {
+async function killByPattern(pattern, signal = 'TERM') {
   try {
-    await execFileAsync('pkill', ['-f', 'unyoh-api/server.mjs']);
+    await execFileAsync('pkill', [`-${signal}`, '-f', pattern]);
   } catch (error) {
     if (
       error &&
@@ -288,6 +303,31 @@ async function stopApiProcess() {
       {return;}
     throw error;
   }
+}
+
+async function spawnDetached({workspace, script, args, env, logName}) {
+  const scriptPath = path.join(workspace, script);
+  if (!existsSync(scriptPath)) {
+    throw new Error(`missing sandbox script: ${scriptPath}`);
+  }
+  await mkdir(path.join(workspace, 'logs'), {recursive: true});
+  const stdout = await open(
+    path.join(workspace, 'logs', `${logName}.out.log`),
+    'a'
+  );
+  const stderr = await open(
+    path.join(workspace, 'logs', `${logName}.err.log`),
+    'a'
+  );
+  const child = spawn('node', [scriptPath, ...args], {
+    cwd: workspace,
+    detached: true,
+    env: {...process.env, ...env, WORKSPACE_DIR: workspace},
+    stdio: ['ignore', stdout.fd, stderr.fd],
+  });
+  child.unref();
+  stdout.close().catch(() => {});
+  stderr.close().catch(() => {});
 }
 
 export function normalizeWorkspacePath(value, workspace = DEFAULT_WORKSPACE) {

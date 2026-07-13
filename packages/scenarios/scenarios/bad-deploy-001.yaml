@@ -2,26 +2,45 @@ id: bad-deploy-001
 version: 1
 title: 壊れたデプロイの夜
 difficulty: intermediate
+difficultyScore: 220
 timeLimitMinutes: 10
 service:
-  name: うん用 API
+  name: やまびこ API
   healthUrl: http://localhost:8080/health
 briefing:
-  - デプロイ直後の 5xx は設定ミスを疑う。
-  - deploy.json と app.log を見る。
+  - デプロイ直後に 5xx が出たら、まず「直前に何が変わったか」を疑う。
+  - deploy.log とアプリ設定、そして前リリースとの差分が手がかり。
+  - 切り戻し(ロールバック)は立派な暫定復旧。
 startup:
   - id: api
-    command: PORT=8080 node /workspace/services/unyoh-api/server.mjs
+    command: PORT=8080 node /workspace/services/yamabiko-api/server.mjs
     waitForPort: 8080
   - id: fake-db
     command: node /workspace/services/fake-db/server.mjs
     waitForPort: 15432
+topology:
+  nodes:
+    - id: user
+      label: ユーザー
+      kind: external
+    - id: api
+      label: やまびこ API
+      kind: service
+      processId: api
+    - id: fake-db
+      label: 疑似データベース
+      kind: datastore
+      processId: fake-db
+  edges:
+    - from: user
+      to: api
+    - from: api
+      to: fake-db
 triggers:
   - id: bad-deploy
     atMs: 45000
     type: bad_deploy
-    params:
-      configPath: /workspace/run/deploy.json
+    params: {}
 alerts:
   - id: deploy-500
     atMs: 70000
@@ -34,24 +53,32 @@ successConditions:
     status: 200
   - type: process_running
     processId: api
-  - type: marker_absent
-    path: /workspace/run/deploy.json
 runbooks:
   - id: runbook.deploy
-    title: Bad deploy
-    body: 1. cat /workspace/run/deploy.json\n2. rm /workspace/run/deploy.json\n3. curl localhost:8080/health\n4. 再発する場合のみ unctl restart api
-slackMessages: []
+    title: デプロイ起因障害の初動
+    body: |-
+      1. /workspace/logs/deploy.log で直近のデプロイ時刻とバージョンを確認する
+      2. エラーログ(app.log)の内容を読み、どこへの接続が失敗しているか把握する
+      3. アプリ設定 /workspace/etc/yamabiko-api.json を開き、前リリース
+         (/workspace/releases/yamabiko-api.previous.json)と見比べる
+      4. 切り戻す(前リリースの設定を書き戻す)か、設定を修正する
+      5. curl localhost:8080/health で復旧確認する(設定は自動反映、再起動不要)
+chatMessages:
+  - id: boss-deploy
+    atMs: 95000
+    from: 上司
+    body: さっきのデプロイ？僕は何も変えてないよ。おやすみ。
 navigationSteps:
   - id: nav-5xx
     atMs: 0
     hint: HTTP 5xx が上がっていないか監視画面で確認する
     panel: metrics
-  - id: nav-deploy
+  - id: nav-deploy-log
     atMs: 50000
-    hint: deploy.json の内容を確認する
+    hint: 直近のデプロイ履歴を確認する
     panel: terminal
-    suggestedCommand: cat /workspace/run/deploy.json
-  - id: nav-runbook
+    suggestedCommand: tail /workspace/logs/deploy.log
+  - id: nav-config
     atMs: 80000
-    hint: Bad deploy Runbook を参照する
-    panel: runbook
+    hint: 設定を前リリースと見比べる
+    panel: editor

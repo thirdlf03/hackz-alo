@@ -1,5 +1,5 @@
 import type {WorkerContext} from './context.js';
-import {err} from './response.js';
+import {err, HttpError} from './response.js';
 
 export class RequestBodyError extends Error {
   constructor(
@@ -28,7 +28,8 @@ export async function readRequestBody(
   }
   if (!request.body) return new ArrayBuffer(0);
 
-  const reader = request.body.getReader();
+  const reader =
+    request.body.getReader() as ReadableStreamDefaultReader<Uint8Array>;
   const chunks: Uint8Array[] = [];
   let total = 0;
   let readResult = await reader.read();
@@ -81,6 +82,25 @@ export async function readJsonObjectBody(
     );
   }
   return value as Record<string, unknown>;
+}
+
+/**
+ * Durable Object variant of `readJsonObjectBody`: body errors surface
+ * as `HttpError` so the DO error middleware turns them into JSON
+ * responses. An empty body reads as `{}`.
+ */
+export async function readInternalJsonObject(
+  request: Request,
+  maxBytes: number
+): Promise<Record<string, unknown>> {
+  try {
+    return await readJsonObjectBody(request, maxBytes, {emptyValue: {}});
+  } catch (error) {
+    if (error instanceof RequestBodyError) {
+      throw new HttpError(error.status, error.code, error.message);
+    }
+    throw error;
+  }
 }
 
 export function requestBodyErrorResponse(

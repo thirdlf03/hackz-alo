@@ -3,6 +3,7 @@ import {readdir, readFile} from 'node:fs/promises';
 import path from 'node:path';
 import {test} from 'node:test';
 import {fileURLToPath} from 'node:url';
+import {tsImport} from 'tsx/esm/api';
 import {validateScenarioDefinition} from '../../packages/shared/src/schema.ts';
 
 const rootDir = path.resolve(
@@ -13,7 +14,7 @@ const scenarioDataDir = path.join(rootDir, 'packages/scenarios/data');
 
 test('all scenario data validates against shared contract', async () => {
   const scenarios = await loadScenarios();
-  assert.equal(scenarios.length, 16);
+  assert.equal(scenarios.length, 20);
 
   const ids = new Set();
   for (const {file, scenario} of scenarios) {
@@ -36,6 +37,45 @@ test('scenario data exposes configured difficulty buckets', async () => {
   assert.equal(difficulties.has('beginner'), true);
   assert.equal(difficulties.has('intermediate'), true);
   assert.equal(difficulties.has('advanced'), true);
+});
+
+test('all scenarios have a positive integer difficultyScore', async () => {
+  const scenarios = await loadScenarios();
+  for (const {file, scenario} of scenarios) {
+    assert.equal(
+      Number.isInteger(scenario.difficultyScore),
+      true,
+      `${file} difficultyScore should be an integer`
+    );
+    assert.equal(
+      scenario.difficultyScore > 0,
+      true,
+      `${file} difficultyScore should be positive`
+    );
+  }
+});
+
+test('scenarios export is sorted by difficulty bucket then difficultyScore', async () => {
+  const {scenarios} = await tsImport(
+    '../../packages/scenarios/src/index.ts',
+    import.meta.url
+  );
+  const difficultyOrder = {beginner: 0, intermediate: 1, advanced: 2};
+
+  const actual = scenarios.map((scenario) => scenario.id);
+  const expected = scenarios
+    .slice()
+    .sort((a, b) => {
+      const difficultyDiff =
+        difficultyOrder[a.difficulty] - difficultyOrder[b.difficulty];
+      if (difficultyDiff !== 0) return difficultyDiff;
+      const scoreDiff = a.difficultyScore - b.difficultyScore;
+      if (scoreDiff !== 0) return scoreDiff;
+      return a.id.localeCompare(b.id);
+    })
+    .map((scenario) => scenario.id);
+
+  assert.deepEqual(actual, expected);
 });
 
 test('scenario validator rejects incomplete success conditions', () => {
@@ -69,6 +109,88 @@ test('scenario validator rejects malformed trigger params', () => {
   assert.match(
     errors,
     /triggers\[0\]\.params\.bytes must be a positive integer/
+  );
+});
+
+test('scenario validator accepts a valid topology', () => {
+  const scenario = validScenario({
+    topology: {
+      nodes: [
+        {id: 'user', label: 'ユーザー', kind: 'external'},
+        {id: 'api', label: 'やまびこ API', kind: 'service', processId: 'api'},
+      ],
+      edges: [{from: 'user', to: 'api'}],
+    },
+  });
+
+  const result = validateScenarioDefinition(scenario);
+  assert.equal(result.ok, true);
+});
+
+test('scenario validator rejects duplicate topology node ids', () => {
+  const scenario = validScenario({
+    topology: {
+      nodes: [
+        {id: 'user', label: 'ユーザー', kind: 'external'},
+        {id: 'user', label: 'ユーザー2', kind: 'external'},
+      ],
+      edges: [],
+    },
+  });
+
+  const errors = expectInvalidScenario(scenario);
+  assert.match(errors, /topology\.nodes\[1\]\.id must be unique/);
+});
+
+test('scenario validator rejects topology edges referencing unknown nodes', () => {
+  const scenario = validScenario({
+    topology: {
+      nodes: [{id: 'user', label: 'ユーザー', kind: 'external'}],
+      edges: [{from: 'user', to: 'missing'}],
+    },
+  });
+
+  const errors = expectInvalidScenario(scenario);
+  assert.match(
+    errors,
+    /topology\.edges\[0\]\.to must reference an existing node id/
+  );
+});
+
+test('scenario validator rejects topology processId not present in startup', () => {
+  const scenario = validScenario({
+    topology: {
+      nodes: [
+        {
+          id: 'ghost',
+          label: 'Ghost',
+          kind: 'service',
+          processId: 'not-a-startup-id',
+        },
+      ],
+      edges: [],
+    },
+  });
+
+  const errors = expectInvalidScenario(scenario);
+  assert.match(
+    errors,
+    /topology\.nodes\[0\]\.processId must reference a startup id/
+  );
+});
+
+test('scenario validator rejects self-loop topology edges', () => {
+  const scenario = validScenario({
+    topology: {
+      nodes: [{id: 'api', label: 'やまびこ API', kind: 'service'}],
+      edges: [{from: 'api', to: 'api'}],
+    },
+  });
+
+  const errors = expectInvalidScenario(scenario);
+  assert.match(
+    errors,
+    /topology\.edges\[0\] must not be a self loop \(from equals to\)/
   );
 });
 
@@ -113,6 +235,7 @@ function validScenario(overrides = {}) {
     version: 1,
     title: 'Test Scenario',
     difficulty: 'beginner',
+    difficultyScore: 100,
     timeLimitMinutes: 10,
     service: {
       name: 'Test API',
@@ -157,7 +280,7 @@ function validScenario(overrides = {}) {
         body: 'Check health.',
       },
     ],
-    slackMessages: [],
+    chatMessages: [],
     ...overrides,
   };
 }

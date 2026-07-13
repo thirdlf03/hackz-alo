@@ -1,11 +1,24 @@
-import type {ReplayEvent, ScenarioDefinition} from '@incident/shared';
+import type {
+  AlertDefinition,
+  ChatMessageDefinition,
+  ReplayEvent,
+  ScenarioDefinition,
+} from '@incident/shared';
+import {
+  computeServiceHealthMap,
+  diffServiceHealth,
+} from '../pure/serviceHealthMap.js';
 import {getGameTimeMs, type StoredSession} from './sessionState.js';
 
 export interface PendingTimer {
-  kind: 'trigger' | 'alert' | 'slack';
+  kind: 'trigger' | 'alert' | 'chat' | 'inject';
   id: string;
   handle: ReturnType<typeof setTimeout>;
 }
+
+export type PagerTimelineEvent =
+  | {kind: 'alert'; alert: AlertDefinition}
+  | {kind: 'chat'; chat: ChatMessageDefinition};
 
 export interface SessionTimelineDependencies {
   loadSession(): Promise<StoredSession>;
@@ -24,6 +37,8 @@ export interface SessionTimelineDependencies {
   ): Promise<StoredSession>;
   snapshotFor(session: StoredSession): unknown;
   broadcastSse(event: string, data: unknown): void;
+  onPagerEvent?(session: StoredSession, event: PagerTimelineEvent): void;
+  fireScheduledInject?(injectId: string): Promise<void>;
 }
 
 export class SessionTimeline {
@@ -36,13 +51,21 @@ export class SessionTimeline {
     this.pendingTimers = [];
   }
 
-  reschedule(session: StoredSession, scenario: ScenarioDefinition) {
+  reschedule(
+    session: StoredSession,
+    scenario: ScenarioDefinition,
+    firedInjectIds: readonly string[] = []
+  ) {
     this.clear();
     if (session.status !== 'running') return;
-    this.schedule(session, scenario);
+    this.schedule(session, scenario, firedInjectIds);
   }
 
-  schedule(session: StoredSession, scenario: ScenarioDefinition) {
+  schedule(
+    session: StoredSession,
+    scenario: ScenarioDefinition,
+    firedInjectIds: readonly string[] = []
+  ) {
     for (const trigger of scenario.triggers) {
       if (session.triggeredIds.includes(trigger.id)) continue;
       this.scheduleAtGameTime(
@@ -62,7 +85,14 @@ export class SessionTimeline {
             await this.dependencies.injectFault(
               latest.sessionId,
               trigger.type,
-              trigger.params as Record<string, unknown>
+              trigger.params
+            );
+            const beforeHealth = computeServiceHealthMap(
+              scenario.topology,
+              scenario.triggers.filter((t) =>
+                latest.triggeredIds.includes(t.id)
+              ),
+              false
             );
             let triggered: StoredSession = {
               ...latest,
@@ -76,6 +106,26 @@ export class SessionTimeline {
               'scenario',
               {trigger}
             );
+            const afterHealth = computeServiceHealthMap(
+              scenario.topology,
+              scenario.triggers.filter((t) =>
+                triggered.triggeredIds.includes(t.id)
+              ),
+              triggered.status === 'resolved'
+            );
+            for (const change of diffServiceHealth(
+              beforeHealth,
+              afterHealth,
+              scenario.topology
+            )) {
+              triggered = await this.dependencies.emit(
+                triggered,
+                'service_health_changed',
+                trigger.atMs,
+                'scenario',
+                {...change}
+              );
+            }
             this.dependencies.broadcastSse(
               'snapshot',
               this.dependencies.snapshotFor(triggered)
@@ -135,34 +185,52 @@ export class SessionTimeline {
             'snapshot',
             this.dependencies.snapshotFor(updated)
           );
+          this.dependencies.onPagerEvent?.(updated, {kind: 'alert', alert});
         }
       );
     }
 
-    for (const message of scenario.slackMessages) {
-      if (session.firedSlackIds.includes(message.id)) continue;
+    for (const message of scenario.chatMessages) {
+      if (session.firedChatIds.includes(message.id)) continue;
       this.scheduleAtGameTime(
         session,
         message.atMs,
-        'slack',
+        'chat',
         message.id,
         async () => {
           const latest = await this.dependencies.loadSession();
           if (
             latest.status !== 'running' ||
-            latest.firedSlackIds.includes(message.id)
+            latest.firedChatIds.includes(message.id)
           ) {
             return;
           }
           const next: StoredSession = {
             ...latest,
-            firedSlackIds: [...latest.firedSlackIds, message.id],
+            firedChatIds: [...latest.firedChatIds, message.id],
           };
           await this.dependencies.saveSession(next);
           this.dependencies.broadcastSse(
             'snapshot',
             this.dependencies.snapshotFor(next)
           );
+          this.dependencies.onPagerEvent?.(next, {kind: 'chat', chat: message});
+        }
+      );
+    }
+
+    for (const inject of scenario.exercise?.injects ?? []) {
+      if (typeof inject.atMs !== 'number') continue;
+      if (firedInjectIds.includes(inject.id)) continue;
+      this.scheduleAtGameTime(
+        session,
+        inject.atMs,
+        'inject',
+        inject.id,
+        async () => {
+          const latest = await this.dependencies.loadSession();
+          if (latest.status !== 'running') return;
+          await this.dependencies.fireScheduledInject?.(inject.id);
         }
       );
     }

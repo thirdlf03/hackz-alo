@@ -27,7 +27,17 @@ import {
   useSessionEditor,
   useTerminalBridge,
 } from './appRuntime.js';
+import {
+  fetchPushPublicKey,
+  registerPagerSubscription,
+  type PagerSubscriptionPayload,
+} from '../api/pushApi.js';
 import {useCanvasInteraction} from './useCanvasInteraction.js';
+import {useWebMcpTools} from './useWebMcpTools.js';
+import {useVoiceChat} from './useVoiceChat.js';
+import {useNpcColleague} from './useNpcColleague.js';
+import {useMonitorPip} from './useMonitorPip.js';
+import {detectHtmlInCanvasSupport} from '../effect/htmlInCanvas.js';
 import {useMetricsPolling} from './useMetricsPolling.js';
 import {
   readReplayIdFromSearch,
@@ -35,6 +45,12 @@ import {
   type SessionRecordingBridge,
   type TerminalBridgeRef,
 } from './useSessionRuntime.js';
+import {
+  buildInviteUrl,
+  describeSessionActionError,
+  readInviteFromSearch,
+} from './appUtils.js';
+import {isHostParticipant} from '../pure/isHostParticipant.js';
 import '@xterm/xterm/css/xterm.css';
 
 const CONSENT_KEY = 'incident-recording-consent';
@@ -45,14 +61,20 @@ const PARTICIPANT_ROLE_KEY = 'incident-participant-role';
 
 export function App() {
   const initialReplayId = readReplayIdFromSearch();
+  const initialInvite = readInviteFromSearch();
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const rendererRef = useRef<{scrollMetricsPanel(deltaY: number): void} | null>(
-    null
-  );
+  const chatInputRef = useRef<HTMLInputElement>(null);
+  const rendererRef = useRef<{
+    scrollMetricsPanel(deltaY: number): void;
+    setChatInput(input: HTMLInputElement | null): void;
+  } | null>(null);
   const gameSpeedRef = useRef(1);
   const recordingRef = useRef<SessionRecordingBridge | undefined>(undefined);
   const terminalBridgeRef = useRef<TerminalBridgeRef | undefined>(undefined);
   const lastCursorSentAtRef = useRef(0);
+  const rtcSignalHandlerRef = useRef<((data: unknown) => void) | undefined>(
+    undefined
+  );
 
   const [screen, setScreen] = useState<Screen>(
     initialReplayId ? 'replay' : 'select'
@@ -73,6 +95,7 @@ export function App() {
     replayId: string;
   }>();
   const [participantId] = useState(() => readOrCreateParticipantId());
+  const [htmlInCanvasChat] = useState(() => detectHtmlInCanvasSupport());
   const [participantName, setParticipantName] = useState(
     () => sessionStorage.getItem(PARTICIPANT_NAME_KEY) ?? 'Player'
   );
@@ -96,6 +119,11 @@ export function App() {
   const [saveRecording, setSaveRecording] = useState(
     () => localStorage.getItem(SAVE_RECORDING_KEY) !== '0'
   );
+  const [pagerPublicKey, setPagerPublicKey] = useState<
+    string | null | undefined
+  >(undefined);
+  const [pagerRegistered, setPagerRegistered] = useState(false);
+  const [pagerBusy, setPagerBusy] = useState(false);
 
   const sessionRuntime = useSessionRuntime({
     api,
@@ -104,14 +132,17 @@ export function App() {
     scenario,
     gameState,
     gameSpeed,
+    exerciseSnapshot,
     saveRecording,
     recordingConsent,
     isStarting,
     sandboxReady,
+    participantId,
     deepLinkReplayId,
     deepLinkValidated,
     recordingRef,
     terminalBridgeRef,
+    rtcSignalHandlerRef,
     setScreen,
     setSession,
     setScenario,
@@ -134,6 +165,30 @@ export function App() {
   useEffect(() => {
     sessionStorage.setItem(PARTICIPANT_ROLE_KEY, participantRole);
   }, [participantRole]);
+
+  useEffect(() => {
+    void fetchPushPublicKey().then(setPagerPublicKey);
+  }, []);
+
+  useEffect(() => {
+    if (!initialInvite) return;
+    const url = new URL(window.location.href);
+    url.searchParams.delete('join');
+    url.searchParams.delete('wt');
+    window.history.replaceState(
+      null,
+      '',
+      `${url.pathname}${url.search}${url.hash}`
+    );
+    void sessionRuntime.joinSessionFromInvite(
+      initialInvite.sessionId,
+      initialInvite.writeToken
+    );
+  }, []);
+
+  useEffect(() => {
+    setPagerRegistered(false);
+  }, [session?.sessionId]);
 
   useEffect(() => {
     if (
@@ -185,9 +240,74 @@ export function App() {
     currentGameTimeMs,
     createSessionForScenario,
     startPlay,
+    advanceToBriefing,
     endSession,
-    submitSlackMessage,
+    submitChatMessage,
   } = sessionRuntime;
+
+  const isHost = isHostParticipant(exerciseSnapshot, participantId);
+
+  useWebMcpTools({
+    api,
+    screen,
+    session,
+    participantId,
+    gameStateRef,
+    setExerciseSnapshot,
+  });
+
+  const voice = useVoiceChat({api, screen, session, participantId});
+  rtcSignalHandlerRef.current = (data) => {
+    voice.handleSignal(data);
+  };
+
+  const npc = useNpcColleague({
+    screen,
+    session,
+    gameStateRef,
+    eventEmitterRef,
+    patchGameStateRef,
+    currentGameTimeMs,
+  });
+
+  const pip = useMonitorPip({screen, canvasRef, setAppError});
+
+  const registerPager = async () => {
+    if (!pagerPublicKey || !session) return;
+    if (
+      typeof Notification === 'undefined' ||
+      !('serviceWorker' in navigator) ||
+      typeof PushManager === 'undefined'
+    ) {
+      return;
+    }
+    setPagerBusy(true);
+    try {
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') {
+        setPagerBusy(false);
+        return;
+      }
+      const registration = await navigator.serviceWorker.register('/sw.js');
+      await navigator.serviceWorker.ready;
+      const subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(
+          pagerPublicKey
+        ) as BufferSource,
+      });
+      await registerPagerSubscription(
+        session.sessionId,
+        api.sessionAccessToken(),
+        subscription.toJSON() as PagerSubscriptionPayload
+      );
+      setPagerRegistered(true);
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setPagerBusy(false);
+    }
+  };
 
   const {
     attachTerminalSession,
@@ -197,6 +317,7 @@ export function App() {
   } = useTerminalBridge({
     api,
     screen,
+    participantId,
     gameState,
     gameStateRef,
     sessionRef,
@@ -204,7 +325,7 @@ export function App() {
     eventEmitterRef,
     patchGameStateRef,
     currentGameTimeMs,
-    submitSlackMessage,
+    submitChatMessage,
   });
   terminalBridgeRef.current = {
     attachTerminalSession,
@@ -216,6 +337,7 @@ export function App() {
     canvasRef,
     screen,
     session,
+    isHost,
     hasRecordingConsent,
     saveRecording,
     gameSpeedRef,
@@ -228,6 +350,7 @@ export function App() {
   useCanvasRenderer({
     screen,
     canvasRef,
+    chatInputRef,
     rendererRef,
     gameStateRef,
     scenarioRef,
@@ -237,6 +360,7 @@ export function App() {
     useSessionEditor({
       api,
       screen,
+      participantId,
       gameState,
       sessionRef,
       gameStateRef,
@@ -260,6 +384,7 @@ export function App() {
     useCanvasInteraction({
       screen,
       canvasRef,
+      chatInputRef,
       rendererRef,
       gameStateRef,
       sessionRef,
@@ -268,13 +393,13 @@ export function App() {
       patchGameStateRef,
       currentGameTimeMs,
       endSession,
-      submitSlackMessage,
+      submitChatMessage,
       loadEditorFiles,
       openEditorFile,
       onCursorMove: (point) => {
         if (!session) return;
         const now = performance.now();
-        if (now - lastCursorSentAtRef.current < 180) return;
+        if (now - lastCursorSentAtRef.current < 80) return;
         lastCursorSentAtRef.current = now;
         void api.updateParticipantCursor(session.sessionId, {
           participantId,
@@ -307,6 +432,11 @@ export function App() {
   );
   const canNavigateToReplay = hasReplayContent && screen === 'result';
   const activeReplayId = session?.replayId ?? deepLinkReplayId;
+  const sessionAccessToken = api.sessionAccessToken();
+  const inviteUrl =
+    session && sessionAccessToken
+      ? buildInviteUrl(session.sessionId, sessionAccessToken)
+      : undefined;
 
   function openReplay() {
     if (!canNavigateToReplay) return;
@@ -322,8 +452,10 @@ export function App() {
         screen={screen}
         isStarting={isStarting}
         canNavigateToReplay={canNavigateToReplay}
+        gameSpeed={gameSpeed}
         onSetScreen={setScreen}
         onOpenReplay={openReplay}
+        onSetGameSpeed={setGameSpeed}
       />
       {appError && (
         <p class='app-error' role='alert'>
@@ -356,18 +488,23 @@ export function App() {
         />
       )}
 
-      {screen === 'briefing' && scenario && (
+      {screen === 'briefing' && scenario && session && (
         <BriefingScreen
           scenario={scenario}
           isStarting={isStarting}
+          isHost={isHost}
           sandboxReady={sandboxReady}
           recordingConsent={recordingConsent}
           saveRecording={saveRecording}
+          pagerAvailable={pagerPublicKey != null}
+          pagerRegistered={pagerRegistered}
+          pagerBusy={pagerBusy}
           onBack={() => {
             setScreen('scenario-list');
           }}
           onSetRecordingConsent={setRecordingConsent}
           onSetSaveRecording={setSaveRecording}
+          onRegisterPager={() => void registerPager()}
           onStartPlay={() => void startPlay()}
         />
       )}
@@ -380,6 +517,8 @@ export function App() {
           participantRole={participantRole}
           exercise={exerciseSnapshot}
           sandboxReady={sandboxReady}
+          isHost={isHost}
+          inviteUrl={inviteUrl}
           onSetParticipantName={setParticipantName}
           onSetParticipantRole={(role) => {
             setParticipantRole(role);
@@ -399,7 +538,7 @@ export function App() {
               });
           }}
           onContinue={() => {
-            setScreen('briefing');
+            advanceToBriefing();
           }}
         />
       )}
@@ -408,7 +547,10 @@ export function App() {
         <PlayScreen
           gameState={gameState}
           gameSpeed={gameSpeed}
+          scenario={scenario}
           canvasRef={canvasRef}
+          chatInputRef={chatInputRef}
+          htmlInCanvasChat={htmlInCanvasChat}
           editorTextareaRef={editorTextareaRef}
           patchGameStateRef={patchGameStateRef}
           onSetGameSpeed={setGameSpeed}
@@ -418,8 +560,12 @@ export function App() {
           onCanvasWheel={handleCanvasWheel}
           onTerminalKey={handleTerminalKey}
           onCanvasPaste={handleCanvasPaste}
+          onChatSubmit={submitChatMessage}
           participantId={participantId}
           exercise={exerciseSnapshot}
+          voice={voice}
+          npc={npc}
+          pip={pip}
           onCreateTask={(title) => {
             if (!session) return;
             void api
@@ -429,18 +575,24 @@ export function App() {
               })
               .then(({exercise}) => {
                 setExerciseSnapshot(exercise);
+              })
+              .catch((error: unknown) => {
+                setAppError(describeSessionActionError(error, 'task'));
               });
           }}
-          onAppendIncidentLog={(body) => {
+          onAppendIncidentLog={(body, kind) => {
             if (!session) return;
             void api
               .appendIncidentLog(session.sessionId, {
                 body,
-                kind: 'note',
+                kind: kind ?? 'note',
                 actorParticipantId: participantId,
               })
               .then(({exercise}) => {
                 setExerciseSnapshot(exercise);
+              })
+              .catch((error: unknown) => {
+                setAppError(describeSessionActionError(error, 'incidentLog'));
               });
           }}
           onFireInject={(injectId) => {
@@ -448,9 +600,13 @@ export function App() {
             void api
               .fireInject(session.sessionId, injectId, {
                 actorParticipantId: participantId,
+                participantId,
               })
               .then(({exercise}) => {
                 setExerciseSnapshot(exercise);
+              })
+              .catch((error: unknown) => {
+                setAppError(describeSessionActionError(error, 'fireInject'));
               });
           }}
         />
@@ -459,6 +615,7 @@ export function App() {
       {screen === 'hotwash' && session && (
         <HotwashScreen
           exercise={exerciseSnapshot}
+          participantId={participantId}
           report={afterActionReport}
           onSubmit={(input) => {
             void api
@@ -468,6 +625,9 @@ export function App() {
               })
               .then(({exercise}) => {
                 setExerciseSnapshot(exercise);
+              })
+              .catch((error: unknown) => {
+                setAppError(describeSessionActionError(error, 'hotwash'));
               });
           }}
           onGenerateAar={() => {
@@ -533,4 +693,17 @@ function readParticipantRole(): ParticipantRole {
     return value;
   }
   return 'ops';
+}
+
+function urlBase64ToUint8Array(base64String: string): Uint8Array {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding)
+    .replaceAll('-', '+')
+    .replaceAll('_', '/');
+  const rawData = atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; i++) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+  return outputArray;
 }

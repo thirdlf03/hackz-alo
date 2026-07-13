@@ -1,5 +1,6 @@
 import {useEffect, useMemo, useState} from 'preact/hooks';
 import {createApiClient} from '../api/client.js';
+import {PostmortemPanel} from '../app/PostmortemPanel.js';
 import {
   buildTimelineFromEvents,
   filterImportantEvents,
@@ -55,7 +56,7 @@ export function ResultPage({
   useEffect(() => {
     Promise.all([api.getReplay(replayId), api.getReplayEvents(replayId)])
       .then(([replay, indexed]) => {
-        setMeta(replay as ReplayMeta);
+        setMeta(replay);
         setEvents(indexed);
       })
       .catch((loadError: unknown) => {
@@ -68,17 +69,18 @@ export function ResultPage({
   const durationMs = meta?.video_duration_ms ?? meta?.duration_ms ?? 0;
   const durationLabel = formatDuration(durationMs);
   const isDismissed = meta?.result !== 'resolved';
-  const resultLabel = isDismissed ? '解雇！' : '成功';
   const endingLabel = meta?.ending_id
     ? formatEnding(meta.ending_id)
     : undefined;
+  const successStamp = endingLabel ?? '静かな朝';
+  const dismissStamp = 'にぎやかな朝';
   const resultTone = resolveResultTone(meta?.result, meta?.ending_id);
   const flavorText = buildFlavorText(
     meta?.result,
     meta?.ending_id,
     durationLabel
   );
-  const dismissalSubline = endingLabel ?? '処分確定';
+  const dismissalSubline = endingLabel ?? '朝会で共有';
 
   const stats = useMemo(
     () => ({
@@ -98,7 +100,7 @@ export function ResultPage({
       aria-labelledby='result-heading'
     >
       <p class={`eyebrow${isDismissed ? ' eyebrow-dismissed' : ''}`}>
-        {isDismissed ? '解雇通知' : 'Mission Report'}
+        {isDismissed ? 'INCIDENT REPORT' : 'SHIFT REPORT'}
       </p>
       <h1 id='result-heading'>{scenarioTitle}</h1>
       {error && (
@@ -111,33 +113,33 @@ export function ResultPage({
         {isDismissed ? (
           <>
             <p class='result-stamp' role='status'>
-              {resultLabel}
+              {dismissStamp}
             </p>
             <p class='result-dismissal-subline'>{dismissalSubline}</p>
             <p class='result-flavor result-flavor-dismissed'>{flavorText}</p>
             <p class='result-dismissal-notice'>
-              人事部に録画を送付済み
+              リプレイをインシデントレポートに添付済み
               <span aria-hidden='true'> · </span>
               <span>{durationLabel}</span>
             </p>
           </>
         ) : (
           <>
-            <p class={`result-badge result-badge-${resultTone}`}>
-              {resultLabel}
-            </p>
-            <p class='result-hero-meta'>
-              {endingLabel ? <span>{endingLabel}</span> : null}
-              {endingLabel ? <span aria-hidden='true'> · </span> : null}
-              <span>{durationLabel}</span>
-            </p>
+            <div class='result-hero-headline'>
+              <p class={`result-badge result-badge-${resultTone}`}>
+                {successStamp}
+              </p>
+              <span class='result-hero-duration'>{durationLabel}</span>
+            </div>
             <p class='result-flavor'>{flavorText}</p>
           </>
         )}
 
         <dl
           class={`result-stats${isDismissed ? ' result-stats-dismissed' : ''}`}
-          aria-label={isDismissed ? '解雇理由の記録' : '対応サマリー'}
+          aria-label={
+            isDismissed ? 'インシデントレポートの記録' : '対応サマリー'
+          }
         >
           <div>
             <dt>アラート</dt>
@@ -173,6 +175,14 @@ export function ResultPage({
         </section>
       )}
 
+      <PostmortemPanel
+        sessionId={sessionId}
+        scenarioTitle={scenarioTitle}
+        result={meta?.result ?? null}
+        durationMs={durationMs}
+        events={events}
+      />
+
       <p class='result-session-meta'>
         <span class='result-label'>セッション</span>
         <span>{sessionId}</span>
@@ -188,18 +198,24 @@ export function ResultPage({
         </button>
         <button
           type='button'
-          class='result-action-secondary'
+          class={
+            isDismissed ? 'result-action-primary' : 'result-action-secondary'
+          }
           onClick={onRetry}
           disabled={isRetrying}
         >
-          {isRetrying ? '開始中…' : '再挑戦'}
+          {isRetrying
+            ? '開始中…'
+            : isDismissed
+              ? '▸ CONTINUE? 再挑戦'
+              : '再挑戦'}
         </button>
         <button
           type='button'
           class='result-action-secondary'
           onClick={onOpenHotwash}
         >
-          Hotwash
+          ふりかえり
         </button>
         <button
           type='button'
@@ -207,7 +223,7 @@ export function ResultPage({
           onClick={onOpenReplay}
           disabled={!canOpenReplay}
         >
-          Replay
+          {canOpenReplay ? 'リプレイを見る' : 'リプレイ準備中…'}
         </button>
       </div>
     </section>
@@ -272,35 +288,35 @@ function buildFlavorText(
   durationLabel: string
 ) {
   if (endingId === 'clear-shift' || result === 'resolved') {
-    return `${durationLabel}で復旧完了。`;
+    return `${durationLabel}で復旧完了。何事もなかったかのように日勤帯へ引き継いだ。静かな朝が明ける。`;
   }
   if (endingId === 'early-exit' || result === 'retired') {
-    return '途中で手を抜いた。再雇用の話はない。荷物をまとめて出て行け。';
+    return '途中でシフトを離れた。対応は日勤帯に引き継ぎ。どこで詰まったか、リプレイで振り返ろう。';
   }
   if (endingId === 'false-resolve' || result === 'false_resolve') {
-    return 'まだ障害が続いているのに復旧完了を押した。監視は嘘をつかない。会社の鍵は返せ。';
+    return 'まだ障害が続いているのに復旧完了を押した。監視は嘘をつかない。宣言の前にダッシュボードを確認する手順を「次に試すこと」へ書き足そう。';
   }
   if (endingId === 'overtime' || result === 'timeout') {
-    return '朝までに復旧できなかった。明日の朝は来ない。会社の鍵は返せ。';
+    return '朝までに復旧できなかった。にぎやかな朝が来る。ダウンタイムとタイムラインは記録済み。リプレイで見落としを確認して、もう一度挑戦しよう。';
   }
   if (endingId === 'aborted' || result === 'aborted') {
-    return 'セッションが中断された。結果は解雇。言い訳は聞かない。';
+    return 'セッションが中断された。ここまでの記録は残っている。次はこの続きから型をなぞろう。';
   }
-  return '記録は残っている。人事部が全部見た。';
+  return '記録は残っている。責めるためではなく、次の訓練に活かすために。';
 }
 
 function formatEnding(endingId: string) {
   switch (endingId) {
     case 'clear-shift':
-      return '無事退勤';
+      return '静かな朝';
     case 'overtime':
       return '朝まで復旧できず';
     case 'false-resolve':
       return '未復旧のまま宣言';
     case 'early-exit':
-      return '途中で手を抜いた';
+      return '途中離脱';
     case 'aborted':
-      return '強制終了';
+      return '中断';
     default:
       return endingId;
   }

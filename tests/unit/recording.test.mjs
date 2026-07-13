@@ -60,17 +60,17 @@ test('splitBufferIntoParts creates fixed-size parts with a smaller tail', () => 
   assert.equal(parts[1]?.length, 123);
 });
 
-test('replayEventSummary formats player slack reports', () => {
+test('replayEventSummary formats player chat reports', () => {
   const summary = replayEventSummary(
     createReplayEvent({
       replayId: 'repl_test',
       type: 'player_note',
       at: 1000,
       actor: 'player',
-      payload: {body: 'API が落ちています', channel: 'slack'},
+      payload: {body: 'API が落ちています', channel: 'chat'},
     })
   );
-  assert.equal(summary, 'Slack報告: API が落ちています');
+  assert.equal(summary, 'チャット報告: API が落ちています');
 });
 
 test('replayEventSummary formats session lifecycle labels', () => {
@@ -96,7 +96,7 @@ test('replayEventSummary formats session lifecycle labels', () => {
         payload: {result: 'retired'},
       })
     ),
-    '解雇！'
+    '途中離脱'
   );
 });
 
@@ -106,17 +106,17 @@ test('replayEventSummary covers event label branches', () => {
     {
       type: 'session_end',
       payload: {result: 'false_resolve'},
-      expected: '未復旧のまま解雇',
+      expected: '未復旧のまま完了報告',
     },
     {
       type: 'session_end',
       payload: {result: 'failed'},
-      expected: '解雇！',
+      expected: '未復旧で朝を迎えた',
     },
     {
       type: 'session_end',
       payload: {result: 'timeout'},
-      expected: '解雇！',
+      expected: '時間切れ・未復旧で朝を迎えた',
     },
     {
       type: 'session_end',
@@ -155,18 +155,18 @@ test('replayEventSummary covers event label branches', () => {
     },
     {
       type: 'service_restart',
-      payload: {command: 'unctl restart api'},
-      expected: '再起動: unctl restart api',
+      payload: {command: 'yamactl restart api'},
+      expected: '再起動: yamactl restart api',
     },
     {
       type: 'file_opened',
-      payload: {path: '/workspace/app.un'},
-      expected: 'ファイル: /workspace/app.un',
+      payload: {path: '/workspace/app.kdm'},
+      expected: 'ファイル: /workspace/app.kdm',
     },
     {
       type: 'file_saved',
-      payload: {path: '/workspace/app.un'},
-      expected: '保存: /workspace/app.un',
+      payload: {path: '/workspace/app.kdm'},
+      expected: '保存: /workspace/app.kdm',
     },
     {
       type: 'ui_panel_open',
@@ -180,8 +180,8 @@ test('replayEventSummary covers event label branches', () => {
     },
     {
       type: 'ui_panel_open',
-      payload: {panel: 'slack_compose'},
-      expected: 'Slack 返信を開始',
+      payload: {panel: 'chat_compose'},
+      expected: 'チャット返信を開始',
     },
     {
       type: 'ui_panel_open',

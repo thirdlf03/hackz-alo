@@ -12,6 +12,8 @@ export function useSessionSse(bindings: SessionRuntimeBindings) {
     setTimeline,
     applyClockSnapshot,
     applyExerciseSnapshot,
+    applyParticipantCursor,
+    rtcSignalHandlerRef,
   } = bindings;
 
   useEffect(() => {
@@ -24,6 +26,7 @@ export function useSessionSse(bindings: SessionRuntimeBindings) {
     const source = api.subscribeSessionEvents(session.sessionId, {
       onSnapshot: applyClockSnapshot,
       onExercise: applyExerciseSnapshot,
+      onCursor: applyParticipantCursor,
       onReplay: (event) => {
         if (
           refs.liveReplayEventIdsRef.current.has(event.id) ||
@@ -37,6 +40,7 @@ export function useSessionSse(bindings: SessionRuntimeBindings) {
           {at: event.at / 1000, label: replayEventSummary(event)},
         ]);
       },
+      onRtcSignal: (data) => rtcSignalHandlerRef.current?.(data),
       onError: console.error,
     });
     return () => {
