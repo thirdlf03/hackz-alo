@@ -7,6 +7,7 @@ import {
   replayVideoKey,
   type ReplayEvent,
 } from '@incident/shared';
+import {logStructured} from '../http/requestLog.js';
 import type {Bindings} from '../types.js';
 
 const replayVideoContentType = 'video/webm';
@@ -37,6 +38,7 @@ export async function putReplayChunk(
     endedAtMs?: number | undefined;
   }
 ) {
+  const operationStartedAt = Date.now();
   if (input.seq < 0 || input.seq >= maxReplayChunks) {
     throw new Error('chunk seq out of range');
   }
@@ -64,6 +66,17 @@ export async function putReplayChunk(
     }
     // Same size as what's already stored: treat this as an idempotent
     // retry and skip re-uploading identical bytes.
+    logStructured('replay_chunk_uploaded', {
+      replayId: input.replayId,
+      seq: input.seq,
+      byteSize: existing.byte_size,
+      idempotent: true,
+      durationMs: Date.now() - operationStartedAt,
+      ...(input.startedAtMs === undefined
+        ? {}
+        : {startedAtMs: input.startedAtMs}),
+      ...(input.endedAtMs === undefined ? {} : {endedAtMs: input.endedAtMs}),
+    });
     return {key, size: existing.byte_size};
   }
 
@@ -102,6 +115,17 @@ export async function putReplayChunk(
   )
     .bind(contentType, now, input.replayId)
     .run();
+  logStructured('replay_chunk_uploaded', {
+    replayId: input.replayId,
+    seq: input.seq,
+    byteSize: object.size,
+    idempotent: false,
+    durationMs: Date.now() - operationStartedAt,
+    ...(input.startedAtMs === undefined
+      ? {}
+      : {startedAtMs: input.startedAtMs}),
+    ...(input.endedAtMs === undefined ? {} : {endedAtMs: input.endedAtMs}),
+  });
   return {key, size: object.size};
 }
 
@@ -236,6 +260,7 @@ export async function uploadMultipartPart(
 }
 
 export async function completeMultipartUpload(env: Bindings, replayId: string) {
+  const operationStartedAt = Date.now();
   const row = await env.DB.prepare(
     `select object_key, upload_id, uploaded_parts_json
      from replay_multipart_uploads
@@ -267,17 +292,49 @@ export async function completeMultipartUpload(env: Bindings, replayId: string) {
       'update replays set video_object_key = ?, recording_status = ?, updated_at = ? where id = ?'
     ).bind(row.object_key, 'ready', now, replayId),
   ]);
+  logStructured('replay_finalized', {
+    replayId,
+    storagePath: 'multipart',
+    partCount: parts.length,
+    finalVideoBytes: object.size,
+    durationMs: Date.now() - operationStartedAt,
+  });
   return {key: row.object_key, size: object.size};
 }
 
 export async function finalizeReplayVideo(env: Bindings, replayId: string) {
+  const operationStartedAt = Date.now();
   const key = replayVideoKey(replayId);
+  const chunkStats = await readReplayChunkStats(env, replayId);
   const existing = await env.REPLAY_BUCKET.head(key);
   if (existing) {
+    logReplayFinalization({
+      replayId,
+      storagePath: 'existing',
+      chunkStats,
+      finalVideoBytes: existing.size,
+      durationMs: Date.now() - operationStartedAt,
+    });
     return {key, size: existing.size, status: 'ready' as const};
   }
   const assembled = await assembleReplayVideo(env, replayId, key);
-  if (!assembled) return {key: '', size: 0, status: 'missing' as const};
+  if (!assembled) {
+    logReplayFinalization({
+      replayId,
+      storagePath: 'missing',
+      chunkStats,
+      finalVideoBytes: 0,
+      durationMs: Date.now() - operationStartedAt,
+    });
+    return {key: '', size: 0, status: 'missing' as const};
+  }
+  logReplayFinalization({
+    replayId,
+    storagePath: 'chunk_assembly',
+    chunkStats,
+    finalVideoBytes: assembled.size,
+    durationMs: Date.now() - operationStartedAt,
+  });
   return {key, size: assembled.size, status: 'ready' as const};
 }
 
@@ -433,4 +490,56 @@ async function listReplayChunks(env: Bindings, replayId: string) {
     });
   }
   return chunks;
+}
+
+interface ReplayChunkStats {
+  chunkCount: number;
+  rawChunkBytes: number;
+  recordingDurationMs: number;
+}
+
+async function readReplayChunkStats(
+  env: Bindings,
+  replayId: string
+): Promise<ReplayChunkStats> {
+  const row = await env.DB.prepare(
+    `select count(*) as chunk_count,
+            coalesce(sum(byte_size), 0) as raw_chunk_bytes,
+            coalesce(max(ended_at_ms), 0) as recording_duration_ms
+     from replay_chunks
+     where replay_id = ?`
+  )
+    .bind(replayId)
+    .first<{
+      chunk_count: number | null;
+      raw_chunk_bytes: number | null;
+      recording_duration_ms: number | null;
+    }>();
+  return {
+    chunkCount: numberOrZero(row?.chunk_count),
+    rawChunkBytes: numberOrZero(row?.raw_chunk_bytes),
+    recordingDurationMs: numberOrZero(row?.recording_duration_ms),
+  };
+}
+
+function logReplayFinalization(input: {
+  replayId: string;
+  storagePath: 'existing' | 'chunk_assembly' | 'missing';
+  chunkStats: ReplayChunkStats;
+  finalVideoBytes: number;
+  durationMs: number;
+}) {
+  logStructured('replay_finalized', {
+    replayId: input.replayId,
+    storagePath: input.storagePath,
+    chunkCount: input.chunkStats.chunkCount,
+    rawChunkBytes: input.chunkStats.rawChunkBytes,
+    recordingDurationMs: input.chunkStats.recordingDurationMs,
+    finalVideoBytes: input.finalVideoBytes,
+    durationMs: input.durationMs,
+  });
+}
+
+function numberOrZero(value: number | null | undefined) {
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
 }

@@ -1,5 +1,4 @@
 import {
-  replayChunkKey,
   replayEventsKey,
   replayEventsManifestKey,
   replayThumbnailKey,
@@ -8,7 +7,7 @@ import {
 import type {Bindings} from '../types.js';
 import {logStructured} from '../http/requestLog.js';
 
-const retentionDays = 90;
+const retentionDays = 30;
 
 export async function sweepExpiredReplays(env: Bindings) {
   try {
@@ -101,16 +100,86 @@ export async function purgeReplayStorage(env: Bindings, replayId: string) {
 
 export async function purgeReplayChunksOnly(env: Bindings, replayId: string) {
   const rows = await env.DB.prepare(
-    'select seq from replay_chunks where replay_id = ?'
+    'select object_key, byte_size from replay_chunks where replay_id = ?'
   )
     .bind(replayId)
-    .all<{seq: number}>();
-  for (const row of rows.results) {
-    if (typeof row.seq !== 'number') continue;
-    await env.REPLAY_BUCKET.delete(replayChunkKey(replayId, row.seq)).catch(
-      () => undefined
-    );
+    .all<{object_key: string; byte_size: number}>();
+  if (rows.results.length === 0) {
+    return {purged: 0, rawChunkBytes: 0};
   }
+
+  const startedAt = Date.now();
+  await Promise.all(
+    rows.results.map((row) => env.REPLAY_BUCKET.delete(row.object_key))
+  );
+  await env.DB.prepare('delete from replay_chunks where replay_id = ?')
+    .bind(replayId)
+    .run();
+
+  const rawChunkBytes = rows.results.reduce(
+    (sum, row) => sum + (Number.isFinite(row.byte_size) ? row.byte_size : 0),
+    0
+  );
+  logStructured('replay_chunks_purged', {
+    replayId,
+    chunkCount: rows.results.length,
+    rawChunkBytes,
+    durationMs: Date.now() - startedAt,
+  });
+  return {purged: rows.results.length, rawChunkBytes};
+}
+
+export async function purgeReplayChunksAfterFinalVideo(
+  env: Bindings,
+  replayId: string
+) {
+  const finalVideo = await env.REPLAY_BUCKET.head(replayVideoKey(replayId));
+  if (!finalVideo || finalVideo.size <= 0) {
+    logStructured('replay_chunk_cleanup_skipped', {
+      replayId,
+      reason: 'final_video_missing',
+    });
+    return {purged: 0, rawChunkBytes: 0, skipped: true as const};
+  }
+  return {
+    ...(await purgeReplayChunksOnly(env, replayId)),
+    skipped: false as const,
+  };
+}
+
+export async function sweepFinalizedReplayChunks(env: Bindings) {
+  const rows = await env.DB.prepare(
+    `select id from replays
+     where recording_status = 'ready'
+       and video_object_key is not null
+       and exists (
+         select 1 from replay_chunks
+         where replay_chunks.replay_id = replays.id
+       )
+     limit 100`
+  ).all<{id: string}>();
+
+  let purged = 0;
+  let failed = 0;
+  for (const row of rows.results) {
+    if (!row.id) continue;
+    try {
+      const result = await purgeReplayChunksAfterFinalVideo(env, row.id);
+      purged += result.purged;
+    } catch (error) {
+      failed += 1;
+      logStructured('replay_chunk_cleanup_failed', {
+        replayId: row.id,
+        message: messageFrom(error),
+      });
+    }
+  }
+  logStructured('replay_chunk_cleanup_sweep', {
+    candidates: rows.results.length,
+    purged,
+    failed,
+  });
+  return {candidates: rows.results.length, purged, failed};
 }
 
 export function replayEventsPrefix(replayId: string) {

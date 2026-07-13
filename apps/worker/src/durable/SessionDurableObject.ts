@@ -269,6 +269,7 @@ export class SessionDurableObject implements DurableObject {
     const result = await this.prepareSandbox(session, scenario);
     logStructured('session_prepared', {
       sessionId: session.sessionId,
+      scenarioId: scenario.id,
       reused: result.reused,
       durationMs: Date.now() - startedAt,
     });

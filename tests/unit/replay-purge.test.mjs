@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {tsImport} from 'tsx/esm/api';
 
-const {purgeReplayStorage} = await tsImport(
+const {purgeReplayStorage, purgeReplayChunksAfterFinalVideo} = await tsImport(
   '../../apps/worker/src/storage/replayPurge.ts',
   import.meta.url
 );
@@ -143,4 +143,58 @@ test('sweepExpiredReplays logs candidates purged and failed counts', async () =>
     ),
     true
   );
+});
+
+test('purgeReplayChunksAfterFinalVideo removes chunks only after final video exists', async () => {
+  const replayId = 'repl_chunk_cleanup';
+  const deletedKeys = [];
+  const deletedRows = [];
+  let finalVideoExists = false;
+  const env = {
+    REPLAY_BUCKET: {
+      async head() {
+        return finalVideoExists ? {size: 123} : null;
+      },
+      async delete(key) {
+        deletedKeys.push(key);
+      },
+    },
+    DB: {
+      prepare(sql) {
+        return {
+          bind(...binds) {
+            return {
+              async all() {
+                assert.match(sql, /select object_key, byte_size/);
+                assert.deepEqual(binds, [replayId]);
+                return {
+                  results: [
+                    {object_key: 'chunk-0', byte_size: 10},
+                    {object_key: 'chunk-1', byte_size: 20},
+                  ],
+                };
+              },
+              async run() {
+                deletedRows.push({sql, binds});
+              },
+            };
+          },
+        };
+      },
+    },
+  };
+
+  const skipped = await purgeReplayChunksAfterFinalVideo(env, replayId);
+  assert.equal(skipped.skipped, true);
+  assert.deepEqual(deletedKeys, []);
+  assert.deepEqual(deletedRows, []);
+
+  finalVideoExists = true;
+  const purged = await purgeReplayChunksAfterFinalVideo(env, replayId);
+  assert.equal(purged.skipped, false);
+  assert.equal(purged.purged, 2);
+  assert.equal(purged.rawChunkBytes, 30);
+  assert.deepEqual(deletedKeys, ['chunk-0', 'chunk-1']);
+  assert.equal(deletedRows.length, 1);
+  assert.match(deletedRows[0].sql, /delete from replay_chunks/);
 });

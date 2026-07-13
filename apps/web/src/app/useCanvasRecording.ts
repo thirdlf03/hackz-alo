@@ -117,7 +117,7 @@ export function useCanvasRecording(options: {
       updateRecordingStatus(current, 'initializing')
     );
     try {
-      // アラート音とウォールーム音声を録画に合成する(tech.md R30-R32)。
+      // アラート音とウォールーム音声を録画に合成する(docs/dev/tech/03-recording-and-replay.md R30-R32)。
       // 対応外ブラウザでは undefined になり従来どおり映像のみ録画する。
       recorder.start(getRecordingAudioStream());
       recordingStartedAtGameMsRef.current = options.currentGameTimeMs();
