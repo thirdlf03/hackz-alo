@@ -40,7 +40,11 @@ export function buildCanvasViewModel(
 ): CanvasViewModel {
   const chatMessages = mergedChatMessages(state);
   const runbooks = scenario
-    ? visibleRunbooks(scenario, state.clock.elapsedMs)
+    ? visibleRunbooks(
+        scenario,
+        state.clock.elapsedMs,
+        state.monitors.right.runbookFileContents
+      )
     : state.monitors.right.activeRunbook
       ? [state.monitors.right.activeRunbook]
       : [];

@@ -7,11 +7,15 @@ import type {
 
 export function visibleRunbooks(
   scenario: ScenarioDefinition,
-  elapsedMs: number
+  elapsedMs: number,
+  fileContents?: Record<string, string>
 ): RunbookDefinition[] {
-  return scenario.runbooks.filter(
-    (runbook) => (runbook.availableAtMs ?? 0) <= elapsedMs
-  );
+  return scenario.runbooks
+    .filter((runbook) => (runbook.availableAtMs ?? 0) <= elapsedMs)
+    .map((runbook) => {
+      const liveBody = runbook.file ? fileContents?.[runbook.id] : undefined;
+      return liveBody === undefined ? runbook : {...runbook, body: liveBody};
+    });
 }
 
 export function mergedChatMessages(

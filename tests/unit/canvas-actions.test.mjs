@@ -75,7 +75,7 @@ test('resolveCanvasAction opens editor files from normal and expanded terminal v
   const expandedPoint = editorFilePoint(1, true);
   assert.deepEqual(
     resolveCanvasAction(expandedPoint, expandedState, baseScenario()),
-    {type: 'open_editor_file', path: '/workspace/run/deploy.json'}
+    {type: 'open_editor_file', path: '/workspace/etc/yamabiko-api.json'}
   );
 });
 

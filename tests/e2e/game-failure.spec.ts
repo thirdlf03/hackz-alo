@@ -2,7 +2,7 @@ import {test} from '@playwright/test';
 import {
   acceptRecordingConsent,
   clickResolveButton,
-  openDemoScenarioBriefing,
+  openDefaultScenarioBriefing,
   setGameSpeed,
   setSaveRecording,
   startGameFromBriefing,
@@ -13,7 +13,7 @@ import {
 test('premature resolve is rejected as false resolve failure', async ({
   page,
 }) => {
-  await openDemoScenarioBriefing(page);
+  await openDefaultScenarioBriefing(page);
   await acceptRecordingConsent(page);
   await setSaveRecording(page, false);
   await startGameFromBriefing(page);

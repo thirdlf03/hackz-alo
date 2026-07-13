@@ -15,7 +15,10 @@ import {registerPushRoutes} from './routes/pushRoutes.js';
 import {registerReplayRoutes} from './routes/replayRoutes.js';
 import {registerScenarioRoutes} from './routes/scenarioRoutes.js';
 import {registerSessionRoutes} from './routes/sessionRoutes.js';
-import {sweepExpiredReplays} from './storage/replayPurge.js';
+import {
+  sweepExpiredReplays,
+  sweepFinalizedReplayChunks,
+} from './storage/replayPurge.js';
 import {sweepStaleSessions} from './sessionSweep.js';
 import type {Bindings} from './types.js';
 
@@ -74,6 +77,7 @@ export default {
   },
   scheduled(_event: ScheduledEvent, env: Bindings, ctx: ExecutionContext) {
     ctx.waitUntil(sweepStaleSessions(env));
+    ctx.waitUntil(sweepFinalizedReplayChunks(env));
     const now = new Date();
     if (
       now.getUTCDay() === 0 &&

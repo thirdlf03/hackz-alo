@@ -6,7 +6,7 @@ export async function runDeploySmoke(options) {
   const fetchImpl = options.fetchImpl ?? fetch;
   const log = options.log ?? console.log;
   const warn = options.warn ?? console.warn;
-  const scenarioId = options.scenarioId ?? 'demo-tutorial-001';
+  const scenarioId = options.scenarioId ?? 'process-stop-001';
 
   async function request(path, init = {}) {
     const response = await fetchImpl(`${baseUrl}${path}`, {

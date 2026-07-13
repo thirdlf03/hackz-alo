@@ -1,5 +1,5 @@
 /**
- * 録画用オーディオミキサー(tech.md R30-R32)。
+ * 録画用オーディオミキサー(docs/dev/tech/03-recording-and-replay.md R30-R32)。
  * 共有 AudioContext に MediaStreamDestination をぶら下げ、
  * アラート音とウォールーム音声(マイク・リモート参加者)を
  * canvas 録画の MediaRecorder に合成するための MediaStream を提供する。

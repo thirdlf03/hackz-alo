@@ -1,0 +1,86 @@
+id: api-hang-001
+version: 1
+title: 固まった API の夜
+difficulty: intermediate
+difficultyScore: 210
+timeLimitMinutes: 10
+service:
+  name: やまびこ API
+  healthUrl: http://localhost:8080/health
+briefing:
+  - プロセスが「死んでいる」のと「固まっている」のは別の障害。
+  - curl は返ってこない。でもプロセスは生きている。その状態を切り分ける。
+  - ps の STAT 列が読めると強い。
+startup:
+  - id: api
+    command: PORT=8080 node /workspace/services/yamabiko-api/server.mjs
+    waitForPort: 8080
+  - id: fake-db
+    command: node /workspace/services/fake-db/server.mjs
+    waitForPort: 15432
+topology:
+  nodes:
+    - id: user
+      label: ユーザー
+      kind: external
+    - id: api
+      label: やまびこ API
+      kind: service
+      processId: api
+    - id: fake-db
+      label: 疑似データベース
+      kind: datastore
+      processId: fake-db
+  edges:
+    - from: user
+      to: api
+    - from: api
+      to: fake-db
+triggers:
+  - id: hang
+    atMs: 60000
+    type: process_hang
+    params:
+      processId: api
+alerts:
+  - id: latency
+    atMs: 80000
+    severity: critical
+    message: API latency p95 is above 5s
+    source: monitor
+  - id: health-fail
+    atMs: 95000
+    severity: critical
+    message: やまびこ API health check failed
+    source: monitor
+successConditions:
+  - type: http_status
+    url: http://localhost:8080/health
+    status: 200
+  - type: process_running
+    processId: api
+runbooks:
+  - id: runbook.hang
+    title: ハングの切り分け
+    body: |-
+      1. curl --max-time 3 localhost:8080/health で応答を見る
+         (返ってこない=タイムアウトも重要な情報)
+      2. yamactl status api。プロセスが生きているのに応答しないなら「ハング」
+      3. ps -o pid,stat,cmd で状態を確認する。STAT が T なら停止シグナルで固まっている
+      4. 直近の app.log に前兆(GC pause など)がないか見る
+      5. yamactl restart api で強制再起動し、health で復旧確認する
+chatMessages:
+  - id: boss-hang
+    atMs: 115000
+    from: 上司
+    body: 落ちてはいないんでしょ？なら大丈夫じゃない。おやすみ。
+navigationSteps:
+  - id: nav-latency
+    atMs: 0
+    hint: Latency p95 が急上昇していないか見る
+    panel: metrics
+  - id: nav-curl
+    atMs: 65000
+    hint: タイムアウト付きで応答を確認する
+    panel: terminal
+    suggestedCommand: curl --max-time 3 localhost:8080/health

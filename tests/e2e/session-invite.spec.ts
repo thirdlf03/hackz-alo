@@ -1,6 +1,6 @@
 import {expect, test} from '@playwright/test';
 
-const DEMO_SCENARIO = /デモ: 1分復旧ドリル/;
+const DEFAULT_SCENARIO = /API が寝落ち/;
 
 test.describe.configure({mode: 'serial'});
 
@@ -33,10 +33,12 @@ test('inviting a second participant joins the same session lobby', async ({
       response.ok(),
     {timeout: 90_000}
   );
-  await pageA.getByRole('button', {name: DEMO_SCENARIO}).click();
+  await pageA.getByRole('button', {name: DEFAULT_SCENARIO}).click();
   await sessionResponse;
 
-  await expect(pageA.getByRole('heading', {name: DEMO_SCENARIO})).toBeVisible({
+  await expect(
+    pageA.getByRole('heading', {name: DEFAULT_SCENARIO})
+  ).toBeVisible({
     timeout: 30_000,
   });
 
@@ -65,7 +67,9 @@ test('inviting a second participant joins the same session lobby', async ({
   const pageB = await contextB.newPage();
   await pageB.goto(inviteUrl ?? '/');
 
-  await expect(pageB.getByRole('heading', {name: DEMO_SCENARIO})).toBeVisible({
+  await expect(
+    pageB.getByRole('heading', {name: DEFAULT_SCENARIO})
+  ).toBeVisible({
     timeout: 30_000,
   });
   // The invite tokens must not linger in the joiner's address bar.
@@ -110,10 +114,12 @@ test('host advancing the exercise phase carries the guest along into briefing an
       response.ok(),
     {timeout: 90_000}
   );
-  await pageA.getByRole('button', {name: DEMO_SCENARIO}).click();
+  await pageA.getByRole('button', {name: DEFAULT_SCENARIO}).click();
   await sessionResponse;
 
-  await expect(pageA.getByRole('heading', {name: DEMO_SCENARIO})).toBeVisible({
+  await expect(
+    pageA.getByRole('heading', {name: DEFAULT_SCENARIO})
+  ).toBeVisible({
     timeout: 30_000,
   });
 
@@ -139,7 +145,9 @@ test('host advancing the exercise phase carries the guest along into briefing an
   const pageB = await contextB.newPage();
   await pageB.goto(inviteUrl ?? '/');
 
-  await expect(pageB.getByRole('heading', {name: DEMO_SCENARIO})).toBeVisible({
+  await expect(
+    pageB.getByRole('heading', {name: DEFAULT_SCENARIO})
+  ).toBeVisible({
     timeout: 30_000,
   });
 

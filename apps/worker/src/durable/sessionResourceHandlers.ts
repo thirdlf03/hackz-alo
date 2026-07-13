@@ -1,4 +1,4 @@
-import type {MetricsSnapshot} from '@incident/shared';
+import type {MetricsSnapshot, ScenarioDefinition} from '@incident/shared';
 import {
   INCIDENT_ATTRS,
   INCIDENT_SPAN_NAMES,
@@ -11,6 +11,7 @@ import {
   fetchSessionMetrics,
   fetchSessionStorage,
   listSessionFiles,
+  readSandboxFileRaw,
   readSessionFile,
   writeSessionFile,
 } from '../sandbox/runtime.js';
@@ -26,7 +27,8 @@ export interface MetricsCache {
 export async function readSessionMetrics(
   env: Bindings,
   session: StoredSession,
-  cache: MetricsCache
+  cache: MetricsCache,
+  scenario?: ScenarioDefinition
 ) {
   if (session.status !== 'running') {
     throw new HttpError(
@@ -47,7 +49,9 @@ export async function readSessionMetrics(
       },
       () => undefined
     );
-    return jsonOk(cache.value);
+    return jsonOk(
+      await withRunbookFiles(env, session.sessionId, scenario, cache.value)
+    );
   }
 
   const metrics = await withWorkerSpan(
@@ -68,7 +72,45 @@ export async function readSessionMetrics(
   }
   cache.value = metrics;
   cache.cachedAt = now;
-  return jsonOk(metrics);
+  return jsonOk(
+    await withRunbookFiles(env, session.sessionId, scenario, metrics)
+  );
+}
+
+/**
+ * Piggybacks file-backed runbook content on the existing metrics poll
+ * (apps/web polls GET /metrics every few seconds already) instead of adding
+ * a dedicated endpoint. Only runs for runbooks that declare a `file`.
+ */
+async function withRunbookFiles(
+  env: Bindings,
+  sessionId: string,
+  scenario: ScenarioDefinition | undefined,
+  metrics: MetricsSnapshot
+): Promise<MetricsSnapshot> {
+  const fileRunbooks = (scenario?.runbooks ?? []).filter(
+    (runbook): runbook is typeof runbook & {file: string} =>
+      typeof runbook.file === 'string'
+  );
+  if (fileRunbooks.length === 0) return metrics;
+
+  const entries = await Promise.all(
+    fileRunbooks.map(async (runbook) => {
+      try {
+        const content = await readSandboxFileRaw(env, sessionId, runbook.file);
+        return [runbook.id, content] as const;
+      } catch {
+        return undefined;
+      }
+    })
+  );
+  const runbookFiles: Record<string, string> = {};
+  for (const entry of entries) {
+    if (entry) runbookFiles[entry[0]] = entry[1];
+  }
+  return Object.keys(runbookFiles).length > 0
+    ? {...metrics, runbookFiles}
+    : metrics;
 }
 
 export async function readSessionLogs(

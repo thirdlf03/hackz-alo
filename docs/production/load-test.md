@@ -4,9 +4,9 @@ Run manually before major launches.
 
 ## Sandbox capacity
 
-1. Start 5 concurrent sessions (matches `max_instances = 5`)
-2. Attempt 6th session — expect **503** with `Retry-After`
-3. Retire one session — 6th should succeed within 60s
+1. Start 20 concurrent sessions (matches `max_instances = 20`)
+2. Attempt 21st session — expect **503** with `Retry-After`
+3. Retire one session — 21st should succeed within 60s
 
 ## Recording finalize
 

@@ -8,7 +8,7 @@
 
 ## Retention
 
-- Replays and related R2 objects are deleted **90 days** after finish (see retention cron)
+- Replays and related R2 objects are deleted **30 days** after finish (see retention cron)
 - Stale sessions are swept after 20–30 minutes without activity
 
 ## User controls

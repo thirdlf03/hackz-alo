@@ -15,8 +15,8 @@ export interface IncidentOverview {
   clock: {elapsedSeconds: number; timeLimitSeconds: number; speed: number};
   metrics: {
     source: string;
-    cpu: number;
-    memory: number;
+    cpu: number | null;
+    memory: number | null;
     disk: number;
     http5xxRate: number;
     latencyP95Ms: number;

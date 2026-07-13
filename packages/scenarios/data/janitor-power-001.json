@@ -2,16 +2,17 @@
   "id": "janitor-power-001",
   "version": 1,
   "title": "掃除のおばちゃんが電源を抜いた夜",
-  "difficulty": "intermediate",
-  "timeLimitMinutes": 5,
+  "difficulty": "beginner",
+  "difficultyScore": 170,
+  "timeLimitMinutes": 8,
   "service": {
     "name": "やまびこ API",
     "healthUrl": "http://localhost:8080/health"
   },
   "briefing": [
-    "深夜のデータセンターには掃除のおばちゃんが巡回している。",
-    "冗長系の片方を掃除中に抜かれると API が落ちる。",
-    "app.log と run/ 配下のマーカーを確認してから復旧する。"
+    "初級の卒業試験。復旧は簡単だが、原因の裏付けを取ってから報告すること。",
+    "深夜のデータセンターには掃除の方が巡回しており、コンセント周りに触れることがある。",
+    "まずは影響を確認し、それから「なぜ落ちたか」の手がかりを app.log から拾う。原因の裏付けは、直すことと同じくらい大事な仕事。"
   ],
   "startup": [
     {
@@ -100,17 +101,13 @@
     {
       "type": "process_running",
       "processId": "api"
-    },
-    {
-      "type": "marker_absent",
-      "path": "/workspace/run/janitor.power.pulled"
     }
   ],
   "runbooks": [
     {
       "id": "runbook.janitor",
-      "title": "掃除による電源断",
-      "body": "1. curl localhost:8080/health で影響確認\\n2. ls /workspace/run で janitor.power.pulled を探す\\n3. rm /workspace/run/janitor.power.pulled /workspace/run/api.down\\n4. yamactl restart api\\n5. health で復旧確認"
+      "title": "予期せぬプロセス停止の初動",
+      "body": "1. curl localhost:8080/health で影響範囲を確認する\n2. yamactl status api でプロセスの生死を確認する\n3. app.log を確認し、なぜ落ちたのか手がかりになる記述がないか探す(電源断など外的要因の痕跡)\n4. 見つかった証跡は復旧後の報告用に控えておく\n5. yamactl restart api で復旧し、health で確認する"
     }
   ],
   "chatMessages": [
@@ -129,16 +126,16 @@
       "panel": "metrics"
     },
     {
-      "id": "nav-marker",
+      "id": "nav-evidence",
       "atMs": 45000,
-      "hint": "ls /workspace/run で怪しいマーカーを探す",
+      "hint": "app.log で原因の手がかりを探す。復旧後の報告のためにも記録しておく",
       "panel": "terminal",
-      "suggestedCommand": "ls -la /workspace/run"
+      "suggestedCommand": "tail /workspace/logs/app.log"
     },
     {
       "id": "nav-runbook",
       "atMs": 70000,
-      "hint": "掃除による電源断 Runbook を開く",
+      "hint": "プロセス停止時の初動 Runbook を開く",
       "panel": "runbook"
     }
   ]

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {tsImport} from 'tsx/esm/api';
+import {createRouteHarness, json} from './helpers/routeHarness.mjs';
 
 const {registerReplayRoutes} = await tsImport(
   '../../apps/worker/src/routes/replayRoutes.ts',
@@ -276,104 +277,6 @@ async function createReplayHarness() {
   return {app, env, replays, readTokens};
 }
 
-function createRouteHarness(defaultEnv) {
-  const routes = [];
-  const app = {
-    get(path, handler) {
-      routes.push({method: 'GET', path, handler});
-    },
-    post(path, ...handlers) {
-      routes.push({method: 'POST', path, handler: compose(handlers)});
-    },
-    put(path, ...handlers) {
-      routes.push({method: 'PUT', path, handler: compose(handlers)});
-    },
-    on(methods, path, handler) {
-      for (const method of methods) {
-        routes.push({method, path, handler});
-      }
-    },
-    async fetch(request, env = defaultEnv) {
-      const url = new URL(request.url);
-      for (const route of routes) {
-        if (route.method !== request.method) continue;
-        const params = matchPath(route.path, url.pathname);
-        if (!params) continue;
-        return route.handler(createContext({env, request, params}));
-      }
-      return new Response('not found', {status: 404});
-    },
-  };
-  return app;
-}
-
-function compose(handlers) {
-  return async (context) => {
-    let index = -1;
-    let response;
-    async function next() {
-      index += 1;
-      const handler = handlers[index];
-      if (!handler) return undefined;
-      const result = await handler(context, next);
-      if (result !== undefined) response = result;
-      return result;
-    }
-    await next();
-    return response;
-  };
-}
-
-function matchPath(pattern, pathname) {
-  const patternParts = pattern.split('/').filter(Boolean);
-  const pathParts = pathname.split('/').filter(Boolean);
-  if (patternParts.length !== pathParts.length) return undefined;
-  const params = {};
-  for (let index = 0; index < patternParts.length; index += 1) {
-    const patternPart = patternParts[index];
-    const pathPart = pathParts[index];
-    if (!patternPart || !pathPart) return undefined;
-    if (patternPart.startsWith(':')) {
-      params[patternPart.slice(1)] = decodeURIComponent(pathPart);
-    } else if (patternPart !== pathPart) {
-      return undefined;
-    }
-  }
-  return params;
-}
-
-function createContext({env, request, params}) {
-  const responseHeaders = new Headers();
-  const url = new URL(request.url);
-  return {
-    env,
-    req: {
-      raw: request,
-      method: request.method,
-      param(name) {
-        return params[name];
-      },
-      query(name) {
-        return url.searchParams.get(name) ?? undefined;
-      },
-      header(name) {
-        return request.headers.get(name) ?? undefined;
-      },
-      async json() {
-        return request.json();
-      },
-    },
-    header(name, value) {
-      responseHeaders.set(name, value);
-    },
-    json(payload, status = 200) {
-      const headers = new Headers(responseHeaders);
-      headers.set('content-type', 'application/json');
-      return new Response(JSON.stringify(payload), {status, headers});
-    },
-  };
-}
-
 function replayRow({id, visibility, featured}) {
   return {
     id,
@@ -550,8 +453,4 @@ function fakeReplayBucket() {
       };
     },
   };
-}
-
-async function json(response) {
-  return await response.json();
 }

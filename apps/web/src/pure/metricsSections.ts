@@ -4,11 +4,11 @@ import {metricPalette, toneColor} from './paletteHelpers.js';
 
 interface MetricCardSpec {
   label: string;
-  value: number;
+  value: number | null;
   suffix: string;
   max: number;
   color: string;
-  pickHistory: (snapshot: MetricsSnapshot) => number;
+  pickHistory: (snapshot: MetricsSnapshot) => number | null;
   historyValues?: number[];
 }
 
@@ -51,7 +51,10 @@ export function buildMetricSections({
           value: metrics.cpu,
           suffix: '%',
           max: 100,
-          color: toneColor(metricTone(metrics.cpu, 70, 85)),
+          color:
+            metrics.cpu === null
+              ? metricPalette.accentPurple
+              : toneColor(metricTone(metrics.cpu, 70, 85)),
           pickHistory: (snapshot: MetricsSnapshot) => snapshot.cpu,
         },
         {
@@ -59,7 +62,10 @@ export function buildMetricSections({
           value: metrics.memory,
           suffix: '%',
           max: 100,
-          color: toneColor(metricTone(metrics.memory, 75, 90)),
+          color:
+            metrics.memory === null
+              ? metricPalette.accentPurple
+              : toneColor(metricTone(metrics.memory, 75, 90)),
           pickHistory: (snapshot: MetricsSnapshot) => snapshot.memory,
         },
         {

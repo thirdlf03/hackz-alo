@@ -14,11 +14,19 @@ export const SANDBOX_ASSET_FILES = [
   ["services/metrics/collector.mjs", "/workspace/services/metrics/collector.mjs"],
   ["services/metrics/export.mjs", "/workspace/services/metrics/export.mjs"],
   ["services/yamabiko-api/server.mjs", "/workspace/services/yamabiko-api/server.mjs"],
+  ["services/yamabiko-api/config.mjs", "/workspace/services/yamabiko-api/config.mjs"],
   ["services/fake-db/server.mjs", "/workspace/services/fake-db/server.mjs"],
+  ["services/batch/report-batch.mjs", "/workspace/services/batch/report-batch.mjs"],
+  ["services/tools/legacy-metrics-agent.mjs", "/workspace/services/tools/legacy-metrics-agent.mjs"],
+  ["services/tools/alert-flood-daemon.mjs", "/workspace/services/tools/alert-flood-daemon.mjs"],
+  ["services/tools/loadgen.mjs", "/workspace/services/tools/loadgen.mjs"],
+  ["services/monitor-agent/agent.mjs", "/workspace/services/monitor-agent/agent.mjs"],
   ["bin/fault-injector.mjs", "/workspace/bin/fault-injector.mjs"],
   ["bin/yamactl.mjs", "/workspace/bin/yamactl.mjs"],
   ["bin/kodama.mjs", "/workspace/bin/kodama.mjs"],
   ["services/batch/sales.kdm", "/workspace/services/batch/sales.kdm"],
+  ["docs/runbooks/service-recovery.md", "/workspace/docs/runbooks/service-recovery.md"],
+  ["docs/backups/service-recovery.md", "/workspace/docs/backups/service-recovery.md"],
 ];
 
 export const ASSETS_TS_RELATIVE_PATH = "apps/worker/src/sandbox/assets.ts";
@@ -64,13 +72,13 @@ interface SandboxAsset {
 const assets: SandboxAsset[] = ${JSON.stringify(assets, null, 2)};
 
 export async function installSandboxAssets(sandbox: SandboxRuntime) {
-  await sandbox.exec("mkdir -p /workspace/services/metrics /workspace/services/yamabiko-api /workspace/services/fake-db /workspace/services/batch /workspace/bin /workspace/logs /workspace/run");
+  await sandbox.exec("mkdir -p /workspace/services/metrics /workspace/services/yamabiko-api /workspace/services/fake-db /workspace/services/batch /workspace/services/tools /workspace/services/monitor-agent /workspace/bin /workspace/logs /workspace/run /workspace/etc /workspace/releases /workspace/docs/runbooks /workspace/docs/backups");
   for (const asset of assets) {
     await sandbox.writeFile(asset.path, asset.content);
   }
   await sandbox.exec(${JSON.stringify(INSTALL_BIN_COMMAND)});
   await sandbox.exec(
-    "if ! command -v vim >/dev/null 2>&1; then if command -v apt-get >/dev/null 2>&1; then apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends vim && rm -rf /var/lib/apt/lists/*; elif command -v apk >/dev/null 2>&1; then apk add --no-cache vim; fi; fi",
+    "if ! command -v vim >/dev/null 2>&1 || ! command -v ss >/dev/null 2>&1 || ! command -v lsof >/dev/null 2>&1; then if command -v apt-get >/dev/null 2>&1; then apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends vim procps iproute2 lsof jq less curl && rm -rf /var/lib/apt/lists/*; elif command -v apk >/dev/null 2>&1; then apk add --no-cache vim procps iproute2 lsof jq less curl; fi; fi",
     { cwd: "/workspace" }
   );
   await sandbox.writeFile(

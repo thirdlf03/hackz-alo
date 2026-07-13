@@ -1,6 +1,6 @@
 # 障害対応訓練シミュレーション 要件定義書
 
-このドキュメントはプロダクトの正(SSoT)である。世界観・仕様に関してはコードよりもこのドキュメントを優先する。コード側の識別子はまだ旧名称のまま残っている箇所があるが、移行対象は「旧名称からの移行メモ」節にまとめる。
+このドキュメントはプロダクトの正(SSoT)である。世界観・仕様に関してはコードよりもこのドキュメントを優先する。旧名称からの識別子移行は完了済み(経緯は「旧名称からの移行メモ」節)。
 
 ## ポジショニング
 
@@ -864,10 +864,14 @@ timeline_events:
 
 ### 実装済み
 
-- シナリオ 16 本
-  - 初級 3 本(demo-tutorial-001, disk-full-001, process-stop-001)
-  - 中級 9 本
-  - 上級 4 本
+- シナリオ 20 本
+  - 初級 7 本(process-stop-001, disk-full-001, hang-basics-001, config-rollback-001, alert-triage-001, cable-jumprope-001, janitor-power-001)
+  - 中級 9 本(api-hang-001 を含む)
+  - 上級 4 本(port-conflict-001 を含む)
+- 実症状ベースの障害注入
+  - 障害はマーカーファイルではなくサンドボックスの実状態を変える(プロセスの kill / SIGSTOP、DB 実接続の飽和、実際に読まれる設定ファイルの破壊、ポート占有)
+  - ヘルスチェックは実挙動(DB への実 TCP 接続、ログボリュームのクォータ)から決まる
+  - `yamactl` は systemctl 風の実プロセス管理(実 PID・ポート・サービス識別の確認、api / fake-db 対応)
 - 難易度選択 → シナリオ一覧 → ロビー(ソロ/マルチ問わず常時)→ ブリーフィング(録画同意)→ プレイ → Hotwash → 結果 → リプレイ の画面フロー
 - トリプルモニター canvas と Team / Tasks / Incident Log / Injects パネル
 - canvas 内録画・リプレイ・イベントログ・タイムライン同期
@@ -877,7 +881,7 @@ timeline_events:
 
 ### 今後(重点)
 
-- 初級シナリオの拡充(3 本 → 6 本以上)。手軽な入口を厚くする
+- 上級シナリオの拡充(4 本 → さらに厚く)。手応えのある難度の高い題材を増やす
 - UI 文言の日本語統一
 - リプレイ共有
 - シナリオエディタ / ユーザー作成シナリオ
@@ -929,26 +933,17 @@ timeline_events:
 
 ## 旧名称からの移行メモ
 
-このドキュメントが正であり、コード側は追って移行する。現時点ではコード側に旧識別子が残っている。世界観の転換に伴い、以下を新名称へ移行する。
+世界観の転換に伴う旧名称からの移行は**完了済み**。新旧対応の記録として残す。
 
-新旧対応。
+- サービス名「うん用」→「やまびこ」、識別子 `unyoh` → `yamabiko` — 済
+- 社内 DSL「うん言語」→「こだま」、識別子 `unlang` → `kodama` — 済
+- 「解雇」エンド → 「静かな朝 / にぎやかな朝」エンド — 済(結果画面・イベントサマリーとも blameless な文言に刷新)
+- チャット風 UI の識別子 `slack_*` → `chat_*` — 済
 
-- サービス名「うん用」→「やまびこ」、識別子 `unyoh` → `yamabiko`
-- 社内 DSL「うん言語」→「こだま」、識別子 `unlang` → `kodama`
-- 「解雇」エンド → 「静かな朝 / にぎやかな朝」エンド
-- チャット風 UI の識別子: 現行実装は `slack_message_read`(`packages/shared/src/replayEventTypes.ts`)や `slack_compose`・「Slack報告」(`packages/shared/src/events.ts`)等の Slack 由来の識別子 → `chat_message_read` 等へ改称予定
+意図的に残している互換のみ例外とする。
 
-移行対象(いずれも旧識別子・旧表記が残っている)。
-
-- `packages/scenarios/scenarios/*.yaml` と `packages/scenarios/data/*.json`(16 本。`unyoh-api`・「うん用」表記)
-- `unlang-batch-001` / `unlang-mystery-001`(シナリオ ID・内容とも「こだま」へ)
-- `sandbox/services/unyoh-api/`
-- `sandbox/bin/unctl.mjs`
-- `sandbox/runbooks/unlang-spec.md`
-- `apps/worker/src/sandbox/assets.ts`
-- `packages/shared/src/events.ts`
-- `apps/web/src/pages/ResultPage.tsx`(解雇スタンプ演出)
-- テスト: `tests/unit/recording.test.mjs`, `tests/unit/sandbox-runtime.test.mjs`, `tests/e2e/helpers.ts`
+- `packages/shared/src/events.ts` の `slack_compose` 読み取り互換: 過去に記録されたリプレイを再生するためだけに残す。新規イベントは `chat_compose` のみを記録する
+- エンディングの保存用 ID(`clear-shift` / `overtime` / `false-resolve` / `early-exit` / `aborted`)は既存リプレイとの互換のため据え置き。表示名のみ「静かな朝 / にぎやかな朝」系に統一
 
 ## 成功条件
 

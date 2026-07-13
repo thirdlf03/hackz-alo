@@ -3,6 +3,7 @@
   "version": 1,
   "title": "ログが世界を埋め尽くす夜",
   "difficulty": "beginner",
+  "difficultyScore": 120,
   "timeLimitMinutes": 5,
   "service": {
     "name": "やまびこ API",
@@ -11,7 +12,7 @@
   "briefing": [
     "やまびこ API はログを /workspace/logs に出す。",
     "ディスク使用率が高いと API は 500 を返し始める。",
-    "不要な debug.log を退避または削除してから復旧確認する。"
+    "df で全体を見て、du で怪しいログを絞り込み、tail で中身を確認する。この3つのコマンドを覚える回だと思ってほしい。"
   ],
   "startup": [
     {
@@ -103,7 +104,7 @@
     {
       "id": "runbook.disk-full",
       "title": "Disk Full 対応",
-      "body": "1. df -h で全体の使用率を見る\\n2. du -sh /workspace/logs/* で肥大化したファイルを特定する\\n3. tail で消してよいログか確認する\\n4. 不要ログを削除または圧縮する\\n5. curl localhost:8080/health で復旧確認する"
+      "body": "1. df -h で全体の使用率を見る\\n2. 犯人を決めつけず、du -sh /workspace/logs/* でどのログが肥大化しているか特定する\\n3. tail で中身を確認し、消してよいログか判断する\\n4. 不要なログを退避または削除する\\n5. curl localhost:8080/health で復旧確認する"
     }
   ],
   "chatMessages": [

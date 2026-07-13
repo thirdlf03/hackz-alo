@@ -10,19 +10,10 @@ import { fileURLToPath } from "node:url";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SCENARIO_DIR = path.join(ROOT, "packages/scenarios/data");
 
-/** Initial sandbox markers/files that are absent at session start (runtime clears api.down etc.). */
-const INITIAL_ABSENT_MARKERS = new Set([
-  "/workspace/run/api.down",
-  "/workspace/run/deploy.json",
-  "/workspace/run/db.pool.exhausted",
-  "/workspace/run/monitor.blind.json",
-  "/workspace/run/alert.spam.json",
-  "/workspace/run/runbook.gaslight.json",
-  "/workspace/run/janitor.power.pulled",
-  "/workspace/run/network.jumprope",
-  "/workspace/run/hosts.override",
-  "/workspace/run/keyboard.spill",
-  "/workspace/run/terminal.noise"
+/** Sandbox daemons that are not running at session start (only a trigger spawns them). */
+const INITIAL_ABSENT_PROCESSES = new Set([
+  "alert-flood-daemon",
+  "loadgen",
 ]);
 
 /** Conditions that pass in a healthy initial session (before any trigger). */
@@ -31,11 +22,11 @@ function conditionPassesAtStart(condition) {
     case "http_status":
       return condition.url === "http://localhost:8080/health" && condition.status === 200;
     case "process_running":
-      return condition.processId === "api";
+      return condition.processId === "api" || condition.processId === "fake-db" || condition.processId === "monitor-agent";
+    case "process_absent":
+      return INITIAL_ABSENT_PROCESSES.has(condition.processId);
     case "disk_usage_below":
       return true;
-    case "marker_absent":
-      return INITIAL_ABSENT_MARKERS.has(condition.path);
     case "log_absent":
       return condition.path === "/workspace/logs/batch.log" && condition.pattern === "こだまが返ってきません";
     case "kodama_batch_ok":

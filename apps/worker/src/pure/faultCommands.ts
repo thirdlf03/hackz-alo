@@ -8,6 +8,12 @@ export const faultCommandBuilders: Record<string, FaultCommandBuilder> = {
   process_stop: (params) =>
     `${FAULT_INJECTOR} process_stop ${shellArg(coerceString(params.processId, 'api'))}`,
 
+  process_hang: (params) =>
+    `${FAULT_INJECTOR} process_hang ${shellArg(coerceString(params.processId, 'api'))}`,
+
+  port_conflict: (params) =>
+    `${FAULT_INJECTOR} port_conflict ${String(coerceNumber(params.port, 8080))}`,
+
   disk_full: (params) =>
     `${FAULT_INJECTOR} disk_full ${shellArg(coerceString(params.path, '/workspace/logs/debug.log'))} ${String(coerceNumber(params.bytes, 67108864))}`,
 
@@ -26,17 +32,12 @@ export const faultCommandBuilders: Record<string, FaultCommandBuilder> = {
   queue_backlog: (params) =>
     `${FAULT_INJECTOR} queue_backlog ${String(coerceNumber(params.count, 32))}`,
 
-  bad_deploy: (params) =>
-    `${FAULT_INJECTOR} bad_deploy ${shellArg(coerceString(params.configPath, '/workspace/run/deploy.json'))}`,
+  bad_deploy: () => `${FAULT_INJECTOR} bad_deploy`,
 
   db_pool_exhaust: (params) =>
-    `${FAULT_INJECTOR} db_pool_exhaust ${String(coerceNumber(params.maxConnections, 40))}`,
+    `${FAULT_INJECTOR} db_pool_exhaust ${String(coerceNumber(params.connections ?? params.maxConnections, 40))}`,
 
-  memory_leak: (params) =>
-    `${FAULT_INJECTOR} memory_leak ${String(coerceNumber(params.targetPercent, 92))}`,
-
-  dns_misconfig: (params) =>
-    `${FAULT_INJECTOR} dns_misconfig ${shellArg(coerceString(params.hostsPath, '/workspace/run/hosts.override'))}`,
+  dns_misconfig: () => `${FAULT_INJECTOR} dns_misconfig`,
 
   monitor_blind: (params) =>
     `${FAULT_INJECTOR} monitor_blind ${shellArg(JSON.stringify(params.blindMetrics ?? ['cpu', 'memory']))}`,
@@ -48,10 +49,14 @@ export const faultCommandBuilders: Record<string, FaultCommandBuilder> = {
     `${FAULT_INJECTOR} janitor_power_pull ${shellArg(coerceString(params.processId, 'api'))}`,
 
   cable_jumprope: (params) =>
-    `${FAULT_INJECTOR} cable_jumprope ${shellArg(coerceString(params.hostsPath, '/workspace/run/hosts.override'))}`,
+    `${FAULT_INJECTOR} cable_jumprope ${shellArg(coerceString(params.processId, 'fake-db'))}`,
 
-  keyboard_spill: (params) =>
-    `${FAULT_INJECTOR} keyboard_spill ${shellArg(coerceString(params.noise, 'べちゃっxべちゃっ'))}`,
+  runaway_loadgen: (params) => {
+    const targetUrl = params.targetUrl;
+    return typeof targetUrl === 'string' && targetUrl !== ''
+      ? `${FAULT_INJECTOR} runaway_loadgen ${shellArg(targetUrl)}`
+      : `${FAULT_INJECTOR} runaway_loadgen`;
+  },
 
   alert_spam: (params) =>
     `${FAULT_INJECTOR} alert_spam ${String(coerceNumber(params.count, 24))}`,

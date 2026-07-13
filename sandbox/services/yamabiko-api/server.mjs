@@ -1,20 +1,28 @@
 import http from 'node:http';
-import {appendFile, mkdir, readFile, stat} from 'node:fs/promises';
-import {existsSync} from 'node:fs';
+import net from 'node:net';
+import {appendFile, mkdir, readFile} from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {
   appendTrafficSample,
+  readLogVolume,
   readServiceMetrics,
   readSystemMetrics,
   readTrafficMetrics,
 } from '../metrics/collector.mjs';
+import {ensureApiConfig, readApiConfig} from './config.mjs';
 
 const DEFAULT_WORKSPACE = process.env.WORKSPACE_DIR ?? '/workspace';
+const DB_PING_TIMEOUT_MS = 400;
+const LOG_QUOTA_UNHEALTHY_PERCENT = 90;
+const HEALTH_LOG_THROTTLE_MS = 10_000;
+
+const healthLogState = new Map();
 
 export async function prepareWorkspace(workspace = DEFAULT_WORKSPACE) {
   await mkdir(path.join(workspace, 'logs'), {recursive: true});
   await mkdir(path.join(workspace, 'run'), {recursive: true});
+  await ensureApiConfig(workspace);
 }
 
 export function createYamabikoApiServer(options = {}) {
@@ -74,58 +82,114 @@ async function appendAccessLog(workspace, method, pathname, status) {
   }
 }
 
-export async function getHealth(workspace = DEFAULT_WORKSPACE) {
-  const logDir = path.join(workspace, 'logs');
-  const runDir = path.join(workspace, 'run');
-  const downMarker = path.join(runDir, 'api.down');
-  if (existsSync(downMarker)) {
-    return {ok: false, reason: 'process marker says api is down'};
-  }
-  if (existsSync(path.join(runDir, 'janitor.power.pulled'))) {
-    return {ok: false, reason: 'janitor power pull marker active'};
-  }
-  if (
-    existsSync(path.join(runDir, 'network.jumprope')) ||
-    existsSync(path.join(runDir, 'hosts.override'))
-  ) {
-    return {
-      ok: false,
-      reason: 'network path blocked by cable or hosts override',
+/**
+ * Live TCP ping against the configured database. The connection genuinely
+ * fails (refused / timeout / pool rejection), so health reflects real state
+ * instead of marker files.
+ */
+export function pingDb(options = {}) {
+  const host = options.host ?? '127.0.0.1';
+  const port = options.port ?? 15432;
+  const timeoutMs = options.timeoutMs ?? DB_PING_TIMEOUT_MS;
+  const clientName = options.clientName ?? 'yamabiko-api';
+
+  return new Promise((resolve) => {
+    const socket = net.createConnection({host, port});
+    let buffer = '';
+    let settled = false;
+    const done = (result) => {
+      if (settled) return;
+      settled = true;
+      socket.removeAllListeners();
+      socket.destroy();
+      resolve(result);
     };
-  }
-  const deployPath = path.join(runDir, 'deploy.json');
-  if (existsSync(deployPath)) {
-    try {
-      const deploy = JSON.parse(await readFile(deployPath, 'utf8'));
-      if (deploy.healthPath && deploy.healthPath !== '/health') {
-        return {ok: false, reason: 'bad deploy: health probe misconfigured'};
+
+    socket.setTimeout(timeoutMs);
+    socket.once('connect', () => {
+      socket.write(`app ${clientName}\nping\n`);
+    });
+    socket.on('data', (chunk) => {
+      buffer += String(chunk);
+      if (buffer.includes('too many connections')) {
+        done({
+          ok: false,
+          reason: `too many connections at ${host}:${String(port)} (pool saturated)`,
+        });
+      } else if (buffer.includes('pong')) {
+        done({ok: true});
       }
-    } catch {
-      return {ok: false, reason: 'bad deploy: unreadable deploy.json'};
+    });
+    socket.once('timeout', () => {
+      done({ok: false, reason: `connect ETIMEDOUT ${host}:${String(port)}`});
+    });
+    socket.once('error', (error) => {
+      done({
+        ok: false,
+        reason: `connect ${error.code ?? 'ERROR'} ${host}:${String(port)}`,
+      });
+    });
+  });
+}
+
+export async function getHealth(workspace = DEFAULT_WORKSPACE) {
+  const configResult = await readApiConfig(workspace);
+  if (!configResult.ok) {
+    return await reportHealth(workspace, {
+      service: 'yamabiko-api',
+      version: 'unknown',
+      ok: false,
+      reason: `config: ${configResult.error}`,
+    });
+  }
+  const config = configResult.config;
+  const base = {service: config.service, version: config.version};
+
+  const db = await pingDb({host: config.dbHost, port: config.dbPort});
+  if (!db.ok) {
+    return await reportHealth(workspace, {
+      ...base,
+      ok: false,
+      reason: `db: ${db.reason}`,
+    });
+  }
+
+  const logs = await readLogVolume(workspace, config.logQuotaBytes);
+  if (logs.percent >= LOG_QUOTA_UNHEALTHY_PERCENT) {
+    const usedMb = Math.round(logs.bytes / (1024 * 1024));
+    const quotaMb = Math.round(config.logQuotaBytes / (1024 * 1024));
+    return await reportHealth(workspace, {
+      ...base,
+      ok: false,
+      reason: `logs: volume at ${String(logs.percent)}% of quota (${String(usedMb)}MB/${String(quotaMb)}MB) - writes will hit ENOSPC`,
+    });
+  }
+
+  return await reportHealth(workspace, {...base, ok: true});
+}
+
+async function reportHealth(workspace, health) {
+  const state = healthLogState.get(workspace) ?? {at: 0, reason: undefined};
+  const now = Date.now();
+  const changed = health.reason !== state.reason;
+  const throttled = now - state.at < HEALTH_LOG_THROTTLE_MS;
+  if (changed || !throttled) {
+    healthLogState.set(workspace, {at: now, reason: health.reason});
+    const line = health.ok
+      ? state.reason === undefined
+        ? undefined
+        : 'health check ok (recovered)\n'
+      : `health check failed: ${health.reason}\n`;
+    if (line && (changed || !health.ok)) {
+      try {
+        await mkdir(path.join(workspace, 'logs'), {recursive: true});
+        await appendFile(path.join(workspace, 'logs', 'app.log'), line);
+      } catch {
+        // logging must never break health reporting
+      }
     }
   }
-  if (existsSync(path.join(runDir, 'db.pool.exhausted'))) {
-    return {ok: false, reason: 'db connection pool exhausted'};
-  }
-  const debugLog = path.join(logDir, 'debug.log');
-  if (existsSync(debugLog)) {
-    const info = await stat(debugLog);
-    if (info.size > 50 * 1024 * 1024) {
-      return {ok: false, reason: 'disk pressure from debug.log'};
-    }
-  }
-  const accessLog = path.join(logDir, 'access.log');
-  if (existsSync(accessLog)) {
-    const info = await stat(accessLog);
-    if (info.size > 100 * 1024 * 1024) {
-      return {ok: false, reason: 'disk pressure from access.log'};
-    }
-  }
-  const system = await readSystemMetrics(workspace);
-  if (system.disk > 85) {
-    return {ok: false, reason: `disk usage at ${system.disk}%`};
-  }
-  return {ok: true};
+  return health;
 }
 
 export async function getMetrics(workspace = DEFAULT_WORKSPACE, tracker) {

@@ -84,6 +84,11 @@ export function metricTone(
   return 'healthy';
 }
 
+/** Formats a possibly-blind metric value; null renders as "NO DATA" instead of NaN. */
+export function formatMetricValue(value: number | null, suffix: string) {
+  return value === null ? 'NO DATA' : `${String(value)}${suffix}`;
+}
+
 export function summarizeMetricsHealth(
   metrics: MetricsSnapshot
 ): MetricsHealthSummary {
@@ -96,8 +101,16 @@ export function summarizeMetricsHealth(
     else if (tone === 'warn' && level !== 'critical') level = 'warn';
   };
 
-  raise(metricTone(metrics.cpu, 70, 85), 'CPU elevated');
-  raise(metricTone(metrics.memory, 75, 90), 'Memory pressure');
+  if (metrics.cpu === null || metrics.memory === null) {
+    issues.push('Monitoring data missing');
+    level = 'warn';
+  }
+  if (metrics.cpu !== null) {
+    raise(metricTone(metrics.cpu, 70, 85), 'CPU elevated');
+  }
+  if (metrics.memory !== null) {
+    raise(metricTone(metrics.memory, 75, 90), 'Memory pressure');
+  }
   raise(metricTone(metrics.disk, 80, 92), 'Disk pressure');
   if (metrics.http5xxRate > 0) raise('critical', 'HTTP 5xx detected');
   raise(metricTone(metrics.latencyP95Ms, 800, 1500), 'Latency spike');

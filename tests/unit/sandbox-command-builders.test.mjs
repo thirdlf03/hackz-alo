@@ -13,7 +13,6 @@ const {buildSuccessCheckCommand, successConditionBuilders} = await tsImport(
 const {
   isWorkspacePath,
   normalizeEditableWorkspacePath,
-  normalizeWorkspaceMarkerPath,
   shellArg,
   shellPathSegment,
 } = await tsImport(
@@ -26,6 +25,8 @@ const faultInjector = 'node /workspace/bin/fault-injector.mjs';
 test('buildFaultCommand covers every registered fault type', () => {
   const cases = [
     ['process_stop', {processId: 'api'}, `${faultInjector} process_stop 'api'`],
+    ['process_hang', {processId: 'api'}, `${faultInjector} process_hang 'api'`],
+    ['port_conflict', {port: 8080}, `${faultInjector} port_conflict 8080`],
     [
       'disk_full',
       {path: '/workspace/logs/debug.log', bytes: 1500},
@@ -41,22 +42,13 @@ test('buildFaultCommand covers every registered fault type', () => {
       `${faultInjector} kodama_batch_failure '/workspace/services/batch/sale'"'"'s.kdm' 'sales-nightly' spec-in-comments`,
     ],
     ['queue_backlog', {count: 7}, `${faultInjector} queue_backlog 7`],
-    [
-      'bad_deploy',
-      {configPath: '/workspace/run/deploy.json'},
-      `${faultInjector} bad_deploy '/workspace/run/deploy.json'`,
-    ],
+    ['bad_deploy', {}, `${faultInjector} bad_deploy`],
     [
       'db_pool_exhaust',
-      {maxConnections: 12},
+      {connections: 12},
       `${faultInjector} db_pool_exhaust 12`,
     ],
-    ['memory_leak', {targetPercent: 91}, `${faultInjector} memory_leak 91`],
-    [
-      'dns_misconfig',
-      {hostsPath: '/workspace/run/hosts.override'},
-      `${faultInjector} dns_misconfig '/workspace/run/hosts.override'`,
-    ],
+    ['dns_misconfig', {}, `${faultInjector} dns_misconfig`],
     [
       'monitor_blind',
       {blindMetrics: ['disk']},
@@ -74,13 +66,13 @@ test('buildFaultCommand covers every registered fault type', () => {
     ],
     [
       'cable_jumprope',
-      {hostsPath: '/workspace/run/hosts.override'},
-      `${faultInjector} cable_jumprope '/workspace/run/hosts.override'`,
+      {processId: 'fake-db'},
+      `${faultInjector} cable_jumprope 'fake-db'`,
     ],
     [
-      'keyboard_spill',
-      {noise: 'sticky'},
-      `${faultInjector} keyboard_spill 'sticky'`,
+      'runaway_loadgen',
+      {targetUrl: 'http://127.0.0.1:8080/orders'},
+      `${faultInjector} runaway_loadgen 'http://127.0.0.1:8080/orders'`,
     ],
     ['alert_spam', {count: 6}, `${faultInjector} alert_spam 6`],
     [
@@ -108,6 +100,10 @@ test('buildFaultCommand applies defaults and rejects unknown types', () => {
     buildFaultCommand('monitor_blind', {}),
     `${faultInjector} monitor_blind '["cpu","memory"]'`
   );
+  assert.equal(
+    buildFaultCommand('runaway_loadgen', {}),
+    `${faultInjector} runaway_loadgen`
+  );
   assert.throws(
     () => buildFaultCommand('does_not_exist', {}),
     /unknown fault type: does_not_exist/
@@ -120,12 +116,12 @@ test('buildSuccessCheckCommand covers every success condition type', () => {
     'http_status',
     'kodama_batch_ok',
     'log_absent',
-    'marker_absent',
+    'process_absent',
     'process_running',
   ]);
 
   const httpScript =
-    'fetch("http://127.0.0.1:8080/health").then(r=>process.exit(r.status===200?0:1)).catch(()=>process.exit(1))';
+    'fetch("http://127.0.0.1:8080/health",{signal:AbortSignal.timeout(2000)}).then(r=>process.exit(r.status===200?0:1)).catch(()=>process.exit(1))';
   assert.equal(
     buildSuccessCheckCommand({
       type: 'http_status',
@@ -136,14 +132,41 @@ test('buildSuccessCheckCommand covers every success condition type', () => {
   );
   assert.equal(
     buildSuccessCheckCommand({type: 'process_running', processId: 'api'}),
-    'test ! -f /workspace/run/api.down'
+    "pgrep -f 'yamabiko-api/server\\.mjs' > /dev/null"
+  );
+  assert.equal(
+    buildSuccessCheckCommand({type: 'process_running', processId: 'fake-db'}),
+    "pgrep -f 'fake-db/server\\.mjs' > /dev/null"
+  );
+  assert.equal(
+    buildSuccessCheckCommand({type: 'process_running', processId: 'worker'}),
+    'test ! -f /workspace/run/worker.down'
+  );
+  assert.equal(
+    buildSuccessCheckCommand({type: 'process_absent', processId: 'api'}),
+    "! pgrep -f 'yamabiko-api/server\\.mjs' > /dev/null"
   );
   assert.equal(
     buildSuccessCheckCommand({
-      type: 'marker_absent',
-      path: "/workspace/run/api's.down",
+      type: 'process_absent',
+      processId: 'alert-flood-daemon',
     }),
-    `test ! -e ${shellArg("/workspace/run/api's.down")}`
+    "! pgrep -f 'alert-flood-daemon\\.mjs' > /dev/null"
+  );
+  assert.equal(
+    buildSuccessCheckCommand({type: 'process_absent', processId: 'loadgen'}),
+    "! pgrep -f 'loadgen\\.mjs' > /dev/null"
+  );
+  assert.equal(
+    buildSuccessCheckCommand({
+      type: 'process_absent',
+      processId: 'monitor-agent',
+    }),
+    "! pgrep -f 'monitor-agent/agent\\.mjs' > /dev/null"
+  );
+  assert.equal(
+    buildSuccessCheckCommand({type: 'process_absent', processId: 'worker'}),
+    'test -f /workspace/run/worker.down'
   );
   assert.equal(
     buildSuccessCheckCommand({type: 'kodama_batch_ok', jobId: 'nightly'}),
@@ -154,12 +177,15 @@ test('buildSuccessCheckCommand covers every success condition type', () => {
 test('buildSuccessCheckCommand creates disk and log scripts', () => {
   const diskCommand = buildSuccessCheckCommand({
     type: 'disk_usage_below',
-    path: '/workspace/logs/debug.log',
+    path: '/workspace',
     valuePercent: 80,
   });
   assert.match(diskCommand, /^node -e '/);
   assert.match(diskCommand, /execFileSync\("df"/);
-  assert.match(diskCommand, /target="\/workspace\/logs\/debug\.log"/);
+  assert.match(diskCommand, /target="\/workspace"/);
+  // log volume quota counts toward disk usage so cleanup is really required
+  assert.match(diskCommand, /logQuotaBytes/);
+  assert.match(diskCommand, /readdirSync\("\/workspace\/logs"\)/);
   assert.match(diskCommand, /used<80/);
 
   const logCommand = buildSuccessCheckCommand({
@@ -184,25 +210,18 @@ test('path and shell safety helpers preserve workspace boundaries', () => {
   assert.throws(() => shellPathSegment('api/down'), /invalid process id/);
 
   assert.equal(
-    normalizeWorkspaceMarkerPath('/workspace/run/api.down'),
-    '/workspace/run/api.down'
-  );
-  assert.throws(
-    () => normalizeWorkspaceMarkerPath('/tmp/api.down'),
-    /marker path must stay inside/
-  );
-  assert.throws(
-    () => normalizeWorkspaceMarkerPath('/workspace/run/../api.down'),
-    /marker path must stay inside/
-  );
-
-  assert.equal(
     normalizeEditableWorkspacePath('/workspace/services/app.js'),
     '/workspace/services/app.js'
   );
   assert.equal(
-    normalizeEditableWorkspacePath('/workspace/run/deploy.json'),
-    '/workspace/run/deploy.json'
+    normalizeEditableWorkspacePath('/workspace/etc/yamabiko-api.json'),
+    '/workspace/etc/yamabiko-api.json'
+  );
+  assert.equal(
+    normalizeEditableWorkspacePath(
+      '/workspace/releases/yamabiko-api.previous.json'
+    ),
+    '/workspace/releases/yamabiko-api.previous.json'
   );
   assert.throws(
     () => normalizeEditableWorkspacePath('/workspace/logs/debug.log'),

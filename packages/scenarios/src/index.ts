@@ -1,11 +1,15 @@
 import type {Difficulty, ScenarioDefinition} from '@incident/shared';
 import {validateScenarioDefinition} from '@incident/shared';
-import demoTutorial from '../data/demo-tutorial-001.json' with {type: 'json'};
 import processStop from '../data/process-stop-001.json' with {type: 'json'};
 import diskFull from '../data/disk-full-001.json' with {type: 'json'};
+import hangBasics from '../data/hang-basics-001.json' with {type: 'json'};
+import configRollback from '../data/config-rollback-001.json' with {type: 'json'};
+import alertTriage from '../data/alert-triage-001.json' with {type: 'json'};
 import kodamaBatch from '../data/kodama-batch-001.json' with {type: 'json'};
 import dbPool from '../data/db-pool-001.json' with {type: 'json'};
 import badDeploy from '../data/bad-deploy-001.json' with {type: 'json'};
+import apiHang from '../data/api-hang-001.json' with {type: 'json'};
+import portConflict from '../data/port-conflict-001.json' with {type: 'json'};
 import logBloat from '../data/log-bloat-001.json' with {type: 'json'};
 import diskRestartLoop from '../data/disk-restart-loop-001.json' with {type: 'json'};
 import monitorBlind from '../data/monitor-blind-001.json' with {type: 'json'};
@@ -17,24 +21,43 @@ import alertSpam from '../data/alert-spam-001.json' with {type: 'json'};
 import runbookGaslight from '../data/runbook-gaslight-001.json' with {type: 'json'};
 import chaoticNight from '../data/chaotic-night-001.json' with {type: 'json'};
 
-export const scenarios = [
-  demoTutorial,
-  processStop,
-  diskFull,
-  kodamaBatch,
-  dbPool,
-  badDeploy,
-  logBloat,
-  diskRestartLoop,
-  monitorBlind,
-  kodamaMystery,
-  janitorPower,
-  cableJumprope,
-  keyboardSpill,
-  alertSpam,
-  runbookGaslight,
-  chaoticNight,
-] as ScenarioDefinition[];
+const difficultyOrder: Record<Difficulty, number> = {
+  beginner: 0,
+  intermediate: 1,
+  advanced: 2,
+};
+
+export const scenarios = (
+  [
+    processStop,
+    diskFull,
+    hangBasics,
+    configRollback,
+    alertTriage,
+    kodamaBatch,
+    dbPool,
+    badDeploy,
+    apiHang,
+    portConflict,
+    logBloat,
+    diskRestartLoop,
+    monitorBlind,
+    kodamaMystery,
+    janitorPower,
+    cableJumprope,
+    keyboardSpill,
+    alertSpam,
+    runbookGaslight,
+    chaoticNight,
+  ] as ScenarioDefinition[]
+).sort((a, b) => {
+  const difficultyDiff =
+    difficultyOrder[a.difficulty] - difficultyOrder[b.difficulty];
+  if (difficultyDiff !== 0) return difficultyDiff;
+  const scoreDiff = a.difficultyScore - b.difficultyScore;
+  if (scoreDiff !== 0) return scoreDiff;
+  return a.id.localeCompare(b.id);
+});
 
 export function listScenarios() {
   return scenarios.map((scenario) => ({

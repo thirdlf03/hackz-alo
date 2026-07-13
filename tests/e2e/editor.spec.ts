@@ -3,7 +3,7 @@ import {
   acceptRecordingConsent,
   clickCenterTool,
   clickEditorFile,
-  openDemoScenarioBriefing,
+  openDefaultScenarioBriefing,
   retireFromGame,
   setSaveRecording,
   startGameFromBriefing,
@@ -17,7 +17,7 @@ test('editor file open edit save updates sandbox file and replay timeline', asyn
   page,
   request,
 }) => {
-  const session = await openDemoScenarioBriefing(page);
+  const session = await openDefaultScenarioBriefing(page);
   await acceptRecordingConsent(page);
   await setSaveRecording(page, false);
   await startGameFromBriefing(page);

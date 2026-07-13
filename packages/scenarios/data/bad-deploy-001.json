@@ -3,14 +3,16 @@
   "version": 1,
   "title": "壊れたデプロイの夜",
   "difficulty": "intermediate",
+  "difficultyScore": 220,
   "timeLimitMinutes": 10,
   "service": {
     "name": "やまびこ API",
     "healthUrl": "http://localhost:8080/health"
   },
   "briefing": [
-    "デプロイ直後の 5xx は設定ミスを疑う。",
-    "deploy.json と app.log を見る。"
+    "デプロイ直後に 5xx が出たら、まず「直前に何が変わったか」を疑う。",
+    "deploy.log とアプリ設定、そして前リリースとの差分が手がかり。",
+    "切り戻し(ロールバック)は立派な暫定復旧。"
   ],
   "startup": [
     {
@@ -60,9 +62,7 @@
       "id": "bad-deploy",
       "atMs": 45000,
       "type": "bad_deploy",
-      "params": {
-        "configPath": "/workspace/run/deploy.json"
-      }
+      "params": {}
     }
   ],
   "alerts": [
@@ -83,20 +83,23 @@
     {
       "type": "process_running",
       "processId": "api"
-    },
-    {
-      "type": "marker_absent",
-      "path": "/workspace/run/deploy.json"
     }
   ],
   "runbooks": [
     {
       "id": "runbook.deploy",
-      "title": "Bad deploy",
-      "body": "1. cat /workspace/run/deploy.json\\n2. rm /workspace/run/deploy.json\\n3. curl localhost:8080/health\\n4. 再発する場合のみ yamactl restart api"
+      "title": "デプロイ起因障害の初動",
+      "body": "1. /workspace/logs/deploy.log で直近のデプロイ時刻とバージョンを確認する\n2. エラーログ(app.log)の内容を読み、どこへの接続が失敗しているか把握する\n3. アプリ設定 /workspace/etc/yamabiko-api.json を開き、前リリース\n   (/workspace/releases/yamabiko-api.previous.json)と見比べる\n4. 切り戻す(前リリースの設定を書き戻す)か、設定を修正する\n5. curl localhost:8080/health で復旧確認する(設定は自動反映、再起動不要)"
     }
   ],
-  "chatMessages": [],
+  "chatMessages": [
+    {
+      "id": "boss-deploy",
+      "atMs": 95000,
+      "from": "上司",
+      "body": "さっきのデプロイ？僕は何も変えてないよ。おやすみ。"
+    }
+  ],
   "navigationSteps": [
     {
       "id": "nav-5xx",
@@ -105,17 +108,17 @@
       "panel": "metrics"
     },
     {
-      "id": "nav-deploy",
+      "id": "nav-deploy-log",
       "atMs": 50000,
-      "hint": "deploy.json の内容を確認する",
+      "hint": "直近のデプロイ履歴を確認する",
       "panel": "terminal",
-      "suggestedCommand": "cat /workspace/run/deploy.json"
+      "suggestedCommand": "tail /workspace/logs/deploy.log"
     },
     {
-      "id": "nav-runbook",
+      "id": "nav-config",
       "atMs": 80000,
-      "hint": "Bad deploy Runbook を参照する",
-      "panel": "runbook"
+      "hint": "設定を前リリースと見比べる",
+      "panel": "editor"
     }
   ]
 }

@@ -2,6 +2,11 @@
 # Skip hooks: LEFTHOOK=0 git push
 # CI skips hook installation automatically (CI=true during pnpm install).
 
+commit-msg:
+  commands:
+    conventional:
+      run: node scripts/check-commit-msg.mjs {1}
+
 pre-push:
   parallel: true
   commands:
