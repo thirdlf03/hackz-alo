@@ -18,17 +18,140 @@ test('AI Assist benchmark arguments have safe repeatable defaults', () => {
     headless: false,
     help: false,
     appendImage: false,
+    stateText: false,
+    grounding: false,
+    stateFormat: 'flat',
+    monochrome: false,
   });
   assert.equal(parseAiAssistArgs(['--repeat', '5', '--headless']).repeat, 5);
   assert.equal(parseAiAssistArgs(['--', '--repeat', '5']).repeat, 5);
   assert.equal(parseAiAssistArgs(['--current-chrome']).currentChrome, true);
   assert.equal(parseAiAssistArgs(['--append-image']).appendImage, true);
+  assert.equal(parseAiAssistArgs(['--state-text']).stateText, true);
+  assert.equal(parseAiAssistArgs(['--grounding']).grounding, true);
   assert.equal(
     parseAiAssistArgs(['--cdp-url', 'http://localhost:9222']).cdpUrl,
     'http://localhost:9222'
   );
   assert.throws(() => parseAiAssistArgs(['--repeat', '0']), /positive integer/);
   assert.throws(() => parseAiAssistArgs(['--wat']), /unknown option/);
+  assert.throws(
+    () => parseAiAssistArgs(['--append-image', '--state-text']),
+    /--append-image and --state-text cannot be combined/
+  );
+});
+
+test('--state-format is parsed and validated', () => {
+  assert.equal(
+    parseAiAssistArgs(['--state-text', '--state-format', 'panels']).stateFormat,
+    'panels'
+  );
+  assert.equal(
+    parseAiAssistArgs(['--state-text', '--state-format', 'flat']).stateFormat,
+    'flat'
+  );
+  assert.throws(
+    () => parseAiAssistArgs(['--state-text', '--state-format', 'bogus']),
+    /--state-format must be flat or panels/
+  );
+  assert.throws(
+    () => parseAiAssistArgs(['--state-format', 'panels']),
+    /--state-format requires --state-text/
+  );
+  assert.throws(
+    () => parseAiAssistArgs(['--state-format', 'flat']),
+    /--state-format requires --state-text/
+  );
+});
+
+test('--monochrome is parsed and rejects combination with --state-text', () => {
+  assert.equal(parseAiAssistArgs(['--monochrome']).monochrome, true);
+  assert.equal(parseAiAssistArgs(['--append-image', '--monochrome']).monochrome, true);
+  assert.throws(
+    () => parseAiAssistArgs(['--state-text', '--monochrome']),
+    /--monochrome and --state-text cannot be combined/
+  );
+});
+
+test('run summary aggregates grounding statuses per case and overall', () => {
+  const summary = summarizeAiAssistRuns([
+    {
+      caseId: 'a',
+      quality: {score: 1, passed: true},
+      metrics: {},
+      grounding: {status: 'ok'},
+    },
+    {
+      caseId: 'a',
+      quality: {score: 1, passed: true},
+      metrics: {},
+      grounding: {status: 'rejected', reason: 'unverifiable command: kubectl'},
+    },
+    {
+      caseId: 'a',
+      quality: {score: 1, passed: true},
+      metrics: {},
+      grounding: {status: 'unverified', reason: 'chat-prose'},
+    },
+    {
+      caseId: 'b',
+      quality: {score: 1, passed: true},
+      metrics: {},
+    },
+  ]);
+  assert.deepEqual(summary.grounding, {
+    total: 3,
+    ok: 1,
+    repaired: 0,
+    rejected: 1,
+    unverified: 1,
+    no_next_step: 0,
+  });
+  const caseA = summary.byCase.find((item) => item.caseId === 'a');
+  assert.deepEqual(caseA.grounding, {
+    total: 3,
+    ok: 1,
+    repaired: 0,
+    rejected: 1,
+    unverified: 1,
+    no_next_step: 0,
+  });
+  const caseB = summary.byCase.find((item) => item.caseId === 'b');
+  assert.equal(caseB.grounding, undefined);
+});
+
+test('run summary reports passRateAfterGrounding alongside the raw pass rate', () => {
+  const summary = summarizeAiAssistRuns([
+    {
+      caseId: 'a',
+      quality: {score: 1, passed: true},
+      qualityAfterGrounding: {score: 1, passed: true},
+      metrics: {},
+      grounding: {status: 'ok'},
+    },
+    {
+      caseId: 'a',
+      // raw score looks passing, but the rejected command degrades the
+      // grounded answer to a failing one.
+      quality: {score: 1, passed: true},
+      qualityAfterGrounding: {score: 0, passed: false},
+      metrics: {},
+      grounding: {status: 'rejected', reason: 'unverifiable command: kubectl'},
+    },
+  ]);
+  assert.equal(summary.allRunPassRate, 1);
+  assert.equal(summary.passRateAfterGrounding, 0.5);
+  const caseA = summary.byCase.find((item) => item.caseId === 'a');
+  assert.equal(caseA.passRate, 1);
+  assert.equal(caseA.passRateAfterGrounding, 0.5);
+});
+
+test('passRateAfterGrounding is omitted when grounding was never applied', () => {
+  const summary = summarizeAiAssistRuns([
+    {caseId: 'a', quality: {score: 1, passed: true}, metrics: {}},
+  ]);
+  assert.equal(summary.passRateAfterGrounding, undefined);
+  assert.equal(summary.byCase[0].passRateAfterGrounding, undefined);
 });
 
 test('case validation rejects ambiguous fixtures early', () => {
