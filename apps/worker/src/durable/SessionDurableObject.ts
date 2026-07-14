@@ -33,6 +33,11 @@ import {
 import {persistReplayStart, persistSession} from './sessionPersistence.js';
 import {handleSessionRtcSignal} from './sessionRtc.js';
 import {handleSessionPagerEvent} from './sessionPagerEvents.js';
+import {
+  checkRecoveryAction,
+  type EvaluateConditionFn,
+  type RecoveryCheckResult,
+} from './sessionRecoveryCheck.js';
 import {resolveSessionAction} from './sessionResolve.js';
 import {
   readSessionFileContent,
@@ -53,6 +58,7 @@ import {
   requireScenario,
   SessionExerciseHub,
 } from './sessionExerciseHandlers.js';
+import {createInflightTtlCache} from '../pure/inflightTtlCache.js';
 import {dispatchSessionRoute, matchSessionRoute} from './sessionRouter.js';
 import {
   buildClockPayload,
@@ -74,6 +80,7 @@ import {
 } from './sessionTerminalHandlers.js';
 import {
   destroySessionSandbox,
+  evaluateSuccessCondition,
   injectFault,
   prepareScenarioSandbox,
   startScenarioSandbox,
@@ -89,6 +96,10 @@ const SESSION_FILE_BODY_MAX_BYTES = 1024 * 1024;
 // sleep after ~16 minutes of inactivity, so a longer TTL risks the DO's
 // in-memory cache drifting from the container's actual state.
 const SANDBOX_PREPARE_CACHE_TTL_MS = 60 * 1000;
+// Short TTL: absorbs rapid repeat "recovery-check" polling (e.g. a client
+// re-checking right after a fix) without re-running the sandbox exec for
+// every request; long enough to matter, short enough to stay fresh.
+const RECOVERY_CHECK_CACHE_TTL_MS = 5 * 1000;
 
 export class SessionDurableObject implements DurableObject {
   private metricsCache: MetricsCache = {cachedAt: 0};
@@ -100,6 +111,11 @@ export class SessionDurableObject implements DurableObject {
     result: SandboxPrepareResult;
     expiresAt: number;
   };
+  private recoveryCheckFn?: (
+    session: StoredSession
+  ) => Promise<RecoveryCheckResult>;
+  private evaluateRecoveryCheckCondition: EvaluateConditionFn =
+    evaluateSuccessCondition;
   private terminalDimensions: TerminalDimensions = {cols: 80, rows: 24};
   private lastAlertPagerSentAt = 0;
 
@@ -191,6 +207,7 @@ export class SessionDurableObject implements DurableObject {
             prepare: (req) => this.prepare(req),
             start: (req) => this.start(req),
             resolve: () => this.resolve(),
+            recoveryCheck: () => this.recoveryCheck(),
             retire: () => this.retire(),
             timeout: () => this.timeout(),
             delete: () => this.deleteSession(),
@@ -369,6 +386,27 @@ export class SessionDurableObject implements DurableObject {
         this.sseHub.broadcast(event, data);
       },
     });
+  }
+
+  private async recoveryCheck() {
+    const session = await this.requireRunningSession(
+      'recovery check requires a running session'
+    );
+    return jsonOk(await this.getRecoveryCheckResult(session));
+  }
+
+  private getRecoveryCheckResult(
+    session: StoredSession
+  ): Promise<RecoveryCheckResult> {
+    this.recoveryCheckFn ??= createInflightTtlCache(
+      (target: StoredSession) =>
+        checkRecoveryAction(target, {
+          env: this.env,
+          evaluateCondition: this.evaluateRecoveryCheckCondition,
+        }),
+      RECOVERY_CHECK_CACHE_TTL_MS
+    );
+    return this.recoveryCheckFn(session);
   }
 
   private async retire() {

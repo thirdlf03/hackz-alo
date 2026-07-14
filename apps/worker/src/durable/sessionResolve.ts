@@ -10,6 +10,7 @@ import {
   diffServiceHealth,
 } from '../pure/serviceHealthMap.js';
 import {evaluateSuccessCondition} from '../sandbox/runtime.js';
+import {evaluateSuccessChecks} from './sessionRecoveryCheck.js';
 import {requireScenario} from './sessionExerciseHandlers.js';
 import {
   getGameTimeMs,
@@ -47,15 +48,11 @@ export async function resolveSessionAction(
 ) {
   const scenario = requireScenario(session.scenarioId);
   const incidentStarted = canDeclareRecovery(scenario, session.triggeredIds);
-  const checks: SuccessCheck[] = await Promise.all(
-    scenario.successConditions.map(async (condition) => ({
-      condition,
-      ok: await evaluateSuccessCondition(
-        deps.env,
-        session.sessionId,
-        condition
-      ),
-    }))
+  const checks: SuccessCheck[] = await evaluateSuccessChecks(
+    evaluateSuccessCondition,
+    deps.env,
+    session.sessionId,
+    scenario.successConditions
   );
   const resolved = incidentStarted && checks.every((check) => check.ok);
   const beforeHealth = computeServiceHealthMap(
