@@ -19,11 +19,12 @@ import {
   createAssistantSessionPool,
   type AssistantSession,
 } from '../effect/promptAssistant.js';
-import {detectAssistIntent} from '../pure/assistIntent.js';
+import {detectAssistIntent, type AssistIntent} from '../pure/assistIntent.js';
 import {
   finalizeAssistAnswer,
   type FinalizedAssistNextStep,
 } from '../pure/assistAnswerPipeline.js';
+import {resolveAnswerPresentation} from '../pure/assistAnswerPresentation.js';
 import {splitAnswerForMasking} from '../pure/assistAnswerMask.js';
 import {groundAssistNextStep} from '../pure/assistGrounding.js';
 import {buildCanvasViewModel} from '../pure/canvasViewModel.js';
@@ -116,6 +117,7 @@ export function AiAssistPanel(props: {
     prose: string;
     nextStep?: FinalizedAssistNextStep;
   }>();
+  const [answerIntent, setAnswerIntent] = useState<AssistIntent>();
   const [completionCard, setCompletionCard] = useState<CompletionCard>();
   const [lastExchange, setLastExchange] = useState<AssistStateLastExchange>();
   const selectionStartRef = useRef<{x: number; y: number} | null>(null);
@@ -292,6 +294,7 @@ export function AiAssistPanel(props: {
     setAssistError(undefined);
     setAnswer('');
     setFinalized(undefined);
+    setAnswerIntent(detectAssistIntent(prompt));
     let session: AssistantSession | undefined;
     let accumulatedAnswer = '';
     let screenLines: string[] | undefined;
@@ -637,21 +640,38 @@ export function AiAssistPanel(props: {
               </>
             );
           })()}
-        {!completionCard && !busy && finalized && (
-          <>
-            {finalized.prose && (
-              <p class='ai-assist-answer'>{finalized.prose}</p>
-            )}
-            {finalized.nextStep && (
-              <NextStepDisplay
-                nextStep={finalized.nextStep}
-                currentRunbookStepInstruction={getCurrentRunbookStepInstruction(
-                  props.gameStateRef.current
+        {!completionCard &&
+          !busy &&
+          finalized &&
+          (() => {
+            const presentation = resolveAnswerPresentation(
+              answerIntent ?? 'other',
+              finalized
+            );
+            return (
+              <>
+                {finalized.prose && (
+                  <p class='ai-assist-answer'>{finalized.prose}</p>
                 )}
-              />
-            )}
-          </>
-        )}
+                {finalized.nextStep &&
+                  presentation.showCommandAs === 'reference' &&
+                  finalized.nextStep.verdict === 'ok' && (
+                    <p class='ai-assist-nextstep-reference'>
+                      参考コマンド: {finalized.nextStep.command}
+                    </p>
+                  )}
+                {finalized.nextStep &&
+                  presentation.showCommandAs !== 'reference' && (
+                    <NextStepDisplay
+                      nextStep={finalized.nextStep}
+                      currentRunbookStepInstruction={getCurrentRunbookStepInstruction(
+                        props.gameStateRef.current
+                      )}
+                    />
+                  )}
+              </>
+            );
+          })()}
       </section>
       {selectionBounds &&
         createPortal(

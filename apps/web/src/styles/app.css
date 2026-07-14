@@ -2031,6 +2031,14 @@ canvas:focus-visible {
   overflow-wrap: anywhere;
 }
 
+.ai-assist-nextstep-reference {
+  margin: 4px 0 0;
+  color: var(--text-secondary);
+  font-size: 11px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .ai-assist-grounding {
   margin-top: 4px;
 }
