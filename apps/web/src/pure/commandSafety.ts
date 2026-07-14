@@ -35,7 +35,7 @@ const BLOCKED_RM_TARGETS = new Set([
 ]);
 
 /** Matches an `rm` invocation and captures its flag tokens and first target argument. */
-const RM_INVOCATION_PATTERN = /\brm\b((?:\s+-[a-z]+)*)\s+(\S+)/;
+const RM_INVOCATION_PATTERN = /\brm\b((?:\s+-[a-z]+)*)\s+(\S+)/g;
 
 const BLOCKED_PATTERNS: {pattern: RegExp; reason: string}[] = [
   {
@@ -122,23 +122,50 @@ export function classifyCommandSafety(command: string): CommandSafetyResult {
  * 'confirm' depending on its target: `rm -rf /workspace` (annihilate
  * everything) is blocked, but `rm -rf /workspace/logs/batch.log` (a named
  * path, e.g. the correct disk-full recovery step) is only 'confirm'.
+ *
+ * A prose section (e.g. an assistant's "次の一手" text) can embed *multiple*
+ * rm invocations, so every occurrence is scanned (not just the first) and
+ * the most severe verdict (blocked > confirm) is adopted — a later blocked
+ * invocation must not be shadowed by an earlier confirm-level one.
  */
 function classifyRmInvocation(
   normalized: string
 ): CommandSafetyResult | undefined {
-  const match = RM_INVOCATION_PATTERN.exec(normalized);
-  if (!match) return undefined;
-  const flagLetters = (match[1] ?? '').replace(/[^a-z]/g, '');
-  const target = stripTrailingPunctuation(match[2] ?? '');
-  const recursive = flagLetters.includes('r');
-  const forced = flagLetters.includes('f');
-  if (recursive && forced && BLOCKED_RM_TARGETS.has(target)) {
-    return {
-      level: 'blocked',
-      reason: 'rm -rf によるワークスペース/システム全体の回復不能な削除です',
-    };
+  RM_INVOCATION_PATTERN.lastIndex = 0;
+  let worst: CommandSafetyResult | undefined;
+  let match: RegExpExecArray | null;
+  while ((match = RM_INVOCATION_PATTERN.exec(normalized)) !== null) {
+    const flagLetters = (match[1] ?? '').replace(/[^a-z]/g, '');
+    const target = stripTrailingPunctuation(match[2] ?? '');
+    const recursive = flagLetters.includes('r');
+    const forced = flagLetters.includes('f');
+    if (recursive && forced && isBlockedRmTarget(target)) {
+      // blocked is the most severe level possible; no need to keep scanning.
+      return {
+        level: 'blocked',
+        reason: 'rm -rf によるワークスペース/システム全体の回復不能な削除です',
+      };
+    }
+    worst = {level: 'confirm', reason: 'ファイル削除操作のため実行前に要確認です'};
   }
-  return {level: 'confirm', reason: 'ファイル削除操作のため実行前に要確認です'};
+  return worst;
+}
+
+/**
+ * A target is blocked if it's an exact root-level target (see
+ * BLOCKED_RM_TARGETS), or a wildcard directly under one (e.g.
+ * `/workspace/*`, `/*`, `~/*`) — deleting everything one level below a
+ * blocked root is equivalent in destructiveness to deleting the root
+ * itself. Wildcards on deeper paths (e.g. `/workspace/logs/*`) stay
+ * 'confirm', since they're a legitimate targeted cleanup.
+ */
+function isBlockedRmTarget(target: string): boolean {
+  if (BLOCKED_RM_TARGETS.has(target)) return true;
+  if (target.endsWith('/*')) {
+    const base = target.slice(0, -2) || '/';
+    return BLOCKED_RM_TARGETS.has(base);
+  }
+  return false;
 }
 
 function stripTrailingPunctuation(token: string): string {

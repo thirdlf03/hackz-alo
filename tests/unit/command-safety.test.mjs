@@ -56,3 +56,23 @@ for (const vector of vectors) {
     );
   });
 }
+
+test('multi-stage rm: the most severe level wins regardless of which rm appears first', () => {
+  const confirmThenBlocked =
+    'rm -rf /workspace/logs/batch.log を削除してから rm -rf / でクリーンアップする';
+  const blockedThenConfirm =
+    'rm -rf / でクリーンアップしてから rm -rf /workspace/logs/batch.log も削除する';
+
+  for (const classify of [classifyCommandSafetyTs, classifyCommandSafetyMjs]) {
+    assert.equal(
+      classify(confirmThenBlocked).level,
+      'blocked',
+      'a later blocked-level rm must not be shadowed by an earlier confirm-level rm'
+    );
+    assert.equal(
+      classify(blockedThenConfirm).level,
+      'blocked',
+      'an earlier blocked-level rm must not be downgraded by a later confirm-level rm'
+    );
+  }
+});
