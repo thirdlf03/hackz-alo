@@ -7,6 +7,7 @@ import type {
   ScenarioDefinition,
 } from '@incident/shared';
 import type {ApiClientSurface} from '../api/client.js';
+import type {GameStateWriteGuard} from '../pure/gameStateWriteGuard.js';
 import type {ReplayEventEmitter} from '../game/events/emitReplayEvent.js';
 import type {
   SessionClockResponse,
@@ -90,6 +91,11 @@ export interface SessionRuntimeBindings {
   applyParticipantCursor: (event: ParticipantCursorEvent) => void;
   /** ウォールーム音声(WebRTC)のシグナリング受信ハンドラ。 */
   rtcSignalHandlerRef: {current: ((data: unknown) => void) | undefined};
+  /** Direct gameStateRef writers (including useSessionGameLoop's 500ms
+   * tick) tag every state they write so the gameState->ref mirroring
+   * effect in useSessionRuntime can detect and skip stale commits; see
+   * gameStateWriteGuard.ts. */
+  gameStateWriteGuard: GameStateWriteGuard<GameRenderState>;
 }
 
 export interface SessionRuntimeBootstrapOptions {

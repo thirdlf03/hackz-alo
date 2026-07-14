@@ -4,8 +4,15 @@ import {advanceGameState, decayWorldOverlays} from '../game/state/gameState.js';
 import type {SessionRuntimeBindings} from './sessionRuntimeTypes.js';
 
 export function useSessionGameLoop(bindings: SessionRuntimeBindings) {
-  const {screen, session, refs, setGameState, endSession, patchGameStateRef} =
-    bindings;
+  const {
+    screen,
+    session,
+    refs,
+    setGameState,
+    endSession,
+    patchGameStateRef,
+    gameStateWriteGuard,
+  } = bindings;
 
   useEffect(() => {
     if (screen !== 'play' || !session) return;
@@ -35,6 +42,7 @@ export function useSessionGameLoop(bindings: SessionRuntimeBindings) {
         previous.monitors.left.alerts,
         previous.monitors.right.chatMessages
       );
+      gameStateWriteGuard.tag(next);
       refs.gameStateRef.current = next;
       setGameState(next);
       if (elapsedMs >= next.clock.timeLimitMs) void endSession('timeout');

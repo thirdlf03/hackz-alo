@@ -14,6 +14,7 @@ import {
 } from '../../game/state/gameState.js';
 import {centerEditorOverlayRegion} from '../../game/render/canvasLayout.js';
 import {canContributeRecords} from '../../pure/rolePermissions.js';
+import {shouldShowEditorOverlay} from '../../pure/editorOverlayVisibility.js';
 import {PerfOverlay} from '../PerfOverlay.js';
 import type {VoiceChatControls} from '../useVoiceChat.js';
 import type {MonitorPipControls} from '../useMonitorPip.js';
@@ -63,63 +64,67 @@ export function PlayScreen(props: {
 }) {
   return (
     <section class='game-layout'>
-      {props.gameState?.monitors.center.activeTool === 'editor' && (
-        <textarea
-          ref={props.editorTextareaRef}
-          class='editor-overlay'
-          style={editorOverlayStyle(
-            props.canvasRef.current,
-            props.gameState.world.expandedMonitor === 'terminal'
-          )}
-          value={props.gameState.monitors.center.editor.content}
-          aria-label={`${props.gameState.monitors.center.editor.currentPath ?? 'ファイル'} を編集`}
-          spellcheck={false}
-          disabled={
-            props.gameState.monitors.center.editor.status === 'loading' ||
-            props.gameState.monitors.center.editor.status === 'saving'
-          }
-          onInput={(event) => {
-            const target = event.currentTarget;
-            const cursor = editorCursorFromTextarea(target);
-            props.patchGameStateRef((current) =>
-              updateEditorPanel(current, (editor) => ({
-                ...editor,
-                content: target.value,
-                dirty: target.value !== editor.savedContent,
-                status: editor.status === 'error' ? 'ready' : editor.status,
-                cursor,
-              }))
-            );
-          }}
-          onSelect={(event) => {
-            const target = event.currentTarget;
-            const cursor = editorCursorFromTextarea(target);
-            props.patchGameStateRef(
-              (current) =>
+      {props.gameState &&
+        shouldShowEditorOverlay(
+          props.gameState.monitors.center.activeTool,
+          props.gameState.recovery?.retireConfirming
+        ) && (
+          <textarea
+            ref={props.editorTextareaRef}
+            class='editor-overlay'
+            style={editorOverlayStyle(
+              props.canvasRef.current,
+              props.gameState.world.expandedMonitor === 'terminal'
+            )}
+            value={props.gameState.monitors.center.editor.content}
+            aria-label={`${props.gameState.monitors.center.editor.currentPath ?? 'ファイル'} を編集`}
+            spellcheck={false}
+            disabled={
+              props.gameState.monitors.center.editor.status === 'loading' ||
+              props.gameState.monitors.center.editor.status === 'saving'
+            }
+            onInput={(event) => {
+              const target = event.currentTarget;
+              const cursor = editorCursorFromTextarea(target);
+              props.patchGameStateRef((current) =>
                 updateEditorPanel(current, (editor) => ({
                   ...editor,
+                  content: target.value,
+                  dirty: target.value !== editor.savedContent,
+                  status: editor.status === 'error' ? 'ready' : editor.status,
                   cursor,
-                })),
-              {collectTransitions: false}
-            );
-          }}
-          onKeyDown={(event) => {
-            if (
-              (event.metaKey || event.ctrlKey) &&
-              event.key.toLowerCase() === 's'
-            ) {
-              event.preventDefault();
-              props.onSaveEditorFile();
-            }
-            if (event.key === 'Escape') {
-              event.preventDefault();
-              props.patchGameStateRef((current) =>
-                setCenterTool(current, 'terminal')
+                }))
               );
-            }
-          }}
-        />
-      )}
+            }}
+            onSelect={(event) => {
+              const target = event.currentTarget;
+              const cursor = editorCursorFromTextarea(target);
+              props.patchGameStateRef(
+                (current) =>
+                  updateEditorPanel(current, (editor) => ({
+                    ...editor,
+                    cursor,
+                  })),
+                {collectTransitions: false}
+              );
+            }}
+            onKeyDown={(event) => {
+              if (
+                (event.metaKey || event.ctrlKey) &&
+                event.key.toLowerCase() === 's'
+              ) {
+                event.preventDefault();
+                props.onSaveEditorFile();
+              }
+              if (event.key === 'Escape') {
+                event.preventDefault();
+                props.patchGameStateRef((current) =>
+                  setCenterTool(current, 'terminal')
+                );
+              }
+            }}
+          />
+        )}
       <div class='canvas-stage'>
         <canvas
           ref={props.canvasRef}

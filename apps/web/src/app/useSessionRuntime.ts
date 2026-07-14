@@ -23,6 +23,7 @@ import {playAlertBeep} from '../game/recording/audio.js';
 import {resumeSharedAudioContext} from '../game/recording/audioMixer.js';
 import {collectStateTransitions} from '../game/events/sessionEvents.js';
 import {describeSuccessCondition} from '../pure/successConditionLabels.js';
+import {createGameStateWriteGuard} from '../pure/gameStateWriteGuard.js';
 import type {ApiClientSurface} from '../api/client.js';
 import type {
   SessionClockResponse,
@@ -126,6 +127,9 @@ export function useSessionRuntime(options: {
   const liveReplayEventIdsRef = useRef(new Set<string>());
   const sandboxPrepareSessionIdRef = useRef<string | undefined>(undefined);
   const creatingSessionRef = useRef(false);
+  const gameStateWriteGuard = useRef(
+    createGameStateWriteGuard<GameRenderState>()
+  ).current;
 
   const {
     api,
@@ -195,6 +199,7 @@ export function useSessionRuntime(options: {
         replayId
       );
     }
+    gameStateWriteGuard.tag(next);
     gameStateRef.current = next;
     if (patchOptions.render !== false) setGameState(next);
   };
@@ -366,6 +371,7 @@ export function useSessionRuntime(options: {
         replayId
       );
     }
+    gameStateWriteGuard.tag(next);
     gameStateRef.current = next;
     setGameState(next);
     if (clock.gameTimeMs >= clock.timeLimitMs) void endSession('timeout');
@@ -420,6 +426,7 @@ export function useSessionRuntime(options: {
         participants,
       },
     };
+    gameStateWriteGuard.tag(next);
     gameStateRef.current = next;
     setGameState(next);
   };
@@ -447,6 +454,7 @@ export function useSessionRuntime(options: {
     applyExerciseSnapshot,
     applyParticipantCursor,
     rtcSignalHandlerRef,
+    gameStateWriteGuard,
   };
 
   async function createSessionForScenario(scenarioId: string) {
@@ -690,6 +698,13 @@ export function useSessionRuntime(options: {
     scenarioRef.current = scenario;
   }, [scenario]);
   useEffect(() => {
+    if (!gameState) return;
+    // A direct ref writer (patchGameStateRef / applyClockSnapshot /
+    // applyParticipantCursor) may have already advanced gameStateRef.current
+    // past this commit while this effect was queued (see
+    // gameStateWriteGuard.ts); applying it here would revert that newer
+    // write, so skip stale commits instead of blindly mirroring.
+    if (!gameStateWriteGuard.shouldApply(gameState)) return;
     gameStateRef.current = gameState;
   }, [gameState]);
 
