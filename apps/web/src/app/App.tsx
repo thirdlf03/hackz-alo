@@ -556,6 +556,7 @@ export function App() {
           exercise={exerciseSnapshot}
           voice={voice}
           pip={pip}
+          checkRecovery={checkRecovery}
           onCreateTask={(title) => {
             if (!session) return;
             void api

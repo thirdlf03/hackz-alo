@@ -19,14 +19,32 @@ import {
   createAssistantSessionPool,
   type AssistantSession,
 } from '../effect/promptAssistant.js';
-import {groundAssistNextStep} from '../pure/assistGrounding.js';
+import {detectAssistIntent} from '../pure/assistIntent.js';
 import {
-  describeGroundingBadge,
-  type GroundingBadgeInfo,
-} from '../pure/assistGroundingBadge.js';
+  finalizeAssistAnswer,
+  type FinalizedAssistNextStep,
+} from '../pure/assistAnswerPipeline.js';
+import {splitAnswerForMasking} from '../pure/assistAnswerMask.js';
+import {groundAssistNextStep} from '../pure/assistGrounding.js';
 import {buildCanvasViewModel} from '../pure/canvasViewModel.js';
 import {serializeScreenLines} from '../pure/serializeScreenLines.js';
 import {ModelDownloadProgress} from './ModelDownloadProgress.js';
+
+type RecoveryState = GameRenderState['recovery'];
+
+type CompletionCard =
+  | {kind: 'all_ok'}
+  | {kind: 'incomplete'; checks: Array<{label: string; ok: boolean}>}
+  | {kind: 'not_declarable'}
+  | {kind: 'error'};
+
+function buildCompletionCard(recovery: RecoveryState): CompletionCard {
+  const lastCheck = recovery?.lastCheck;
+  if (!lastCheck || lastCheck.error) return {kind: 'error'};
+  if (!lastCheck.declarable) return {kind: 'not_declarable'};
+  if (lastCheck.allOk) return {kind: 'all_ok'};
+  return {kind: 'incomplete', checks: lastCheck.checks.filter((c) => !c.ok)};
+}
 
 interface SelectionBounds {
   left: number;
@@ -58,6 +76,8 @@ export function AiAssistPanel(props: {
   canvasRef: {current: HTMLCanvasElement | null};
   gameStateRef: {current: GameRenderState | undefined};
   scenarioRef: {current: ScenarioDefinition | undefined};
+  checkRecovery: () => Promise<void>;
+  recoveryState: RecoveryState;
 }) {
   const sessionPoolRef = useRef(createAssistantSessionPool());
   const [availability, setAvailability] = useState<AssistAvailability>();
@@ -71,7 +91,11 @@ export function AiAssistPanel(props: {
   const [previewUrl, setPreviewUrl] = useState<string>();
   const [busy, setBusy] = useState(false);
   const [assistError, setAssistError] = useState<string>();
-  const [grounding, setGrounding] = useState<GroundingBadgeInfo>();
+  const [finalized, setFinalized] = useState<{
+    prose: string;
+    nextStep?: FinalizedAssistNextStep;
+  }>();
+  const [completionCard, setCompletionCard] = useState<CompletionCard>();
   const selectionStartRef = useRef<{x: number; y: number} | null>(null);
   const preparedSessionRef = useRef<PreparedAssistSession | undefined>(
     undefined
@@ -204,14 +228,17 @@ export function AiAssistPanel(props: {
     return null;
   }
 
-  const ask = async () => {
-    const prompt = buildAssistPrompt(question);
+  // Runs the actual on-device model call (screenshot/text streaming +
+  // grounding + safety pipeline). Split out from ask() so the "AIにも聞く"
+  // fallback button on the completion card can invoke it directly, bypassing
+  // the completion-intent short-circuit.
+  const runModelAsk = async (prompt: string) => {
     const canvas = props.canvasRef.current;
-    if (!prompt || (attachScreenshot && !canvas) || busy) return;
+    if (attachScreenshot && !canvas) return;
     setBusy(true);
     setAssistError(undefined);
     setAnswer('');
-    setGrounding(undefined);
+    setFinalized(undefined);
     let session: AssistantSession | undefined;
     let accumulatedAnswer = '';
     let screenLines: string[] | undefined;
@@ -253,9 +280,10 @@ export function AiAssistPanel(props: {
             ? captureCanvasSnapshot(canvas, captureRect)
             : undefined;
         setPreviewUrl(snapshot?.previewUrl);
-        if (attachScreenshot) {
-          screenLines = captureScreenLines();
-        }
+        // Captured regardless of attachScreenshot: the safety/grounding
+        // pipeline below must run even for text-only questions, since a
+        // dangerous "次の一手" must never reach the user un-flagged.
+        screenLines = captureScreenLines();
         session = await ensureSession();
         const stream = askAssistant(session, prompt, snapshot?.canvas);
         for await (const chunk of stream) {
@@ -264,10 +292,11 @@ export function AiAssistPanel(props: {
         }
       }
 
-      if (attachScreenshot && screenLines) {
-        const result = groundAssistNextStep(accumulatedAnswer, screenLines);
-        setGrounding(describeGroundingBadge(result));
-      }
+      const grounding = groundAssistNextStep(
+        accumulatedAnswer,
+        screenLines ?? []
+      );
+      setFinalized(finalizeAssistAnswer(accumulatedAnswer, grounding));
     } catch (error) {
       console.error(error);
       setAssistError(
@@ -279,11 +308,38 @@ export function AiAssistPanel(props: {
         current === 'downloading' ? 'downloadable' : current
       );
       setDownloadProgress(undefined);
-      setGrounding(undefined);
+      setFinalized(undefined);
     } finally {
       if (session) sessionPoolRef.current.release(session);
       setBusy(false);
     }
+  };
+
+  // Entry point for the Ask button/form: routes "復旧した?"-style completion
+  // questions to the deterministic recovery-check endpoint instead of the
+  // model, since the model has no reliable way to tell "the runbook's next
+  // step is already done" from screen text alone.
+  const ask = async () => {
+    const prompt = buildAssistPrompt(question);
+    if (!prompt || busy) return;
+    if (detectAssistIntent(prompt) !== 'completion') {
+      await runModelAsk(prompt);
+      return;
+    }
+    // A recovery-check may already be in flight (e.g. the player also
+    // pressed the canvas "復旧状態を確認" button); avoid firing a redundant
+    // dry-run request on top of it.
+    if (props.recoveryState?.checking) return;
+    setBusy(true);
+    setAssistError(undefined);
+    setAnswer('');
+    setFinalized(undefined);
+    setCompletionCard(undefined);
+    await props.checkRecovery();
+    setCompletionCard(
+      buildCompletionCard(props.gameStateRef.current?.recovery)
+    );
+    setBusy(false);
   };
 
   const beginRegionSelection = () => {
@@ -454,21 +510,64 @@ export function AiAssistPanel(props: {
             alt='AIに送信したゲーム画面のスクリーンショット'
           />
         )}
-        {answer && <p class='ai-assist-answer'>{answer}</p>}
-        {answer && grounding && (
-          <div
-            class={`ai-assist-grounding ai-assist-grounding-${grounding.tone}`}
-            role={
-              grounding.tone === 'rejected' || grounding.tone === 'unverified'
-                ? 'alert'
-                : 'status'
-            }
-          >
-            <p class='ai-assist-grounding-badge'>{grounding.label}</p>
-            {grounding.detail && (
-              <p class='ai-assist-grounding-detail'>{grounding.detail}</p>
+        {completionCard && (
+          <div class='ai-assist-completion-card' role='status'>
+            {completionCard.kind === 'all_ok' && (
+              <p>全条件達成です。「訓練を完了」ボタンを押せます</p>
             )}
+            {completionCard.kind === 'incomplete' && (
+              <>
+                <p>まだ未達の条件があります</p>
+                <ul class='ai-assist-completion-checks'>
+                  {completionCard.checks.map((check) => (
+                    <li key={check.label}>{check.label}</li>
+                  ))}
+                </ul>
+              </>
+            )}
+            {completionCard.kind === 'not_declarable' && (
+              <p>まだ復旧宣言できる段階ではありません</p>
+            )}
+            {completionCard.kind === 'error' && <p>確認できませんでした</p>}
+            <button
+              type='button'
+              class='ghost'
+              disabled={busy}
+              onClick={() => {
+                const prompt = buildAssistPrompt(question);
+                setCompletionCard(undefined);
+                if (prompt) void runModelAsk(prompt);
+              }}
+            >
+              AIにも聞く
+            </button>
           </div>
+        )}
+        {!completionCard &&
+          busy &&
+          answer &&
+          (() => {
+            const masked = splitAnswerForMasking(answer);
+            return (
+              <>
+                {masked.visible && (
+                  <p class='ai-assist-answer'>{masked.visible}</p>
+                )}
+                {masked.maskedPending && (
+                  <p class='ai-assist-answer-pending'>(コマンドを検証中…)</p>
+                )}
+              </>
+            );
+          })()}
+        {!completionCard && !busy && finalized && (
+          <>
+            {finalized.prose && (
+              <p class='ai-assist-answer'>{finalized.prose}</p>
+            )}
+            {finalized.nextStep && (
+              <NextStepDisplay nextStep={finalized.nextStep} />
+            )}
+          </>
         )}
       </section>
       {selectionBounds &&
@@ -514,5 +613,61 @@ export function AiAssistPanel(props: {
           document.body
         )}
     </>
+  );
+}
+
+const NEXT_STEP_ALERT_VERDICTS = new Set([
+  'rejected',
+  'danger_blocked',
+  'danger_confirm',
+  'unverified',
+]);
+const NEXT_STEP_HIDDEN_COMMAND_VERDICTS = new Set([
+  'rejected',
+  'danger_blocked',
+]);
+
+/** Renders the finalized "次の一手" per its safety/grounding verdict. See
+ * finalizeAssistAnswer() for how the verdict is derived: classifyCommandSafety
+ * always overrides a merely-grounded verdict, so a literally on-screen but
+ * dangerous command is never shown as if it were vetted. */
+function NextStepDisplay(props: {nextStep: FinalizedAssistNextStep}) {
+  const {nextStep} = props;
+  const showCommand = !NEXT_STEP_HIDDEN_COMMAND_VERDICTS.has(nextStep.verdict);
+  return (
+    <div
+      class={`ai-assist-nextstep ai-assist-nextstep-${nextStep.verdict}`}
+      role={NEXT_STEP_ALERT_VERDICTS.has(nextStep.verdict) ? 'alert' : 'status'}
+    >
+      {showCommand && (
+        <p class='ai-assist-nextstep-command'>次の一手: {nextStep.command}</p>
+      )}
+      {nextStep.verdict === 'ok' && (
+        <p class='ai-assist-nextstep-note'>✓ 画面の手順と一致</p>
+      )}
+      {nextStep.verdict === 'repair_candidate' && nextStep.repairSuggestion && (
+        <p class='ai-assist-nextstep-note'>
+          画面上の近い表記: {nextStep.repairSuggestion}
+        </p>
+      )}
+      {nextStep.verdict === 'rejected' && (
+        <p class='ai-assist-nextstep-note'>
+          画面から根拠を確認できない提案のため非表示にしました
+        </p>
+      )}
+      {nextStep.verdict === 'danger_blocked' && (
+        <p class='ai-assist-nextstep-note'>
+          危険な操作のため表示しません: {nextStep.reason}
+        </p>
+      )}
+      {nextStep.verdict === 'danger_confirm' && (
+        <p class='ai-assist-nextstep-note'>⚠ 要確認: {nextStep.reason}</p>
+      )}
+      {nextStep.verdict === 'unverified' && (
+        <p class='ai-assist-nextstep-note'>
+          ⚠ 画面の手順からは確認できませんでした
+        </p>
+      )}
+    </div>
   );
 }

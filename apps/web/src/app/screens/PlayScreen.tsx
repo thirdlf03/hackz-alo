@@ -62,6 +62,7 @@ export function PlayScreen(props: {
   onFireInject: (injectId: string) => void;
   voice: VoiceChatControls;
   pip: MonitorPipControls;
+  checkRecovery: () => Promise<void>;
 }) {
   return (
     <section class='game-layout'>
@@ -204,6 +205,8 @@ export function PlayScreen(props: {
           );
         }}
         voice={props.voice}
+        checkRecovery={props.checkRecovery}
+        recoveryState={props.gameState?.recovery}
       />
       <p id='canvas-play-hint' class='visually-hidden'>
         ターミナルにフォーカスしてキーボードでコマンドを入力できます。画面上のボタンはマウスで操作します。

@@ -28,6 +28,8 @@ export function TeamExercisePanel(props: {
   activeRunbook: RunbookDefinition | undefined;
   runbookProgress: GameRenderState['runbookProgress'];
   commandInputFocused: boolean;
+  checkRecovery: () => Promise<void>;
+  recoveryState: GameRenderState['recovery'];
   onCreateTask: (title: string) => void;
   onUpdateTask: (
     taskId: string,
@@ -95,6 +97,8 @@ export function TeamExercisePanel(props: {
           canvasRef={props.canvasRef}
           gameStateRef={props.gameStateRef}
           scenarioRef={props.scenarioRef}
+          checkRecovery={props.checkRecovery}
+          recoveryState={props.recoveryState}
         />
       </section>
       <section>
