@@ -1,8 +1,10 @@
 import {
   ASSIST_SYSTEM_PROMPT,
   computeSnapshotSize,
+  normalizeCanvasCaptureRect,
   progressEventRatio,
   type AssistAvailability,
+  type CanvasCaptureRect,
 } from '../pure/aiAssist.js';
 
 interface LanguageModelMessageContent {
@@ -32,7 +34,79 @@ export interface AssistantSession {
   promptStreaming(
     input: LanguageModelMessage[]
   ): ReadableStream<string> & AsyncIterable<string>;
+  append(input: LanguageModelMessage[]): Promise<void>;
+  clone(options?: {signal?: AbortSignal}): Promise<AssistantSession>;
   destroy(): void;
+}
+
+export interface AssistantSessionPool {
+  prewarm(
+    create: (signal: AbortSignal) => Promise<AssistantSession>
+  ): Promise<void>;
+  acquire(
+    create: (signal: AbortSignal) => Promise<AssistantSession>
+  ): Promise<AssistantSession>;
+  release(session: AssistantSession): void;
+  destroy(): void;
+}
+
+export function createAssistantSessionPool(): AssistantSessionPool {
+  let baseSession: AssistantSession | undefined;
+  let pending: Promise<AssistantSession> | undefined;
+  const activeSessions = new Set<AssistantSession>();
+  const controller = new AbortController();
+  let destroyed = false;
+
+  const getBase = (
+    create: (signal: AbortSignal) => Promise<AssistantSession>
+  ) => {
+    if (destroyed) {
+      return Promise.reject(new Error('Assistant session pool is destroyed'));
+    }
+    if (baseSession) return Promise.resolve(baseSession);
+    if (pending) return pending;
+    pending = create(controller.signal)
+      .then((created) => {
+        if (destroyed) {
+          created.destroy();
+          throw new Error('Assistant session pool is destroyed');
+        }
+        baseSession = created;
+        return created;
+      })
+      .finally(() => {
+        pending = undefined;
+      });
+    return pending;
+  };
+
+  return {
+    async prewarm(create) {
+      await getBase(create);
+    },
+    async acquire(create) {
+      const base = await getBase(create);
+      const session = await base.clone({signal: controller.signal});
+      if (destroyed) {
+        session.destroy();
+        throw new Error('Assistant session pool is destroyed');
+      }
+      activeSessions.add(session);
+      return session;
+    },
+    release(session) {
+      if (!activeSessions.delete(session)) return;
+      session.destroy();
+    },
+    destroy() {
+      destroyed = true;
+      controller.abort();
+      for (const session of activeSessions) session.destroy();
+      activeSessions.clear();
+      baseSession?.destroy();
+      baseSession = undefined;
+    },
+  };
 }
 
 interface LanguageModelEntry {
@@ -219,37 +293,126 @@ export interface CanvasSnapshot {
 }
 
 export function captureCanvasSnapshot(
-  source: HTMLCanvasElement
+  source: HTMLCanvasElement,
+  sourceRect?: CanvasCaptureRect
 ): CanvasSnapshot {
-  const {width, height} = computeSnapshotSize(source.width, source.height);
+  const captureRect = normalizeCanvasCaptureRect(
+    sourceRect
+      ? {
+          startX: sourceRect.x,
+          startY: sourceRect.y,
+          endX: sourceRect.x + sourceRect.width,
+          endY: sourceRect.y + sourceRect.height,
+        }
+      : {startX: 0, startY: 0, endX: source.width, endY: source.height},
+    {width: source.width, height: source.height},
+    {width: source.width, height: source.height}
+  );
+  if (captureRect.width === 0 || captureRect.height === 0) {
+    throw new Error('スクリーンショットの範囲が空です');
+  }
+  const {width, height} = computeSnapshotSize(
+    captureRect.width,
+    captureRect.height
+  );
   const snapshot = document.createElement('canvas');
   snapshot.width = width;
   snapshot.height = height;
   const context = snapshot.getContext('2d');
   if (!context) throw new Error('スクリーンショットの取得に失敗しました');
-  context.drawImage(source, 0, 0, width, height);
+  context.drawImage(
+    source,
+    captureRect.x,
+    captureRect.y,
+    captureRect.width,
+    captureRect.height,
+    0,
+    0,
+    width,
+    height
+  );
   return {canvas: snapshot, previewUrl: snapshot.toDataURL('image/jpeg', 0.7)};
 }
 
+function buildImageAskText(question: string): string {
+  return [
+    '最新の添付画像だけを根拠にしてください。読めない文字は推測しないでください。',
+    '画像にNEXTがあれば、そのコマンド列を確認工程まで次の一手へ完全にコピーしてください(途中で切らないでください)。ただしそのコマンドが実行済みで解決していない場合は、チャットの助言など他の画面内のコマンドを次の一手にしてください。',
+    '次の一手のコマンドは画像内の文字列をそのままコピーし、画像にないコマンドを作らず、Runbookの注意書きや方針の復唱はしないでください。必ず180文字以内で答えてください。',
+    `質問: ${question}`,
+  ].join('\n');
+}
+
+export function askAssistant(
+  session: AssistantSession,
+  question: string,
+  snapshot?: HTMLCanvasElement
+): ReadableStream<string> & AsyncIterable<string> {
+  if (!snapshot) {
+    return session.promptStreaming([
+      {
+        role: 'user',
+        content: [
+          {
+            type: 'text',
+            value: [
+              '画像はありません。質問文だけを根拠にしてください。回答に「画面」「画像」「添付」を含めず、具体的な数値、固有名詞、コマンドを作らないでください。',
+              `質問: ${question}`,
+            ].join('\n'),
+          },
+        ],
+      },
+    ]);
+  }
+  return session.promptStreaming([
+    {
+      role: 'user',
+      content: [
+        {type: 'text', value: buildImageAskText(question)},
+        {type: 'image', value: snapshot},
+      ],
+    },
+  ]);
+}
+
+/** Backwards-compatible helper for callers that always attach the canvas. */
 export function askAboutSnapshot(
   session: AssistantSession,
   question: string,
   snapshot: HTMLCanvasElement
 ): ReadableStream<string> & AsyncIterable<string> {
+  return askAssistant(session, question, snapshot);
+}
+
+/**
+ * Appends a screenshot to the session ahead of time so the eventual question
+ * only has to stream a text-only prompt (faster time-to-first-token).
+ */
+export async function appendSnapshot(
+  session: AssistantSession,
+  snapshot: HTMLCanvasElement
+): Promise<void> {
+  await session.append([
+    {
+      role: 'user',
+      content: [{type: 'image', value: snapshot}],
+    },
+  ]);
+}
+
+/**
+ * Asks a question against a session that already has a snapshot appended via
+ * {@link appendSnapshot}. Sends the same instruction text as the image path
+ * of {@link askAssistant}, without re-sending the image.
+ */
+export function askPreparedAssistant(
+  session: AssistantSession,
+  question: string
+): ReadableStream<string> & AsyncIterable<string> {
   return session.promptStreaming([
     {
       role: 'user',
-      content: [
-        {
-          type: 'text',
-          value: [
-            'このメッセージの最後にある画像が最新の添付画像です。この画像を根拠に回答してください。',
-            '画像内で見える具体的な証拠を示し、読めない箇所は推測せずその旨を伝えてください。',
-            `質問: ${question}`,
-          ].join('\n'),
-        },
-        {type: 'image', value: snapshot},
-      ],
+      content: [{type: 'text', value: buildImageAskText(question)}],
     },
   ]);
 }

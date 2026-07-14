@@ -3,6 +3,7 @@ import {test} from 'node:test';
 import {tsImport} from 'tsx/esm/api';
 
 const {
+  ASSIST_SNAPSHOT_MAX_HEIGHT,
   ASSIST_SNAPSHOT_MAX_WIDTH,
   ASSIST_SYSTEM_PROMPT,
   buildAssistPrompt,
@@ -11,14 +12,16 @@ const {
   describeAssistAvailability,
   describeModelDownloadStatus,
   formatDownloadProgress,
+  normalizeCanvasCaptureRect,
   progressEventRatio,
 } = await tsImport('../../apps/web/src/pure/aiAssist.ts', import.meta.url);
 
-test('computeSnapshotSize preserves the native in-game canvas resolution', () => {
-  assert.equal(ASSIST_SNAPSHOT_MAX_WIDTH, 1920);
+test('computeSnapshotSize downscales the native canvas to the attachment limit', () => {
+  assert.equal(ASSIST_SNAPSHOT_MAX_WIDTH, 960);
+  assert.equal(ASSIST_SNAPSHOT_MAX_HEIGHT, 540);
   assert.deepEqual(computeSnapshotSize(1920, 1080), {
-    width: 1920,
-    height: 1080,
+    width: 960,
+    height: 540,
   });
 });
 
@@ -33,24 +36,98 @@ test('computeSnapshotSize guards degenerate dimensions', () => {
   assert.deepEqual(computeSnapshotSize(0, 0), {width: 1, height: 1});
   assert.deepEqual(computeSnapshotSize(-10, 5), {width: 1, height: 1});
   assert.deepEqual(computeSnapshotSize(200_000, 1), {
-    width: 1920,
+    width: 960,
     height: 1,
   });
 });
 
 test('computeSnapshotSize safely downscales canvases above the maximum', () => {
   assert.deepEqual(computeSnapshotSize(3840, 2160), {
-    width: 1920,
-    height: 1080,
+    width: 960,
+    height: 540,
+  });
+  assert.deepEqual(computeSnapshotSize(1000, 2000), {
+    width: 270,
+    height: 540,
   });
 });
 
+test('normalizeCanvasCaptureRect maps CSS display coordinates to source pixels', () => {
+  assert.deepEqual(
+    normalizeCanvasCaptureRect(
+      {startX: 100, startY: 50, endX: 500, endY: 300},
+      {width: 960, height: 540},
+      {width: 1920, height: 1080}
+    ),
+    {x: 200, y: 100, width: 800, height: 500}
+  );
+});
+
+test('normalizeCanvasCaptureRect normalizes reverse drags and clamps overflow', () => {
+  assert.deepEqual(
+    normalizeCanvasCaptureRect(
+      {startX: 900, startY: 500, endX: -20, endY: 100},
+      {width: 800, height: 450},
+      {width: 1600, height: 900}
+    ),
+    {x: 0, y: 200, width: 1600, height: 700}
+  );
+});
+
+test('normalizeCanvasCaptureRect rounds outward to include partial source pixels', () => {
+  assert.deepEqual(
+    normalizeCanvasCaptureRect(
+      {startX: 0.25, startY: 0.25, endX: 1.25, endY: 1.25},
+      {width: 2, height: 2},
+      {width: 3, height: 3}
+    ),
+    {x: 0, y: 0, width: 2, height: 2}
+  );
+});
+
+test('normalizeCanvasCaptureRect returns an empty rectangle for unusable dimensions', () => {
+  assert.deepEqual(
+    normalizeCanvasCaptureRect(
+      {startX: 0, startY: 0, endX: 10, endY: 10},
+      {width: 0, height: 100},
+      {width: 1920, height: 1080}
+    ),
+    {x: 0, y: 0, width: 0, height: 0}
+  );
+});
+
 test('system prompt grounds answers in the attached in-game canvas', () => {
-  assert.match(ASSIST_SYSTEM_PROMPT, /1920x1080/);
+  assert.match(ASSIST_SYSTEM_PROMPT, /縮小画像または選択範囲/);
   assert.match(ASSIST_SYSTEM_PROMPT, /最新の添付画像/);
   assert.match(ASSIST_SYSTEM_PROMPT, /タスク一覧/);
   assert.match(ASSIST_SYSTEM_PROMPT, /Incident Log/);
   assert.match(ASSIST_SYSTEM_PROMPT, /推測/);
+  assert.match(ASSIST_SYSTEM_PROMPT, /180文字以内/);
+  assert.match(ASSIST_SYSTEM_PROMPT, /根拠.*最大2点/);
+  assert.match(ASSIST_SYSTEM_PROMPT, /次の一手:.*根拠:/);
+  assert.match(ASSIST_SYSTEM_PROMPT, /必要なコマンドは省略しない/);
+  assert.match(ASSIST_SYSTEM_PROMPT, /固有名詞、コマンドを作らず/);
+  assert.match(ASSIST_SYSTEM_PROMPT, /コマンド.*そのまま/);
+  assert.match(ASSIST_SYSTEM_PROMPT, /確認工程.*省略せず/);
+});
+
+test('system prompt forbids reciting runbook caution notes as the next step', () => {
+  assert.match(ASSIST_SYSTEM_PROMPT, /画像に写っている文字列をそのままコピーして/);
+  assert.match(ASSIST_SYSTEM_PROMPT, /画像にないコマンド名を作らないでください/);
+  assert.match(ASSIST_SYSTEM_PROMPT, /Runbookの注意書きや方針・精神論.*を次の一手にしない/);
+  assert.doesNotMatch(ASSIST_SYSTEM_PROMPT, /1つの手順に限定/);
+});
+
+test('system prompt prefers chat/other on-screen hints over the runbook when its command is already executed and unresolved', () => {
+  assert.match(
+    ASSIST_SYSTEM_PROMPT,
+    /ターミナルで実行済みなのに問題が続いている場合は、Runbookではなくチャットの助言や他の画面内の手がかりにあるコマンドを次の一手にして/
+  );
+});
+
+test('system prompt prefers on-screen evidence over the runbook when they conflict', () => {
+  assert.match(ASSIST_SYSTEM_PROMPT, /Runbookと矛盾する場合/);
+  assert.match(ASSIST_SYSTEM_PROMPT, /Runbookの記述より画面上の他の証拠を優先/);
 });
 
 test('buildAssistPrompt trims input and rejects empty questions', () => {
