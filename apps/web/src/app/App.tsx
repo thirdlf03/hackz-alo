@@ -238,6 +238,7 @@ export function App() {
     startPlay,
     advanceToBriefing,
     endSession,
+    checkRecovery,
     submitChatMessage,
   } = sessionRuntime;
 
@@ -380,6 +381,7 @@ export function App() {
       patchGameStateRef,
       currentGameTimeMs,
       endSession,
+      checkRecovery,
       submitChatMessage,
       loadEditorFiles,
       openEditorFile,

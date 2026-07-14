@@ -94,6 +94,7 @@ export interface ApiClientSurface
       | 'resizeTerminal'
       | 'interruptTerminal'
       | 'resolveSession'
+      | 'checkRecovery'
       | 'retireSession'
       | 'timeoutSession'
       | 'getExerciseState'
@@ -282,6 +283,7 @@ export class ApiClient {
       'resizeTerminal',
       'interruptTerminal',
       'resolveSession',
+      'checkRecovery',
       'retireSession',
       'timeoutSession',
       'getExerciseState',

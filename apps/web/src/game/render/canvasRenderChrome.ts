@@ -23,8 +23,11 @@ import {
   alertBandRect,
   commandWarningRect,
   inputDockRects,
+  logicalHeight,
   logicalWidth,
   navigationOverlayRect,
+  retireConfirmButtonRects,
+  retireConfirmOverlayRect,
 } from './canvasLayout.js';
 
 export function drawHeader(
@@ -130,9 +133,14 @@ export function drawInputDock(
   );
   const caretVisible =
     inputEnabled && focused && Math.floor(performance.now() / 530) % 2 === 0;
+  const recovery = state.recovery;
+  const checking = recovery?.checking ?? false;
+  const allOk = recovery?.lastCheck?.allOk === true;
 
   surface.ctx.fillStyle = palette.bgPanelDark;
-  surface.ctx.fillRect(0, 850, logicalWidth, 170);
+  surface.ctx.fillRect(0, 810, logicalWidth, 210);
+
+  drawRecoveryStatus(surface, recovery);
 
   surface.ctx.fillStyle = palette.textMuted;
   surface.ctx.font = monoFont(14);
@@ -176,22 +184,55 @@ export function drawInputDock(
     surface.ctx.fillRect(caretX, inputTextY - 20, 2, 24);
   }
 
-  surface.ctx.fillStyle = enabled ? palette.bgInput : palette.bgCardDark;
+  surface.ctx.fillStyle =
+    checking || !enabled ? palette.bgCardDark : palette.bgInput;
   roundRect(surface.ctx, button.x, button.y, button.width, button.height, 8);
   surface.ctx.fill();
   surface.ctx.strokeStyle = palette.borderDefault;
   surface.ctx.lineWidth = 2;
   surface.ctx.stroke();
-  surface.ctx.fillStyle = enabled ? palette.textPrimary : palette.textSecondary;
-  surface.ctx.font = uiFont(24);
+  surface.ctx.fillStyle =
+    checking || !enabled ? palette.textSecondary : palette.textPrimary;
+  surface.ctx.font = uiFont(18);
   centeredText(
     surface.ctx,
-    '復旧完了',
+    checking ? '確認中…' : '復旧状態を確認',
     button.x,
     button.y + 2,
     button.width,
     button.height
   );
+
+  if (allOk) {
+    const trainComplete = inputDockRects.trainComplete;
+    surface.ctx.fillStyle = enabled
+      ? palette.bgButtonPrimary
+      : palette.bgCardDark;
+    roundRect(
+      surface.ctx,
+      trainComplete.x,
+      trainComplete.y,
+      trainComplete.width,
+      trainComplete.height,
+      8
+    );
+    surface.ctx.fill();
+    surface.ctx.strokeStyle = palette.borderFocus;
+    surface.ctx.lineWidth = 2;
+    surface.ctx.stroke();
+    surface.ctx.fillStyle = enabled
+      ? palette.textOnPrimary
+      : palette.textSecondary;
+    surface.ctx.font = uiFont(20);
+    centeredText(
+      surface.ctx,
+      '訓練を完了',
+      trainComplete.x,
+      trainComplete.y + 2,
+      trainComplete.width,
+      trainComplete.height
+    );
+  }
 
   const retire = inputDockRects.retire;
   surface.ctx.fillStyle = enabled
@@ -213,6 +254,143 @@ export function drawInputDock(
     retire.y + 2,
     retire.width,
     retire.height
+  );
+}
+
+/** Renders the recovery-check result line(s) in the band above the input
+ * dock's button row. Silent (draws nothing) until a check has been
+ * requested at least once. */
+function drawRecoveryStatus(
+  surface: CanvasRenderSurface,
+  recovery: GameRenderState['recovery']
+) {
+  if (!recovery || (!recovery.checking && !recovery.lastCheck)) return;
+  const ctx = surface.ctx;
+  const x = inputDockRects.input.x;
+  const maxWidth =
+    inputDockRects.trainComplete.x + inputDockRects.trainComplete.width - x;
+  const topY = 822;
+  const lineHeight = 20;
+
+  if (recovery.checking) {
+    ctx.fillStyle = palette.textMuted;
+    ctx.font = uiFont(16);
+    ctx.fillText('確認中…', x, topY);
+    return;
+  }
+
+  const lastCheck = recovery.lastCheck;
+  if (!lastCheck) return;
+
+  if (lastCheck.error) {
+    ctx.fillStyle = palette.textWarning;
+    ctx.font = uiFont(16, 'bold');
+    ctx.fillText('確認できませんでした。再試行してください', x, topY);
+    return;
+  }
+
+  if (!lastCheck.declarable) {
+    ctx.fillStyle = palette.textWarning;
+    ctx.font = uiFont(16, 'bold');
+    ctx.fillText('まだ復旧宣言できる段階ではありません', x, topY);
+    return;
+  }
+
+  if (lastCheck.allOk) {
+    ctx.fillStyle = palette.statusHealthy;
+    ctx.font = uiFont(18, 'bold');
+    ctx.fillText('全条件達成 —「訓練を完了」を押せます', x, topY);
+    return;
+  }
+
+  const failing = lastCheck.checks.filter((check) => !check.ok);
+  ctx.fillStyle = palette.textWarning;
+  ctx.font = uiFont(16, 'bold');
+  ctx.fillText(`未達条件 ${String(failing.length)} 件`, x, topY);
+
+  ctx.font = monoFont(15);
+  ctx.fillStyle = palette.textSecondary;
+  const visible = failing.slice(0, 3);
+  for (const [index, check] of visible.entries()) {
+    ctx.fillText(
+      `・${truncateToWidth(ctx, check.label, maxWidth - 20)}`,
+      x,
+      topY + lineHeight * (index + 1)
+    );
+  }
+  if (failing.length > visible.length) {
+    ctx.fillText(
+      `他 ${String(failing.length - visible.length)} 件`,
+      x,
+      topY + lineHeight * (visible.length + 1)
+    );
+  }
+}
+
+/** Full-screen confirmation modal shown while retiring, so a misclick on
+ * the danger-styled リタイア button can't end the session outright. */
+export function drawRetireConfirmOverlay(surface: CanvasRenderSurface) {
+  const ctx = surface.ctx;
+  ctx.fillStyle = palette.bgOverlayLight;
+  ctx.fillRect(0, 0, logicalWidth, logicalHeight);
+
+  const box = retireConfirmOverlayRect;
+  ctx.fillStyle = palette.bgOverlay;
+  roundRect(ctx, box.x, box.y, box.width, box.height, 12);
+  ctx.fill();
+  ctx.strokeStyle = palette.borderDanger;
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  ctx.fillStyle = palette.textPrimary;
+  ctx.font = uiFont(24, 'bold');
+  ctx.fillText('本当にリタイアしますか?', box.x + 32, box.y + 56);
+  ctx.fillStyle = palette.textSecondary;
+  ctx.font = uiFont(16);
+  wrapText(
+    ctx,
+    '途中でやめると、この訓練は失敗として記録されます。',
+    box.x + 32,
+    box.y + 96,
+    box.width - 64,
+    24,
+    2
+  );
+
+  const confirm = retireConfirmButtonRects.confirm;
+  ctx.fillStyle = palette.bgButtonDanger;
+  roundRect(ctx, confirm.x, confirm.y, confirm.width, confirm.height, 8);
+  ctx.fill();
+  ctx.strokeStyle = palette.borderDanger;
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  ctx.fillStyle = palette.textWarningFg;
+  ctx.font = uiFont(18, 'bold');
+  centeredText(
+    ctx,
+    'リタイアする',
+    confirm.x,
+    confirm.y + 2,
+    confirm.width,
+    confirm.height
+  );
+
+  const cancel = retireConfirmButtonRects.cancel;
+  ctx.fillStyle = palette.bgInput;
+  roundRect(ctx, cancel.x, cancel.y, cancel.width, cancel.height, 8);
+  ctx.fill();
+  ctx.strokeStyle = palette.borderDefault;
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  ctx.fillStyle = palette.textPrimary;
+  ctx.font = uiFont(18, 'bold');
+  centeredText(
+    ctx,
+    '続ける',
+    cancel.x,
+    cancel.y + 2,
+    cancel.width,
+    cancel.height
   );
 }
 

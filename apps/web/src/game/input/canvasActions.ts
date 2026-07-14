@@ -13,6 +13,7 @@ import {
   monitorMagnifyAt,
   navigationOverlayRect,
   notificationBellRegion,
+  retireConfirmButtonRects,
   rightPanelPrimaryTabAt,
   runbookTabAt,
   chatComposeAt,
@@ -27,6 +28,10 @@ export interface CanvasPoint {
 
 export type CanvasAction =
   | {type: 'end_session'; mode: 'resolve' | 'retire'}
+  | {type: 'recovery_check'}
+  | {type: 'retire_request'}
+  | {type: 'retire_confirm'}
+  | {type: 'retire_cancel'}
   | {type: 'focus_command_input'}
   | {type: 'center_tool'; tool: 'terminal' | 'editor'}
   | {type: 'open_editor_file'; path: string}
@@ -46,11 +51,34 @@ export function resolveCanvasAction(
   state: GameRenderState,
   scenario?: ScenarioDefinition
 ): CanvasAction {
+  // The retire confirmation modal is topmost while open: it absorbs every
+  // click except its own two buttons, so nothing behind it (input dock,
+  // panels, ...) can be triggered accidentally on a destructive action.
+  if (state.recovery?.retireConfirming) {
+    if (
+      containsCanvasPoint(retireConfirmButtonRects.confirm, point.x, point.y)
+    ) {
+      return {type: 'retire_confirm'};
+    }
+    if (
+      containsCanvasPoint(retireConfirmButtonRects.cancel, point.x, point.y)
+    ) {
+      return {type: 'retire_cancel'};
+    }
+    return {type: 'none', absorb: true};
+  }
+
   if (containsCanvasPoint(inputDockRects.button, point.x, point.y)) {
+    return {type: 'recovery_check'};
+  }
+  if (
+    state.recovery?.lastCheck?.allOk === true &&
+    containsCanvasPoint(inputDockRects.trainComplete, point.x, point.y)
+  ) {
     return {type: 'end_session', mode: 'resolve'};
   }
   if (containsCanvasPoint(inputDockRects.retire, point.x, point.y)) {
-    return {type: 'end_session', mode: 'retire'};
+    return {type: 'retire_request'};
   }
   if (containsCanvasPoint(inputDockRects.input, point.x, point.y)) {
     return {type: 'focus_command_input'};

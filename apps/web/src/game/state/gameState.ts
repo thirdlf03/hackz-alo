@@ -408,6 +408,27 @@ export function toggleExpandedMonitor(
   });
 }
 
+export function setRecoveryChecking(
+  state: GameRenderState,
+  checking: boolean
+): GameRenderState {
+  return reduceGameState(state, {type: 'set_recovery_checking', checking});
+}
+
+export function setRecoveryLastCheck(
+  state: GameRenderState,
+  lastCheck: NonNullable<NonNullable<GameRenderState['recovery']>['lastCheck']>
+): GameRenderState {
+  return reduceGameState(state, {type: 'set_recovery_last_check', lastCheck});
+}
+
+export function setRetireConfirming(
+  state: GameRenderState,
+  confirming: boolean
+): GameRenderState {
+  return reduceGameState(state, {type: 'set_retire_confirming', confirming});
+}
+
 function emptyMetrics(): MetricsSnapshot {
   return {
     at: 0,
