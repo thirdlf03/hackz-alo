@@ -192,6 +192,44 @@ export function reduceGameState(
         world: {...state.world, expandedMonitor},
       };
     }
+    case 'mark_runbook_step': {
+      const {runbookId, bodyHash, stepId, status} = action;
+      const matches =
+        state.runbookProgress?.runbookId === runbookId &&
+        state.runbookProgress.bodyHash === bodyHash;
+      const baseSteps =
+        state.runbookProgress && matches ? state.runbookProgress.steps : [];
+      const existingIndex = baseSteps.findIndex(
+        (entry) => entry.stepId === stepId
+      );
+      const existing =
+        existingIndex >= 0 ? baseSteps[existingIndex] : undefined;
+      const nextEntry =
+        status === null
+          ? existing?.evidence
+            ? {stepId, evidence: existing.evidence}
+            : undefined
+          : {
+              stepId,
+              manualStatus: status,
+              ...(existing?.evidence ? {evidence: existing.evidence} : {}),
+            };
+      const nextSteps =
+        existingIndex >= 0
+          ? nextEntry
+            ? baseSteps.map((entry, index) =>
+                index === existingIndex ? nextEntry : entry
+              )
+            : baseSteps.filter((_entry, index) => index !== existingIndex)
+          : nextEntry
+            ? [...baseSteps, nextEntry]
+            : baseSteps;
+      if (matches && nextSteps === baseSteps) return state;
+      return {
+        ...state,
+        runbookProgress: {runbookId, bodyHash, steps: nextSteps},
+      };
+    }
     case 'set_recovery_checking': {
       const checking = action.checking;
       if ((state.recovery?.checking ?? false) === checking) return state;

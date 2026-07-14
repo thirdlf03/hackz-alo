@@ -1845,6 +1845,66 @@ canvas:focus-visible {
   color: var(--tone-red);
 }
 
+.runbook-step-empty {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12.5px;
+}
+
+.runbook-step-current-banner {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  margin: 0;
+  padding: 6px 0;
+  background: var(--surface-panel);
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--tone-amber);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.runbook-step-marker {
+  font-family: var(--font-family-mono);
+}
+
+.runbook-step-evidence {
+  display: block;
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-family: var(--font-family-mono);
+  font-size: 11px;
+}
+
+.runbook-step-current .team-task-marker,
+.runbook-step-current .team-task-title {
+  color: var(--tone-amber);
+}
+
+.runbook-step-done .team-task-marker {
+  color: var(--tone-green);
+}
+
+.runbook-step-done .team-task-title {
+  text-decoration: line-through;
+  opacity: 0.6;
+}
+
+.runbook-step-failed .team-task-marker,
+.runbook-step-failed .team-task-title {
+  color: var(--tone-red);
+}
+
+.runbook-step-pending .team-task-marker,
+.runbook-step-skipped .team-task-marker {
+  color: var(--text-muted);
+}
+
+.runbook-step-skipped .team-task-title {
+  text-decoration: line-through;
+  opacity: 0.6;
+}
+
 .team-inject {
   display: grid;
   gap: 4px;

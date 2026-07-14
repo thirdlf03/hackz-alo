@@ -439,7 +439,9 @@ test('case validation validates hardRequired groups and new case meta fields', (
 test('case validation accepts an optional non-empty stateBlock and rejects empty/non-string values', () => {
   assert.equal(
     validateAiAssistCases({
-      cases: [{id: 'one', question: 'q', stateBlock: '状態: ヘルスチェック 200'}],
+      cases: [
+        {id: 'one', question: 'q', stateBlock: '状態: ヘルスチェック 200'},
+      ],
     }).length,
     1
   );

@@ -3,6 +3,7 @@ import type {
   ExerciseTaskStatus,
   GameRenderState,
   IncidentLogEntryKind,
+  RunbookDefinition,
   ScenarioDefinition,
 } from '@incident/shared';
 import {formatTime} from '../../pure/canvasFormat.js';
@@ -15,6 +16,7 @@ import type {MonitorPipControls} from '../useMonitorPip.js';
 import {participantRoleLabels} from './LobbyScreen.js';
 import {TaskRow, TaskComposer} from './playTaskPanel.js';
 import {IncidentLogRow, LogComposer} from './playIncidentLogPanel.js';
+import {RunbookProgressPanel} from './playRunbookPanel.js';
 
 export function TeamExercisePanel(props: {
   exercise: ExerciseSnapshot | undefined;
@@ -23,6 +25,8 @@ export function TeamExercisePanel(props: {
   gameStateRef: {current: GameRenderState | undefined};
   scenarioRef: {current: ScenarioDefinition | undefined};
   scenario: ScenarioDefinition | undefined;
+  activeRunbook: RunbookDefinition | undefined;
+  runbookProgress: GameRenderState['runbookProgress'];
   commandInputFocused: boolean;
   onCreateTask: (title: string) => void;
   onUpdateTask: (
@@ -37,6 +41,12 @@ export function TeamExercisePanel(props: {
   ) => void;
   onDeleteIncidentLog: (entryId: string) => void;
   onFireInject: (injectId: string) => void;
+  onMarkRunbookStep: (
+    runbookId: string,
+    bodyHash: string,
+    stepId: string,
+    status: 'done' | 'failed' | 'skipped' | null
+  ) => void;
   voice: VoiceChatControls;
 }) {
   const participants = props.exercise?.participants ?? [];
@@ -70,6 +80,15 @@ export function TeamExercisePanel(props: {
           Observer は閲覧専用です
         </p>
       )}
+      <section aria-label='Runbook 進捗'>
+        <h2>RUNBOOK</h2>
+        <RunbookProgressPanel
+          activeRunbook={props.activeRunbook}
+          runbookProgress={props.runbookProgress}
+          disabled={!props.canContribute}
+          onMarkStep={props.onMarkRunbookStep}
+        />
+      </section>
       <section class='npc-panel' aria-label='AIアシスタント'>
         <h2>ASSIST — ソラ (AI)</h2>
         <AiAssistPanel
