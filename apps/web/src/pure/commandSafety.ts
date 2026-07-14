@@ -146,7 +146,10 @@ function classifyRmInvocation(
         reason: 'rm -rf によるワークスペース/システム全体の回復不能な削除です',
       };
     }
-    worst = {level: 'confirm', reason: 'ファイル削除操作のため実行前に要確認です'};
+    worst = {
+      level: 'confirm',
+      reason: 'ファイル削除操作のため実行前に要確認です',
+    };
   }
   return worst;
 }
