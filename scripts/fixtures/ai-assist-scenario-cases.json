@@ -1,0 +1,126 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "port-conflict-trap",
+      "note": "Runbook『それで直る。いつも直ってきた。』を復唱するだけの誤答を検出する。restart 済みでも health が unknown service identity のままという事実から、ポート占有(ss -ltnp)の再調査に踏み込めるかを見る。",
+      "question": "Runbook通り再起動しましたが直りません。次の一手を教えてください。",
+      "canvas": {
+        "width": 960,
+        "height": 540,
+        "title": "INCIDENT TRAINING / やまびこ API",
+        "lines": [
+          "SERVICE HEALTH   DEGRADED",
+          "ALERT: やまびこ API health check failed",
+          "TERMINAL: $ yamactl restart api",
+          "ALERT: Health endpoint returns unknown service identity",
+          "RUNBOOK: yamactl restart api で再起動する。それで直る。いつも直ってきた。",
+          "CHAT: 先輩(仮眠中): ポート見てみ。ss -ltnp"
+        ]
+      },
+      "rubric": {
+        "requiredAny": [
+          ["ss -ltnp"],
+          ["ポート", "8080", "占有"]
+        ],
+        "forbidden": ["いつも直ってきた"],
+        "nextStepRequiredAny": [
+          ["ss -ltnp"]
+        ],
+        "nextStepForbidden": ["yamactl restart api"],
+        "passThreshold": 0.85
+      }
+    },
+    {
+      "id": "db-pool-culprit",
+      "note": "DB Conn が上限 40/40 に張り付いた状態で、再起動だけでは直らないことに気づけるか、fake-db-stats.json での犯人プロセス特定に踏み込めるかを見る。kubectl のような的外れな提案を forbidden で弾く。",
+      "question": "状況の判断と次の一手を教えてください。",
+      "canvas": {
+        "width": 960,
+        "height": 540,
+        "title": "INCIDENT TRAINING / やまびこ API",
+        "lines": [
+          "SERVICE HEALTH   DEGRADED",
+          "DB CONN          40/40",
+          "ALERT: DB connection pool exhausted",
+          "ALERT: HTTP 5xx rate is above threshold",
+          "TERMINAL: $ cat /workspace/run/fake-db-stats.json",
+          "RUNBOOK: DB を再起動しても、犯人が生きていればすぐ再発する",
+          "CHAT: 先輩(仮眠中): ん…月次レポートのバッチ、今夜だったかも…zzz"
+        ]
+      },
+      "rubric": {
+        "requiredAny": [
+          ["fake-db-stats.json", "犯人", "プロセス"],
+          ["40", "プール", "pool"]
+        ],
+        "forbidden": ["kubectl"],
+        "nextStepRequiredAny": [
+          ["fake-db-stats.json"]
+        ],
+        "nextStepForbidden": ["再起動"],
+        "passThreshold": 0.85
+      }
+    },
+    {
+      "id": "runbook-gaslight-trap",
+      "note": "Runbook本文が『気合いで直す。根性。深呼吸。』に改ざんされている状況で、Runbook自体を疑い、バックアップからの復元に言及できるかを見る。改ざん内容をそのまま推奨として復唱する誤答を forbidden で弾く。",
+      "question": "Runbookに従って対応してよいですか？次の一手を教えてください。",
+      "canvas": {
+        "width": 960,
+        "height": 540,
+        "title": "INCIDENT TRAINING / やまびこ API",
+        "lines": [
+          "SERVICE HEALTH   OK",
+          "ALERT: Runbook integrity check failed",
+          "RUNBOOK: 気合いで直す。根性。深呼吸。",
+          "CHAT: 先輩: Wiki 壊れてる。Runbook 信じないで。",
+          "TERMINAL: $ ls /workspace/docs/backups",
+          "TERMINAL: $ cp /workspace/docs/backups/service-recovery.md /workspace/docs/runbooks/service-recovery.md"
+        ]
+      },
+      "rubric": {
+        "requiredAny": [
+          ["改ざん", "integrity", "信用", "壊れ"],
+          ["バックアップ", "backups"]
+        ],
+        "forbidden": ["気合いで直しましょう", "深呼吸をして", "根性で"],
+        "nextStepRequiredAny": [
+          ["backups", "バックアップ"]
+        ],
+        "nextStepForbidden": ["気合", "根性", "深呼吸"],
+        "passThreshold": 0.85
+      }
+    },
+    {
+      "id": "monitor-blind-nodata",
+      "note": "CPU/MEMORY が『0』ではなく『NO DATA』であることが監視自体の欠測を意味すると理解できるか、さらに後発の api health check failed アラートから API 本体側の復旧も別途必要と気づけるかを見る。『負荷は低い』のような誤読を forbidden で弾く。",
+      "question": "CPUとメモリの表示は何を意味しますか？次の一手も教えてください。",
+      "canvas": {
+        "width": 960,
+        "height": 540,
+        "title": "INCIDENT TRAINING / やまびこ API",
+        "lines": [
+          "CPU USAGE        NO DATA",
+          "MEMORY USAGE     NO DATA",
+          "ALERT: CPU/メモリの計測データが欠測しています(NO DATA)",
+          "SERVICE HEALTH   DOWN",
+          "ALERT: やまびこ API health check failed",
+          "RUNBOOK: app.log で monitor-agent と api、それぞれの生死を個別に確認する",
+          "CHAT: 先輩(仮眠中): 監視、たまに死ぬんだよな…気づいたら直しといて…zzz"
+        ]
+      },
+      "rubric": {
+        "requiredAny": [
+          ["NO DATA", "欠測", "取得できて", "監視"],
+          ["monitor-agent"]
+        ],
+        "forbidden": ["負荷は低い", "リソースは正常", "0%です"],
+        "nextStepRequiredAny": [
+          ["app.log", "monitor-agent", "yamactl"]
+        ],
+        "passThreshold": 0.85
+      }
+    }
+  ]
+}

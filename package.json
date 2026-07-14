@@ -29,6 +29,7 @@
     "perf:compare": "node scripts/perf-compare.mjs --strict",
     "perf:baseline:accept": "node scripts/perf-baseline-accept.mjs",
     "perf:placement:verify": "node scripts/perf-placement-verify.mjs",
+    "bench:ai-assist": "node scripts/ai-assist-bench.mjs",
     "deploy": "node scripts/deploy.mjs",
     "deploy:smoke": "node scripts/deploy-smoke.mjs",
     "cleanup:sessions": "node scripts/cleanup-sessions.mjs",

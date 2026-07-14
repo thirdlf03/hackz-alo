@@ -1,0 +1,123 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "text-only-triage",
+      "question": "画面は添付していません。障害対応の初動で何を確認すべきですか？",
+      "rubric": {
+        "requiredAny": [
+          [
+            "メトリクス",
+            "アラート",
+            "影響範囲"
+          ],
+          [
+            "ログ",
+            "状態",
+            "切り分け"
+          ]
+        ],
+        "forbidden": [
+          "画面に見える",
+          "画面には",
+          "画面左",
+          "画像に見える",
+          "表示されています",
+          "表示されており",
+          "CPU Usage",
+          "添付画像を参照",
+          "画面の状態から",
+          "画面の状況を確認",
+          "SHOW_STATUS",
+          "STATUS CLEAR",
+          "SHOW INCIDENT_DETAILS"
+        ],
+        "passThreshold": 0.75
+      }
+    },
+    {
+      "id": "stopped-api-canvas",
+      "question": "この画面から判断できる状況と、復旧後の確認まで含む次の一手を教えてください。",
+      "canvas": {
+        "width": 768,
+        "height": 432,
+        "title": "INCIDENT TRAINING / やまびこ API",
+        "lines": [
+          "SERVICE HEALTH   DOWN",
+          "HTTP 5xx RATE    38%",
+          "ALERT: Health check connection refused",
+          "TERMINAL: $ yamactl status api",
+          "api: stopped",
+          "RUNBOOK: API プロセス停止時の初動",
+          "NEXT: yamactl restart api → curl localhost:8080/health"
+        ]
+      },
+      "rubric": {
+        "requiredAny": [
+          [
+            "down",
+            "stopped",
+            "停止"
+          ],
+          [
+            "38%",
+            "5xx",
+            "connection refused"
+          ],
+          [
+            "yamactl restart api",
+            "restart api"
+          ],
+          [
+            "curl localhost:8080/health",
+            "復旧確認",
+            "200 を確認"
+          ]
+        ],
+        "forbidden": [
+          "ディスク容量",
+          "データベース障害",
+          "kubectl"
+        ],
+        "passThreshold": 0.9
+      }
+    },
+    {
+      "id": "disk-full-canvas",
+      "question": "根拠を挙げて、最初に実行する調査コマンドを1つ提案してください。",
+      "canvas": {
+        "width": 768,
+        "height": 432,
+        "title": "INCIDENT TRAINING / やまびこ API",
+        "lines": [
+          "SERVICE HEALTH   DEGRADED",
+          "DISK USAGE       97% CRITICAL",
+          "HTTP 500 RATE    21%",
+          "ALERT: Disk usage is above 95%",
+          "RUNBOOK: Disk Full 対応",
+          "1. df -h",
+          "2. du -sh /workspace/logs/*"
+        ]
+      },
+      "rubric": {
+        "requiredAny": [
+          [
+            "97%",
+            "95%",
+            "disk",
+            "ディスク"
+          ],
+          [
+            "df -h"
+          ]
+        ],
+        "forbidden": [
+          "プロセスが停止",
+          "データベース障害",
+          "/workspace/logs/**"
+        ],
+        "passThreshold": 0.8
+      }
+    }
+  ]
+}
