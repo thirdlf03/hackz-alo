@@ -1971,6 +1971,40 @@ canvas:focus-visible {
   overflow-wrap: anywhere;
 }
 
+.ai-assist-grounding {
+  margin-top: 4px;
+}
+
+.ai-assist-grounding-badge {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.ai-assist-grounding-detail {
+  margin: 2px 0 0;
+  color: var(--text-secondary);
+  font-size: 11px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.ai-assist-grounding-ok .ai-assist-grounding-badge {
+  color: var(--tone-green);
+}
+
+.ai-assist-grounding-repaired .ai-assist-grounding-badge {
+  color: var(--tone-amber);
+}
+
+.ai-assist-grounding-unverified .ai-assist-grounding-badge {
+  color: var(--tone-amber);
+}
+
+.ai-assist-grounding-rejected .ai-assist-grounding-badge {
+  color: var(--tone-red);
+}
+
 .ai-assist-selection-overlay {
   position: fixed;
   z-index: 1000;

@@ -536,6 +536,8 @@ export function App() {
           gameSpeed={gameSpeed}
           scenario={scenario}
           canvasRef={canvasRef}
+          gameStateRef={gameStateRef}
+          scenarioRef={scenarioRef}
           chatInputRef={chatInputRef}
           htmlInCanvasChat={htmlInCanvasChat}
           editorTextareaRef={editorTextareaRef}

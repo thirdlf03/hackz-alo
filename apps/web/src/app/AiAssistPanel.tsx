@@ -1,5 +1,6 @@
 import {createPortal} from 'preact/compat';
 import {useEffect, useRef, useState} from 'preact/hooks';
+import type {GameRenderState, ScenarioDefinition} from '@incident/shared';
 import {
   buildAssistPrompt,
   describeAssistAvailability,
@@ -18,6 +19,13 @@ import {
   createAssistantSessionPool,
   type AssistantSession,
 } from '../effect/promptAssistant.js';
+import {groundAssistNextStep} from '../pure/assistGrounding.js';
+import {
+  describeGroundingBadge,
+  type GroundingBadgeInfo,
+} from '../pure/assistGroundingBadge.js';
+import {buildCanvasViewModel} from '../pure/canvasViewModel.js';
+import {serializeScreenLines} from '../pure/serializeScreenLines.js';
 import {ModelDownloadProgress} from './ModelDownloadProgress.js';
 
 interface SelectionBounds {
@@ -40,6 +48,7 @@ interface PreparedAssistSession {
   previewUrl: string;
   appendPromise: Promise<void>;
   capturedAt: number;
+  screenLines: string[] | undefined;
 }
 
 /** Prepared sessions older than this are discarded and re-captured on ask(). */
@@ -47,6 +56,8 @@ const PREPARED_SESSION_MAX_AGE_MS = 30_000;
 
 export function AiAssistPanel(props: {
   canvasRef: {current: HTMLCanvasElement | null};
+  gameStateRef: {current: GameRenderState | undefined};
+  scenarioRef: {current: ScenarioDefinition | undefined};
 }) {
   const sessionPoolRef = useRef(createAssistantSessionPool());
   const [availability, setAvailability] = useState<AssistAvailability>();
@@ -60,6 +71,7 @@ export function AiAssistPanel(props: {
   const [previewUrl, setPreviewUrl] = useState<string>();
   const [busy, setBusy] = useState(false);
   const [assistError, setAssistError] = useState<string>();
+  const [grounding, setGrounding] = useState<GroundingBadgeInfo>();
   const selectionStartRef = useRef<{x: number; y: number} | null>(null);
   const preparedSessionRef = useRef<PreparedAssistSession | undefined>(
     undefined
@@ -71,6 +83,17 @@ export function AiAssistPanel(props: {
     if (!prepared) return;
     preparedSessionRef.current = undefined;
     sessionPoolRef.current.release(prepared.session);
+  };
+
+  // Serializes the literal on-screen text at the current moment (same data
+  // the canvas renders from) so the eventual answer can be cross-checked
+  // against it via groundAssistNextStep(). Returns undefined when the game
+  // state isn't available yet (e.g. before the first render).
+  const captureScreenLines = (): string[] | undefined => {
+    const state = props.gameStateRef.current;
+    if (!state) return undefined;
+    const viewModel = buildCanvasViewModel(state, props.scenarioRef.current);
+    return serializeScreenLines(state, viewModel);
   };
 
   useEffect(() => {
@@ -138,6 +161,7 @@ export function AiAssistPanel(props: {
       try {
         const snapshot = captureCanvasSnapshot(canvas, captureRect);
         setPreviewUrl(snapshot.previewUrl);
+        const screenLines = captureScreenLines();
         const session = await ensureSession();
         if (guard.cancelled) {
           sessionPoolRef.current.release(session);
@@ -158,6 +182,7 @@ export function AiAssistPanel(props: {
           previewUrl: snapshot.previewUrl,
           appendPromise: preparedAppendPromise,
           capturedAt,
+          screenLines,
         };
       } catch (error) {
         console.warn('[on-device-ai] prepare session failed', error);
@@ -186,7 +211,10 @@ export function AiAssistPanel(props: {
     setBusy(true);
     setAssistError(undefined);
     setAnswer('');
+    setGrounding(undefined);
     let session: AssistantSession | undefined;
+    let accumulatedAnswer = '';
+    let screenLines: string[] | undefined;
     try {
       let usedPrepared = false;
       if (attachScreenshot && preparedSessionRef.current) {
@@ -201,6 +229,7 @@ export function AiAssistPanel(props: {
             await prepared.appendPromise;
             session = prepared.session;
             setPreviewUrl(prepared.previewUrl);
+            screenLines = prepared.screenLines;
             usedPrepared = true;
           } catch (error) {
             console.warn(
@@ -215,7 +244,8 @@ export function AiAssistPanel(props: {
       if (usedPrepared && session) {
         const stream = askPreparedAssistant(session, prompt);
         for await (const chunk of stream) {
-          setAnswer((current) => current + chunk);
+          accumulatedAnswer += chunk;
+          setAnswer(accumulatedAnswer);
         }
       } else {
         const snapshot =
@@ -223,11 +253,20 @@ export function AiAssistPanel(props: {
             ? captureCanvasSnapshot(canvas, captureRect)
             : undefined;
         setPreviewUrl(snapshot?.previewUrl);
+        if (attachScreenshot) {
+          screenLines = captureScreenLines();
+        }
         session = await ensureSession();
         const stream = askAssistant(session, prompt, snapshot?.canvas);
         for await (const chunk of stream) {
-          setAnswer((current) => current + chunk);
+          accumulatedAnswer += chunk;
+          setAnswer(accumulatedAnswer);
         }
+      }
+
+      if (attachScreenshot && screenLines) {
+        const result = groundAssistNextStep(accumulatedAnswer, screenLines);
+        setGrounding(describeGroundingBadge(result));
       }
     } catch (error) {
       console.error(error);
@@ -240,6 +279,7 @@ export function AiAssistPanel(props: {
         current === 'downloading' ? 'downloadable' : current
       );
       setDownloadProgress(undefined);
+      setGrounding(undefined);
     } finally {
       if (session) sessionPoolRef.current.release(session);
       setBusy(false);
@@ -415,6 +455,21 @@ export function AiAssistPanel(props: {
           />
         )}
         {answer && <p class='ai-assist-answer'>{answer}</p>}
+        {answer && grounding && (
+          <div
+            class={`ai-assist-grounding ai-assist-grounding-${grounding.tone}`}
+            role={
+              grounding.tone === 'rejected' || grounding.tone === 'unverified'
+                ? 'alert'
+                : 'status'
+            }
+          >
+            <p class='ai-assist-grounding-badge'>{grounding.label}</p>
+            {grounding.detail && (
+              <p class='ai-assist-grounding-detail'>{grounding.detail}</p>
+            )}
+          </div>
+        )}
       </section>
       {selectionBounds &&
         createPortal(

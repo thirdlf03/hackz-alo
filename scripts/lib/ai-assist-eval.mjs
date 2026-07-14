@@ -8,7 +8,12 @@ export function parseAiAssistArgs(args) {
     headless: false,
     help: false,
     appendImage: false,
+    stateText: false,
+    grounding: false,
+    stateFormat: 'flat',
+    monochrome: false,
   };
+  let stateFormatSpecified = false;
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index];
     if (argument === '--') continue;
@@ -16,7 +21,13 @@ export function parseAiAssistArgs(args) {
     else if (argument === '--headless') options.headless = true;
     else if (argument === '--current-chrome') options.currentChrome = true;
     else if (argument === '--append-image') options.appendImage = true;
-    else if (argument === '--cases') options.casesPath = requiredValue(args, ++index, argument);
+    else if (argument === '--state-text') options.stateText = true;
+    else if (argument === '--grounding') options.grounding = true;
+    else if (argument === '--monochrome') options.monochrome = true;
+    else if (argument === '--state-format') {
+      options.stateFormat = requiredValue(args, ++index, argument);
+      stateFormatSpecified = true;
+    } else if (argument === '--cases') options.casesPath = requiredValue(args, ++index, argument);
     else if (argument === '--output') options.outputPath = requiredValue(args, ++index, argument);
     else if (argument === '--repeat') options.repeat = positiveInteger(args, ++index, argument);
     else if (argument === '--warmup') options.warmup = nonNegativeInteger(args, ++index, argument);
@@ -28,6 +39,18 @@ export function parseAiAssistArgs(args) {
     else if (argument === '--cdp-url')
       options.cdpUrl = requiredValue(args, ++index, argument);
     else throw new Error(`unknown option: ${argument}`);
+  }
+  if (options.appendImage && options.stateText) {
+    throw new Error('--append-image and --state-text cannot be combined');
+  }
+  if (options.stateFormat !== 'flat' && options.stateFormat !== 'panels') {
+    throw new Error('--state-format must be flat or panels');
+  }
+  if (stateFormatSpecified && !options.stateText) {
+    throw new Error('--state-format requires --state-text');
+  }
+  if (options.monochrome && options.stateText) {
+    throw new Error('--monochrome and --state-text cannot be combined');
   }
   return options;
 }
@@ -148,6 +171,10 @@ export function summarizeAiAssistRuns(runs) {
         scored.map((run) => run.metrics[field]).filter(Number.isFinite)
       );
     }
+    const groundingCounts = countGroundingStatuses(caseRuns);
+    if (groundingCounts) item.grounding = groundingCounts;
+    const afterGroundingPassRate = passRateAfterGrounding(scored, caseRuns);
+    if (afterGroundingPassRate !== undefined) item.passRateAfterGrounding = afterGroundingPassRate;
     return item;
   });
   const summary = {
@@ -176,7 +203,38 @@ export function summarizeAiAssistRuns(runs) {
     const values = successful.map((run) => run.metrics[field]).filter(Number.isFinite);
     summary[field] = summarizeNumbers(values);
   }
+  const groundingCounts = countGroundingStatuses(runs);
+  if (groundingCounts) summary.grounding = groundingCounts;
+  const afterGroundingPassRate = passRateAfterGrounding(successful, runs);
+  if (afterGroundingPassRate !== undefined) summary.passRateAfterGrounding = afterGroundingPassRate;
   return summary;
+}
+
+/**
+ * Pass rate as the user would actually experience it once the grounding
+ * validator repairs/degrades responses (see run.qualityAfterGrounding in
+ * ai-assist-current-chrome.mjs), alongside the raw model pass rate above.
+ * Returns undefined when no run in `scoredRuns` carries a qualityAfterGrounding
+ * (i.e. --grounding was not used), so it doesn't clutter reports that never
+ * ran the validator.
+ */
+function passRateAfterGrounding(scoredRuns, denominatorRuns) {
+  if (!scoredRuns.some((run) => run.qualityAfterGrounding)) return undefined;
+  const passed = scoredRuns.filter(
+    (run) => (run.qualityAfterGrounding ?? run.quality).passed
+  ).length;
+  return ratio(passed, denominatorRuns.length);
+}
+
+function countGroundingStatuses(runs) {
+  const counts = {ok: 0, repaired: 0, rejected: 0, unverified: 0, no_next_step: 0};
+  let total = 0;
+  for (const run of runs) {
+    if (!run.grounding) continue;
+    total += 1;
+    counts[run.grounding.status] = (counts[run.grounding.status] ?? 0) + 1;
+  }
+  return total > 0 ? {total, ...counts} : undefined;
 }
 
 export function summarizeNumbers(values) {

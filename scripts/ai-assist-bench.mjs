@@ -9,6 +9,11 @@ import {
   summarizeAiAssistRuns,
   validateAiAssistCases,
 } from './lib/ai-assist-eval.mjs';
+import {
+  buildPanelStateAskText,
+  buildStateAskText,
+  STATE_TEXT_SYSTEM_PROMPT,
+} from './lib/ai-assist-state-text.mjs';
 
 const HELP = `Gemini Nano / AI Assist benchmark
 
@@ -24,6 +29,10 @@ Usage: pnpm run bench:ai-assist -- [options]
   --cdp-url <url>           Reuse Chrome started with --remote-debugging-port
   --current-chrome          Run in a new tab of the currently open Chrome
   --append-image            Prewarm image input via session.append() before promptStreaming (requires --current-chrome)
+  --state-text              Feed a text screen dump instead of a screenshot image (requires --current-chrome, exclusive with --append-image)
+  --state-format <flat|panels>  Layout of the --state-text dump: flat (default) or panels grouped by alert/terminal/runbook/chat/metrics
+  --monochrome              Disable canvas red-highlighting in image mode; render all lines in #e2e8f0 (exclusive with --state-text)
+  --grounding               Cross-check each canvas case's next-step answer against the screen text and record run.grounding
   --headless                Run headless (Gemini Nano may not be available)
   -h, --help                Show this help
 `;
@@ -37,6 +46,10 @@ if (options.appendImage && !options.currentChrome) {
   console.error('--append-image requires --current-chrome');
   process.exit(1);
 }
+if (options.stateText && !options.currentChrome) {
+  console.error('--state-text requires --current-chrome');
+  process.exit(1);
+}
 
 const fixture = JSON.parse(await readFile(resolve(options.casesPath), 'utf8'));
 const cases = validateAiAssistCases(fixture);
@@ -47,6 +60,19 @@ const {ASSIST_SYSTEM_PROMPT, buildAssistPrompt} = await tsImport(
 const {askAssistant} = await tsImport(
   '../apps/web/src/effect/promptAssistant.ts',
   import.meta.url
+);
+const {groundAssistNextStep} = options.grounding
+  ? await tsImport('../apps/web/src/pure/assistGrounding.ts', import.meta.url)
+  : {groundAssistNextStep: undefined};
+const buildStateTextPrompt =
+  options.stateFormat === 'panels' ? buildPanelStateAskText : buildStateAskText;
+const stateTextPrompts = Object.fromEntries(
+  cases
+    .filter((testCase) => testCase.canvas)
+    .map((testCase) => [
+      testCase.id,
+      buildStateTextPrompt(testCase.canvas.lines, testCase.canvas.title, testCase.question),
+    ])
 );
 const expectedInputs = [
   {type: 'text', languages: ['ja', 'en']},
@@ -74,6 +100,9 @@ if (options.currentChrome) {
     inputTemplates: Object.fromEntries(
       cases.map((testCase) => [testCase.id, buildProductionInput(testCase)])
     ),
+    stateTextPrompts,
+    stateTextSystemPrompt: STATE_TEXT_SYSTEM_PROMPT,
+    groundAssistNextStep,
   });
   process.exit(0);
 }
@@ -185,6 +214,9 @@ try {
         ...(result.error ? {error: result.error} : {}),
       };
       if (!run.error) run.quality = scoreAiAssistResponse(item, run.response);
+      if (!run.error && item.canvas && groundAssistNextStep) {
+        run.grounding = groundAssistNextStep(run.response, item.canvas.lines);
+      }
       runs.push(run);
       console.log(
         run.error
@@ -204,6 +236,9 @@ try {
       timeoutMs: options.timeoutMs,
       sessionPolicy: 'new-session-per-run',
       throughputUnit: 'Unicode characters per second after first chunk',
+      grounding: options.grounding,
+      stateFormat: options.stateFormat,
+      monochrome: options.monochrome,
     },
     environment,
     availability: {state: availability, elapsedMs: round(availabilityMs)},
