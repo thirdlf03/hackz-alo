@@ -3,6 +3,7 @@ import {
   type APIRequestContext,
   type Locator,
   type Page,
+  type Response,
 } from '@playwright/test';
 import {
   centerToolTabRegions,
@@ -14,6 +15,7 @@ import {
   monitorContentHeight,
   monitorHeaderHeight,
   monitorLayout,
+  retireConfirmButtonRects,
 } from '../../apps/web/src/pure/canvasLayout.js';
 
 const CANVAS_LABEL = '録画対象のゲーム画面';
@@ -24,7 +26,10 @@ const DEFAULT_SCENARIO = /API が寝落ち/;
 const DESIGN_WIDTH = logicalWidth;
 const DESIGN_HEIGHT = logicalHeight;
 const RETIRE_RECT = inputDockRects.retire;
-const RESOLVE_RECT = inputDockRects.button;
+/** Dry-run "復旧状態を確認" trigger (was the direct resolve button). */
+const CHECK_RECOVERY_RECT = inputDockRects.button;
+/** Only hit-testable once recovery.lastCheck?.allOk is true. */
+const TRAIN_COMPLETE_RECT = inputDockRects.trainComplete;
 const COMMAND_INPUT_RECT = inputDockRects.input;
 const TERMINAL_MONITOR = monitorLayout('terminal');
 
@@ -152,18 +157,93 @@ function rectCenter(rect: {
   };
 }
 
-export async function clickResolveButton(page: Page) {
+/**
+ * Clicks a canvas point repeatedly until a matching network response shows
+ * up, instead of guessing a fixed delay for the rAF-driven canvas render to
+ * commit a preceding state change (e.g. the retire-confirm modal opening,
+ * or "訓練を完了" becoming hit-testable once recovery.lastCheck?.allOk is
+ * true). A miss is a harmless no-op click on the not-yet-updated canvas, so
+ * retrying is safe.
+ */
+async function clickUntilResponse(
+  page: Page,
+  canvas: Locator,
+  point: {x: number; y: number},
+  matcher: (response: Response) => boolean,
+  options: {
+    attempts?: number;
+    attemptTimeout?: number;
+    // Re-run before every attempt, including the first. Used to re-press a
+    // preceding trigger (e.g. the retire button that opens the confirm
+    // modal) so the whole sequence self-heals if an earlier click in the
+    // chain was itself missed/no-op — not just this click.
+    preClick?: () => Promise<void>;
+  } = {}
+) {
+  // Under heavy sandbox/container load elsewhere in a long test run, the
+  // rAF-driven canvas render can lag well beyond a couple of seconds; a
+  // generous budget here (well inside the per-test timeout) trades a bit of
+  // worst-case wall time for not flaking on otherwise-correct clicks.
+  const attempts = options.attempts ?? 20;
+  const attemptTimeout = options.attemptTimeout ?? 3_000;
+  let lastError: unknown;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      await options.preClick?.();
+      const [response] = await Promise.all([
+        page.waitForResponse(matcher, {timeout: attemptTimeout}),
+        clickCanvasLogicalPoint(canvas, point.x, point.y),
+      ]);
+      return response;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError;
+}
+
+/**
+ * Dry-run "復旧状態を確認": clicks the recovery-check trigger and waits for
+ * the GET .../recovery-check response. Never ends the session (see
+ * canvasActions.ts resolveCanvasAction / useSessionRuntime.ts checkRecovery).
+ */
+export async function clickRecoveryCheckButton(page: Page) {
   const canvas = await focusGameCanvas(page);
-  const center = rectCenter(RESOLVE_RECT);
-  await Promise.all([
+  const center = rectCenter(CHECK_RECOVERY_RECT);
+  const [response] = await Promise.all([
     page.waitForResponse(
-      (response) =>
-        response.url().includes('/resolve') &&
-        response.request().method() === 'POST',
+      (candidate) =>
+        candidate.url().includes('/recovery-check') &&
+        candidate.request().method() === 'GET',
       {timeout: 30_000}
     ),
     clickCanvasLogicalPoint(canvas, center.x, center.y),
   ]);
+  const payload = await response.json();
+  return payload.data as {
+    declarable: boolean;
+    allOk: boolean;
+    checks: Array<{condition: unknown; ok: boolean}>;
+  };
+}
+
+/**
+ * Full success flow: click "復旧状態を確認" (dry-run recovery-check), then
+ * click "訓練を完了" (only hit-testable once recovery.lastCheck?.allOk is
+ * true) to actually resolve the session. See 2366fd63.
+ */
+export async function clickResolveButton(page: Page) {
+  const canvas = await focusGameCanvas(page);
+  await clickRecoveryCheckButton(page);
+  const trainCompleteCenter = rectCenter(TRAIN_COMPLETE_RECT);
+  await clickUntilResponse(
+    page,
+    canvas,
+    trainCompleteCenter,
+    (response) =>
+      response.url().includes('/resolve') &&
+      response.request().method() === 'POST'
+  );
 }
 
 export async function retireFromGame(page: Page) {
@@ -171,17 +251,22 @@ export async function retireFromGame(page: Page) {
   await expect(canvas).toBeVisible();
 
   const center = rectCenter(RETIRE_RECT);
-
-  await Promise.all([
-    page.waitForResponse(
-      (response) =>
-        response.url().includes('/retire') &&
-        response.request().method() === 'POST' &&
-        response.ok(),
-      {timeout: 30_000}
-    ),
-    clickCanvasLogicalPoint(canvas, center.x, center.y),
-  ]);
+  const confirmCenter = rectCenter(retireConfirmButtonRects.confirm);
+  // Opens the full-screen retire confirmation modal; no network call yet
+  // (see resolveCanvasAction 'retire_request' / setRetireConfirming). Only
+  // then can the modal's confirm button be hit-tested, so re-press it on
+  // every retry too: harmless no-op once the modal is already open (it's
+  // topmost and absorbs clicks outside its own two buttons).
+  await clickUntilResponse(
+    page,
+    canvas,
+    confirmCenter,
+    (response) =>
+      response.url().includes('/retire') &&
+      response.request().method() === 'POST' &&
+      response.ok(),
+    {preClick: () => clickCanvasLogicalPoint(canvas, center.x, center.y)}
+  );
 }
 
 export async function clickCenterTool(page: Page, tool: 'terminal' | 'editor') {
