@@ -24,6 +24,7 @@ import {resumeSharedAudioContext} from '../game/recording/audioMixer.js';
 import {collectStateTransitions} from '../game/events/sessionEvents.js';
 import {describeSuccessCondition} from '../pure/successConditionLabels.js';
 import {createGameStateWriteGuard} from '../pure/gameStateWriteGuard.js';
+import {withStateVersion} from '../pure/stateVersionPolicy.js';
 import type {ApiClientSurface} from '../api/client.js';
 import type {
   SessionClockResponse,
@@ -199,9 +200,10 @@ export function useSessionRuntime(options: {
         replayId
       );
     }
-    gameStateWriteGuard.tag(next);
-    gameStateRef.current = next;
-    if (patchOptions.render !== false) setGameState(next);
+    const versioned = withStateVersion(current, next);
+    gameStateWriteGuard.tag(versioned);
+    gameStateRef.current = versioned;
+    if (patchOptions.render !== false) setGameState(versioned);
   };
 
   function currentGameTimeMs() {
@@ -371,9 +373,10 @@ export function useSessionRuntime(options: {
         replayId
       );
     }
-    gameStateWriteGuard.tag(next);
-    gameStateRef.current = next;
-    setGameState(next);
+    const versioned = withStateVersion(previous, next);
+    gameStateWriteGuard.tag(versioned);
+    gameStateRef.current = versioned;
+    setGameState(versioned);
     if (clock.gameTimeMs >= clock.timeLimitMs) void endSession('timeout');
   };
 

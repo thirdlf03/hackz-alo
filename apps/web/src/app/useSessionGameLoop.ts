@@ -1,6 +1,7 @@
 import {useEffect} from 'preact/hooks';
 import {recordGameTick} from '@incident/observability/browser';
 import {advanceGameState, decayWorldOverlays} from '../game/state/gameState.js';
+import {withStateVersion} from '../pure/stateVersionPolicy.js';
 import type {SessionRuntimeBindings} from './sessionRuntimeTypes.js';
 
 export function useSessionGameLoop(bindings: SessionRuntimeBindings) {
@@ -42,10 +43,11 @@ export function useSessionGameLoop(bindings: SessionRuntimeBindings) {
         previous.monitors.left.alerts,
         previous.monitors.right.chatMessages
       );
-      gameStateWriteGuard.tag(next);
-      refs.gameStateRef.current = next;
-      setGameState(next);
-      if (elapsedMs >= next.clock.timeLimitMs) void endSession('timeout');
+      const versioned = withStateVersion(previous, next);
+      gameStateWriteGuard.tag(versioned);
+      refs.gameStateRef.current = versioned;
+      setGameState(versioned);
+      if (elapsedMs >= versioned.clock.timeLimitMs) void endSession('timeout');
       recordGameTick(performance.now() - tickStartedAt, {
         elapsed_ms: Math.round(elapsedMs),
       });

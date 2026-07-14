@@ -88,6 +88,12 @@ interface PreparedAssistSession {
   previewUrl: string;
   appendPromise: Promise<void>;
   capturedAt: number;
+  /** gameStateRef.current.stateVersion at prepare time; ask() discards the
+   * prepared session (falls back to a fresh capture) if this no longer
+   * matches gameStateRef.current.stateVersion, since the incident state has
+   * semantically moved on since the screenshot/stateBlock were captured.
+   * See pure/stateVersionPolicy.ts. */
+  capturedStateVersion: number | undefined;
   screenLines: string[] | undefined;
 }
 
@@ -247,6 +253,7 @@ export function AiAssistPanel(props: {
           return;
         }
         const capturedAt = Date.now();
+        const capturedStateVersion = props.gameStateRef.current?.stateVersion;
         const preparedAppendPromise = appendSnapshot(session, snapshot.canvas);
         preparedAppendPromise.catch((error: unknown) => {
           console.warn('[on-device-ai] append snapshot failed', error);
@@ -261,6 +268,7 @@ export function AiAssistPanel(props: {
           previewUrl: snapshot.previewUrl,
           appendPromise: preparedAppendPromise,
           capturedAt,
+          capturedStateVersion,
           screenLines,
         };
       } catch (error) {
@@ -305,7 +313,9 @@ export function AiAssistPanel(props: {
         const prepared = preparedSessionRef.current;
         preparedSessionRef.current = undefined;
         const fresh =
-          Date.now() - prepared.capturedAt <= PREPARED_SESSION_MAX_AGE_MS;
+          Date.now() - prepared.capturedAt <= PREPARED_SESSION_MAX_AGE_MS &&
+          prepared.capturedStateVersion ===
+            props.gameStateRef.current?.stateVersion;
         if (!fresh) {
           sessionPoolRef.current.release(prepared.session);
         } else {

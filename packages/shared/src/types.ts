@@ -468,6 +468,16 @@ export interface TerminalMirrorState {
 }
 
 export interface GameRenderState {
+  /**
+   * 意味のある差分(alerts / chatMessages / terminal lines・commandHistory /
+   * metrics / runbookProgress / recovery / activeTool・activePanelTab)が
+   * あったときだけ増分するバージョン。AI Assist の prepared session
+   * (スクショ先行投入)の鮮度判定に使う — capturedStateVersion と食い違えば
+   * stale として破棄する。参照描画専用のフィールド(participantCursor 等)
+   * の変化では増分しない。省略可: 未設定は「まだ一度も書き込みを経ていない
+   * 初期状態」を表す。
+   */
+  stateVersion?: number;
   session: {
     sessionId: string;
     replayId: string;
