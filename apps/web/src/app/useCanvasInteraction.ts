@@ -8,6 +8,7 @@ import {
   mergedChatMessages,
   setActiveRunbook,
   setCenterTool,
+  setRetireConfirming,
   setRightPanelTab,
   toggleExpandedMonitor,
   toggleNotificationPanel,
@@ -34,6 +35,7 @@ export function useCanvasInteraction(options: {
   ) => void;
   currentGameTimeMs: () => number;
   endSession: (mode: FinishMode) => Promise<void>;
+  checkRecovery: () => Promise<void>;
   submitChatMessage: () => void;
   loadEditorFiles: () => Promise<void>;
   openEditorFile: (path: string) => Promise<void>;
@@ -51,6 +53,7 @@ export function useCanvasInteraction(options: {
     patchGameStateRef,
     currentGameTimeMs,
     endSession,
+    checkRecovery,
     submitChatMessage,
     loadEditorFiles,
     openEditorFile,
@@ -77,6 +80,21 @@ export function useCanvasInteraction(options: {
       const action = resolveCanvasAction(point, state, scenarioRef.current);
       if (action.type === 'end_session') {
         return void endSession(action.mode);
+      }
+      if (action.type === 'recovery_check') {
+        return void checkRecovery();
+      }
+      if (action.type === 'retire_request') {
+        patchGameStateRef((current) => setRetireConfirming(current, true));
+        return;
+      }
+      if (action.type === 'retire_confirm') {
+        patchGameStateRef((current) => setRetireConfirming(current, false));
+        return void endSession('retire');
+      }
+      if (action.type === 'retire_cancel') {
+        patchGameStateRef((current) => setRetireConfirming(current, false));
+        return;
       }
       if (action.type === 'focus_command_input') {
         // Mirrors the server-side sandbox role gate: participants who

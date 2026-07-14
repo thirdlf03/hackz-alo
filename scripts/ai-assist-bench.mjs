@@ -257,7 +257,10 @@ try {
 
 function buildProductionInput(testCase) {
   let input;
-  const question = buildAssistPrompt(testCase.question);
+  const rawQuestion = testCase.stateBlock
+    ? `${testCase.stateBlock}\n${testCase.question}`
+    : testCase.question;
+  const question = buildAssistPrompt(rawQuestion);
   if (!question) throw new Error(`${testCase.id}: question became empty after normalization`);
   askAssistant(
     {

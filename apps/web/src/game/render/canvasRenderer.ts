@@ -8,6 +8,7 @@ import {
   drawHeader,
   drawInputDock,
   drawNavigationOverlay,
+  drawRetireConfirmOverlay,
 } from './canvasRenderChrome.js';
 import {
   drawCenterPanel,
@@ -234,6 +235,9 @@ export class CanvasRenderer {
         drawExpandedMonitorOverlay(surface, state, scenario, viewModel);
       }
       this.drawEmbeddedElements(state);
+      if (state.recovery?.retireConfirming) {
+        drawRetireConfirmOverlay(surface);
+      }
       drawCursor(surface, state);
     } finally {
       ctx.restore();

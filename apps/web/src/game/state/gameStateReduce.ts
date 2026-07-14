@@ -230,5 +230,49 @@ export function reduceGameState(
         runbookProgress: {runbookId, bodyHash, steps: nextSteps},
       };
     }
+    case 'set_recovery_checking': {
+      const checking = action.checking;
+      if ((state.recovery?.checking ?? false) === checking) return state;
+      return {
+        ...state,
+        recovery: {
+          checking,
+          ...(state.recovery?.lastCheck !== undefined
+            ? {lastCheck: state.recovery.lastCheck}
+            : {}),
+          ...(state.recovery?.retireConfirming !== undefined
+            ? {retireConfirming: state.recovery.retireConfirming}
+            : {}),
+        },
+      };
+    }
+    case 'set_recovery_last_check': {
+      return {
+        ...state,
+        recovery: {
+          checking: false,
+          lastCheck: action.lastCheck,
+          ...(state.recovery?.retireConfirming !== undefined
+            ? {retireConfirming: state.recovery.retireConfirming}
+            : {}),
+        },
+      };
+    }
+    case 'set_retire_confirming': {
+      const retireConfirming = action.confirming;
+      if ((state.recovery?.retireConfirming ?? false) === retireConfirming) {
+        return state;
+      }
+      return {
+        ...state,
+        recovery: {
+          checking: state.recovery?.checking ?? false,
+          ...(state.recovery?.lastCheck !== undefined
+            ? {lastCheck: state.recovery.lastCheck}
+            : {}),
+          retireConfirming,
+        },
+      };
+    }
   }
 }

@@ -13,6 +13,8 @@ import {
 import {
   advanceGameState,
   createInitialGameState,
+  setRecoveryChecking,
+  setRecoveryLastCheck,
   submitPlayerChatMessage,
 } from '../game/state/gameState.js';
 import type {ReplayEventEmitter} from '../game/events/emitReplayEvent.js';
@@ -20,6 +22,7 @@ import {createEmptyTerminalMirror} from '../game/terminal/mirror.js';
 import {playAlertBeep} from '../game/recording/audio.js';
 import {resumeSharedAudioContext} from '../game/recording/audioMixer.js';
 import {collectStateTransitions} from '../game/events/sessionEvents.js';
+import {describeSuccessCondition} from '../pure/successConditionLabels.js';
 import type {ApiClientSurface} from '../api/client.js';
 import type {
   SessionClockResponse,
@@ -46,6 +49,10 @@ import type {
 
 const CONSENT_KEY = 'incident-recording-consent';
 const SAVE_RECORDING_KEY = 'incident-recording-save';
+/** A fresh-enough recovery-check result is reused instead of re-hitting the
+ * dry-run endpoint (mirrors the DO-side 5s cache; this is a coarser
+ * client-side dedupe on top of it). */
+const RECOVERY_CHECK_REUSE_MS = 10_000;
 
 export type {SessionRecordingBridge, TerminalBridgeRef};
 
@@ -204,8 +211,64 @@ export function useSessionRuntime(options: {
     });
   }
 
+  /**
+   * Dry-run success-condition evaluation (GET .../recovery-check): never
+   * finishes the session, so it's safe to call speculatively from the
+   * "復旧状態を確認" button and from endSession('resolve')'s fallback below.
+   * Reuses a recent-enough lastCheck instead of re-hitting the API, and
+   * no-ops while a check is already in flight.
+   */
+  async function checkRecovery() {
+    if (!session) return;
+    const inFlightOrFresh = gameStateRef.current?.recovery;
+    if (inFlightOrFresh?.checking) return;
+    if (
+      inFlightOrFresh?.lastCheck &&
+      Date.now() - inFlightOrFresh.lastCheck.at < RECOVERY_CHECK_REUSE_MS
+    ) {
+      return;
+    }
+    patchGameStateRef((current) => setRecoveryChecking(current, true));
+    try {
+      const result = await api.checkRecovery(session.sessionId);
+      patchGameStateRef((current) =>
+        setRecoveryLastCheck(current, {
+          at: Date.now(),
+          declarable: result.declarable,
+          allOk: result.allOk,
+          checks: result.checks.map((check) => ({
+            label: describeSuccessCondition(check.condition),
+            ok: check.ok,
+          })),
+        })
+      );
+    } catch {
+      // Sandbox stopped, network blip, etc.: surface "確認できませんでした"
+      // rather than treating this as a session-ending failure.
+      patchGameStateRef((current) =>
+        setRecoveryLastCheck(current, {
+          at: Date.now(),
+          declarable: false,
+          allOk: false,
+          checks: [],
+          error: true,
+        })
+      );
+    }
+  }
+
   async function endSession(mode: FinishMode) {
     if (!session || finishingRef.current) return;
+    if (
+      mode === 'resolve' &&
+      gameStateRef.current?.recovery?.lastCheck?.allOk !== true
+    ) {
+      // Defense in depth: the "訓練を完了" button is only clickable once
+      // allOk is true (see canvasActions.ts), but re-check here too in case
+      // this is reached some other way (e.g. stale UI state).
+      void checkRecovery();
+      return;
+    }
     finishingRef.current = true;
     const recording = recordingRef.current;
     const shouldSaveVideo = recording?.shouldSaveVideo() ?? false;
@@ -648,6 +711,7 @@ export function useSessionRuntime(options: {
     startPlay,
     advanceToBriefing,
     endSession,
+    checkRecovery,
     submitChatMessage,
   };
 }

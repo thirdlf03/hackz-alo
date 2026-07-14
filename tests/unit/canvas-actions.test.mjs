@@ -15,6 +15,7 @@ const {
   monitorMagnifyRegions,
   navigationOverlayRect,
   notificationBellRegion,
+  retireConfirmButtonRects,
   runbookTabRegion,
   chatComposeRegion,
   chatSendButtonRegion,
@@ -33,15 +34,95 @@ test('resolveCanvasAction maps input dock clicks to command actions', () => {
 
   assert.deepEqual(
     resolveCanvasAction(pointIn(inputDockRects.button), state, baseScenario()),
-    {type: 'end_session', mode: 'resolve'}
+    {type: 'recovery_check'}
   );
   assert.deepEqual(
     resolveCanvasAction(pointIn(inputDockRects.retire), state, baseScenario()),
-    {type: 'end_session', mode: 'retire'}
+    {type: 'retire_request'}
   );
   assert.deepEqual(
     resolveCanvasAction(pointIn(inputDockRects.input), state, baseScenario()),
     {type: 'focus_command_input'}
+  );
+});
+
+test('resolveCanvasAction only exposes "訓練を完了" once recovery.lastCheck.allOk is true', () => {
+  const base = createPlayState();
+  const notYetChecked = base;
+  const failing = {
+    ...base,
+    recovery: {
+      checking: false,
+      lastCheck: {
+        at: Date.now(),
+        declarable: true,
+        allOk: false,
+        checks: [{label: 'health が 200', ok: false}],
+      },
+    },
+  };
+  const allOk = {
+    ...base,
+    recovery: {
+      checking: false,
+      lastCheck: {
+        at: Date.now(),
+        declarable: true,
+        allOk: true,
+        checks: [{label: 'health が 200', ok: true}],
+      },
+    },
+  };
+
+  // Before allOk, clicking where the "訓練を完了" button would be drawn
+  // falls through to "no action" rather than ending the session.
+  for (const state of [notYetChecked, failing]) {
+    assert.deepEqual(
+      resolveCanvasAction(
+        pointIn(inputDockRects.trainComplete),
+        state,
+        baseScenario()
+      ),
+      {type: 'none'}
+    );
+  }
+
+  assert.deepEqual(
+    resolveCanvasAction(
+      pointIn(inputDockRects.trainComplete),
+      allOk,
+      baseScenario()
+    ),
+    {type: 'end_session', mode: 'resolve'}
+  );
+});
+
+test('resolveCanvasAction routes the retire confirmation overlay while retireConfirming is true', () => {
+  const state = {
+    ...createPlayState(),
+    recovery: {checking: false, retireConfirming: true},
+  };
+
+  assert.deepEqual(
+    resolveCanvasAction(
+      pointIn(retireConfirmButtonRects.confirm),
+      state,
+      baseScenario()
+    ),
+    {type: 'retire_confirm'}
+  );
+  assert.deepEqual(
+    resolveCanvasAction(
+      pointIn(retireConfirmButtonRects.cancel),
+      state,
+      baseScenario()
+    ),
+    {type: 'retire_cancel'}
+  );
+  // Every other click (e.g. the input dock behind the modal) is absorbed.
+  assert.deepEqual(
+    resolveCanvasAction(pointIn(inputDockRects.button), state, baseScenario()),
+    {type: 'none', absorb: true}
   );
 });
 

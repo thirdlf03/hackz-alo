@@ -547,6 +547,20 @@ export interface GameRenderState {
     injects: ExerciseInject[];
   };
   clickEffects: Array<{id: string; x: number; y: number; ageMs: number}>;
+  /** Client-side dry-run recovery-check state (GET .../recovery-check), used
+   * to gate the "訓練を完了" button so it never finishes the session on an
+   * unmet success condition. See useSessionRuntime.ts checkRecovery(). */
+  recovery?: {
+    checking: boolean;
+    lastCheck?: {
+      at: number;
+      declarable: boolean;
+      allOk: boolean;
+      checks: Array<{label: string; ok: boolean}>;
+      error?: boolean;
+    };
+    retireConfirming?: boolean;
+  };
   recording: {
     status:
       | 'idle'

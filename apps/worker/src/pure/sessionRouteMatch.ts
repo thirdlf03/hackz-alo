@@ -3,6 +3,7 @@ export type SessionRouteName =
   | 'prepare'
   | 'start'
   | 'resolve'
+  | 'recoveryCheck'
   | 'retire'
   | 'timeout'
   | 'delete'
@@ -68,6 +69,7 @@ const routeTable: Record<string, Partial<Record<string, SessionRouteName>>> = {
   },
   GET: {
     events: 'events',
+    'recovery-check': 'recoveryCheck',
     clock: 'clock',
     metrics: 'metrics',
     logs: 'logs',

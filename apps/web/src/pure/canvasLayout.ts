@@ -230,10 +230,32 @@ export const notificationPanelRegion = {
   height: 420,
 } as const;
 
+// The dock band grew from 170 to 210px tall (top moved 850 -> 810, see
+// drawInputDock's fillRect in canvasRenderChrome.ts) to make room for the
+// recovery-check result line(s) above the button row without overlapping
+// the monitor panels above it.
 export const inputDockRects = {
-  input: {x: 70, y: 878, width: 1280, height: 96},
-  retire: {x: 1370, y: 878, width: 140, height: 96},
-  button: {x: 1530, y: 878, width: 160, height: 96},
+  input: {x: 70, y: 918, width: 1280, height: 96},
+  retire: {x: 1370, y: 918, width: 140, height: 96},
+  /** Dry-run recovery-check trigger (was the direct "復旧完了" resolve
+   * button; see canvasActions.ts resolveCanvasAction). */
+  button: {x: 1530, y: 918, width: 160, height: 96},
+  /** Only hit-testable/drawn once recovery.lastCheck?.allOk is true. */
+  trainComplete: {x: 1710, y: 918, width: 140, height: 96},
+} as const;
+
+/** Retire confirmation modal shown while recovery.retireConfirming is
+ * true; absorbs all other clicks until confirm/cancel is hit. */
+export const retireConfirmOverlayRect = {
+  x: 660,
+  y: 410,
+  width: 600,
+  height: 260,
+} as const;
+
+export const retireConfirmButtonRects = {
+  confirm: {x: 700, y: 560, width: 220, height: 64},
+  cancel: {x: 1000, y: 560, width: 220, height: 64},
 } as const;
 
 export const navigationOverlayRect = {

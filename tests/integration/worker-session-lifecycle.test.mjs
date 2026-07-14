@@ -121,6 +121,34 @@ test('session control routes require the write token and proxy to the Durable Ob
   assert.equal(unknownSession.status, 401);
 });
 
+test('recovery-check route requires the write token and proxies a GET to the Durable Object', async () => {
+  const {app, env, state} = createSessionHarness();
+  const created = await json(
+    await app.fetch(createSessionRequest({difficulty: 'beginner'}), env)
+  );
+  const sessionId = created.data.sessionId;
+
+  const noAuth = await app.fetch(
+    new Request(`http://test/api/sessions/${sessionId}/recovery-check`),
+    env
+  );
+  assert.equal(noAuth.status, 401);
+
+  const checked = await app.fetch(
+    new Request(`http://test/api/sessions/${sessionId}/recovery-check`, {
+      headers: {authorization: `Bearer ${created.data.writeToken}`},
+    }),
+    env
+  );
+  assert.equal(checked.status, 200);
+  const recoveryCheck = state.doCalls.find((call) =>
+    call.path.endsWith('/recovery-check')
+  );
+  assert.ok(recoveryCheck, 'recovery-check proxied to Durable Object');
+  assert.equal(recoveryCheck.method, 'GET');
+  assert.equal(recoveryCheck.sessionId, sessionId);
+});
+
 test('task and incident-log CRUD routes require write access and proxy record identifiers', async () => {
   const {app, env, state} = createSessionHarness();
   const created = await json(

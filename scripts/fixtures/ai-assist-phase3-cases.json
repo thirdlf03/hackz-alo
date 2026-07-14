@@ -1,0 +1,494 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "noop-all-green-state",
+      "note": "canvas は ai-assist-gap-audit-cases.json の done-image-only と完全一致(唯一の成功条件がクリア済みの画面)。stateBlock で成功条件3/3達成・未達成なしを明示した上で『次は何をすればいいですか?』と聞く no-op 判断ケース。次の一手が『完了確認』または『不要』に収束し、curl の再提案が出ないかを見る。",
+      "question": "次は何をすればいいですか?",
+      "stateBlock": "状態: 成功条件 3/3 達成(api稼働/health 200/disk 80%未満)。未達成なし。",
+      "canvas": {
+        "width": 960,
+        "height": 540,
+        "title": "INCIDENT TRAINING / API が寝落ちした夜",
+        "lines": [
+          "SERVICE HEALTH   LIVE",
+          "TERMINAL: $ curl localhost:8080/health",
+          "curl: (7) Connection refused",
+          "TERMINAL: $ yamactl restart api",
+          "api: restarted",
+          "TERMINAL: $ curl localhost:8080/health",
+          "HTTP/1.1 200 OK",
+          "api: running"
+        ]
+      },
+      "rubric": {
+        "nextStepRequiredAny": [
+          [
+            "完了確認",
+            "不要"
+          ]
+        ],
+        "nextStepForbidden": [
+          "curl"
+        ]
+      },
+      "expectCompletionJudgment": true,
+      "completedCommands": [
+        "curl localhost:8080/health"
+      ]
+    },
+    {
+      "id": "noop-vs-partial-state",
+      "note": "case1 (noop-all-green-state) と同一canvasだが、stateBlock を『成功条件 2/3 達成・disk未達』に変えた逆方向ケース。未達成条件が残っているため no-op してはいけない。次の一手が disk 確認(du/df/ログ)側に向かい、誤って『完了確認』を出さないかを見る。",
+      "question": "次は何をすればいいですか?",
+      "stateBlock": "状態: 成功条件 2/3 達成。未達: disk 80%未満(現在93%)。",
+      "canvas": {
+        "width": 960,
+        "height": 540,
+        "title": "INCIDENT TRAINING / API が寝落ちした夜",
+        "lines": [
+          "SERVICE HEALTH   LIVE",
+          "TERMINAL: $ curl localhost:8080/health",
+          "curl: (7) Connection refused",
+          "TERMINAL: $ yamactl restart api",
+          "api: restarted",
+          "TERMINAL: $ curl localhost:8080/health",
+          "HTTP/1.1 200 OK",
+          "api: running"
+        ]
+      },
+      "rubric": {
+        "nextStepRequiredAny": [
+          [
+            "du",
+            "df",
+            "ログ"
+          ]
+        ],
+        "nextStepForbidden": [
+          "完了確認"
+        ]
+      }
+    },
+    {
+      "id": "noop-question-variant-1",
+      "note": "case1 (noop-all-green-state) と同一canvas・同一stateBlockで、質問文だけを『もうやることないですか?』に変えた表現ゆらぎケース。メタ・rubric は case1 と同じ。",
+      "question": "もうやることないですか?",
+      "stateBlock": "状態: 成功条件 3/3 達成(api稼働/health 200/disk 80%未満)。未達成なし。",
+      "canvas": {
+        "width": 960,
+        "height": 540,
+        "title": "INCIDENT TRAINING / API が寝落ちした夜",
+        "lines": [
+          "SERVICE HEALTH   LIVE",
+          "TERMINAL: $ curl localhost:8080/health",
+          "curl: (7) Connection refused",
+          "TERMINAL: $ yamactl restart api",
+          "api: restarted",
+          "TERMINAL: $ curl localhost:8080/health",
+          "HTTP/1.1 200 OK",
+          "api: running"
+        ]
+      },
+      "rubric": {
+        "nextStepRequiredAny": [
+          [
+            "完了確認",
+            "不要"
+          ]
+        ],
+        "nextStepForbidden": [
+          "curl"
+        ]
+      },
+      "expectCompletionJudgment": true,
+      "completedCommands": [
+        "curl localhost:8080/health"
+      ]
+    },
+    {
+      "id": "noop-question-variant-2",
+      "note": "case1 (noop-all-green-state) と同一canvas・同一stateBlockで、質問文だけを『復旧作業は終わりましたか?』に変えた表現ゆらぎケース。メタ・rubric は case1 と同じ。",
+      "question": "復旧作業は終わりましたか?",
+      "stateBlock": "状態: 成功条件 3/3 達成(api稼働/health 200/disk 80%未満)。未達成なし。",
+      "canvas": {
+        "width": 960,
+        "height": 540,
+        "title": "INCIDENT TRAINING / API が寝落ちした夜",
+        "lines": [
+          "SERVICE HEALTH   LIVE",
+          "TERMINAL: $ curl localhost:8080/health",
+          "curl: (7) Connection refused",
+          "TERMINAL: $ yamactl restart api",
+          "api: restarted",
+          "TERMINAL: $ curl localhost:8080/health",
+          "HTTP/1.1 200 OK",
+          "api: running"
+        ]
+      },
+      "rubric": {
+        "nextStepRequiredAny": [
+          [
+            "完了確認",
+            "不要"
+          ]
+        ],
+        "nextStepForbidden": [
+          "curl"
+        ]
+      },
+      "expectCompletionJudgment": true,
+      "completedCommands": [
+        "curl localhost:8080/health"
+      ]
+    },
+    {
+      "id": "noop-without-state",
+      "note": "case1 (noop-all-green-state) と同一canvas・同一questionで stateBlock を付けない対照ケース。画像のみで no-op 判断ができるか(状態テキスト併記が本当に効いているのか)を見る。メタ・rubric は case1 と同じ。",
+      "question": "次は何をすればいいですか?",
+      "canvas": {
+        "width": 960,
+        "height": 540,
+        "title": "INCIDENT TRAINING / API が寝落ちした夜",
+        "lines": [
+          "SERVICE HEALTH   LIVE",
+          "TERMINAL: $ curl localhost:8080/health",
+          "curl: (7) Connection refused",
+          "TERMINAL: $ yamactl restart api",
+          "api: restarted",
+          "TERMINAL: $ curl localhost:8080/health",
+          "HTTP/1.1 200 OK",
+          "api: running"
+        ]
+      },
+      "rubric": {
+        "nextStepRequiredAny": [
+          [
+            "完了確認",
+            "不要"
+          ]
+        ],
+        "nextStepForbidden": [
+          "curl"
+        ]
+      },
+      "expectCompletionJudgment": true,
+      "completedCommands": [
+        "curl localhost:8080/health"
+      ]
+    },
+    {
+      "id": "followup-with-summary",
+      "note": "canvas は ai-assist-gap-audit-cases.json の followup-no-context と完全一致(api再起動済み・health が Connection refused のまま)。stateBlock に現状と直前1往復の要約(yamactl restart api を実行済み・未解決)を注入し、実行済みで無力と分かっている再起動を再提案せず、ログ/プロセス/ポート/ハングなど別方向の調査に進めるかを見る。",
+      "question": "教えてもらった手順をやりましたが直りません。次は?",
+      "stateBlock": "状態: api は再起動済みだが health は Connection refused のまま。未解決。/ 直前のやりとり: 質問「apiが落ちてる」→ 提案「yamactl restart api」(実行済み・未解決)",
+      "canvas": {
+        "width": 960,
+        "height": 540,
+        "title": "INCIDENT TRAINING / 返事をくれない API の夜",
+        "lines": [
+          "SERVICE HEALTH   DOWN",
+          "TERMINAL: $ yamactl restart api",
+          "api: restarted",
+          "TERMINAL: $ curl localhost:8080/health",
+          "curl: (7) Connection refused"
+        ]
+      },
+      "rubric": {
+        "nextStepForbidden": [
+          "yamactl restart api"
+        ],
+        "requiredAny": [
+          [
+            "ログ",
+            "プロセス",
+            "ポート",
+            "ハング"
+          ]
+        ]
+      },
+      "completedCommands": [
+        "yamactl restart api",
+        "curl localhost:8080/health"
+      ]
+    },
+    {
+      "id": "followup-without-summary",
+      "note": "case6 (followup-with-summary) と同一canvas・同一questionで stateBlock を付けない対照ケース。ai-assist-gap-audit-cases.json の followup-no-context で実測した『0/4だった素の挙動』の再現用ベースライン。メタ・rubric は case6 と同じ。",
+      "question": "教えてもらった手順をやりましたが直りません。次は?",
+      "canvas": {
+        "width": 960,
+        "height": 540,
+        "title": "INCIDENT TRAINING / 返事をくれない API の夜",
+        "lines": [
+          "SERVICE HEALTH   DOWN",
+          "TERMINAL: $ yamactl restart api",
+          "api: restarted",
+          "TERMINAL: $ curl localhost:8080/health",
+          "curl: (7) Connection refused"
+        ]
+      },
+      "rubric": {
+        "nextStepForbidden": [
+          "yamactl restart api"
+        ],
+        "requiredAny": [
+          [
+            "ログ",
+            "プロセス",
+            "ポート",
+            "ハング"
+          ]
+        ]
+      },
+      "completedCommands": [
+        "yamactl restart api",
+        "curl localhost:8080/health"
+      ]
+    },
+    {
+      "id": "followup-summary-only-state",
+      "note": "case6 (followup-with-summary) と同一canvas・同一questionで、stateBlock から『状態: …』の現状行を除き『直前のやりとり: …』のみを残した切り分けケース。要約単独(現状行なし)でも再起動の再提案を避け、別方向の調査に進められるかを見る。",
+      "question": "教えてもらった手順をやりましたが直りません。次は?",
+      "stateBlock": "直前のやりとり: 質問「apiが落ちてる」→ 提案「yamactl restart api」(実行済み・未解決)",
+      "canvas": {
+        "width": 960,
+        "height": 540,
+        "title": "INCIDENT TRAINING / 返事をくれない API の夜",
+        "lines": [
+          "SERVICE HEALTH   DOWN",
+          "TERMINAL: $ yamactl restart api",
+          "api: restarted",
+          "TERMINAL: $ curl localhost:8080/health",
+          "curl: (7) Connection refused"
+        ]
+      },
+      "rubric": {
+        "nextStepForbidden": [
+          "yamactl restart api"
+        ],
+        "requiredAny": [
+          [
+            "ログ",
+            "プロセス",
+            "ポート",
+            "ハング"
+          ]
+        ]
+      },
+      "completedCommands": [
+        "yamactl restart api",
+        "curl localhost:8080/health"
+      ]
+    },
+    {
+      "id": "followup-second-failure",
+      "note": "case6 (followup-with-summary) の stateBlock に『その後 tail /var/log/api.log を実行(実行済み・エラー出力なし)』を追記した2手目失敗ケース。実行済みの再起動・tailの両方を再提案せず、ポート/プロセス/strace/リソース/ハングなどより深い調査へ進められるかを見る。",
+      "question": "ログにも何も出てません。次は?",
+      "stateBlock": "状態: api は再起動済みだが health は Connection refused のまま。未解決。/ 直前のやりとり: 質問「apiが落ちてる」→ 提案「yamactl restart api」(実行済み・未解決)/ その後 tail /var/log/api.log を実行(実行済み・エラー出力なし)",
+      "canvas": {
+        "width": 960,
+        "height": 540,
+        "title": "INCIDENT TRAINING / 返事をくれない API の夜",
+        "lines": [
+          "SERVICE HEALTH   DOWN",
+          "TERMINAL: $ yamactl restart api",
+          "api: restarted",
+          "TERMINAL: $ curl localhost:8080/health",
+          "curl: (7) Connection refused"
+        ]
+      },
+      "rubric": {
+        "nextStepForbidden": [
+          "yamactl restart api",
+          "tail /var/log/api.log"
+        ],
+        "requiredAny": [
+          [
+            "ポート",
+            "プロセス",
+            "strace",
+            "リソース",
+            "ハング"
+          ]
+        ]
+      },
+      "completedCommands": [
+        "yamactl restart api",
+        "curl localhost:8080/health",
+        "tail /var/log/api.log"
+      ]
+    },
+    {
+      "id": "followup-contradicting-summary",
+      "note": "case6 (followup-with-summary) と同一canvas(healthはConnection refusedのまま)だが、stateBlockの要約側は『health 200で復旧済み』と矛盾する内容にした罠ケース。画面(画像)側が実際の状態を示している以上、要約を鵜呑みにして完了扱いせず、refused/失敗/未解決/確認側に踏みとどまれるかを見る。",
+      "question": "これで完了ですよね?",
+      "stateBlock": "直前のやりとりの要約: health は 200 で復旧済み。",
+      "canvas": {
+        "width": 960,
+        "height": 540,
+        "title": "INCIDENT TRAINING / 返事をくれない API の夜",
+        "lines": [
+          "SERVICE HEALTH   DOWN",
+          "TERMINAL: $ yamactl restart api",
+          "api: restarted",
+          "TERMINAL: $ curl localhost:8080/health",
+          "curl: (7) Connection refused"
+        ]
+      },
+      "rubric": {
+        "nextStepForbidden": [
+          "完了確認"
+        ],
+        "requiredAny": [
+          [
+            "refused",
+            "失敗",
+            "未解決",
+            "確認"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "why-restart",
+      "note": "canvas は followup-with-summary と同一(再起動済み・health失敗)画面。『なんで再起動で直ることが多いんですか?』という why 質問。『次の一手:』フォーマット強制と why 質問との相性を人手レビューで確認する目的の観察用ケース。passThreshold は緩め(0.5)。",
+      "question": "なんで再起動で直ることが多いんですか?",
+      "canvas": {
+        "width": 960,
+        "height": 540,
+        "title": "INCIDENT TRAINING / 返事をくれない API の夜",
+        "lines": [
+          "SERVICE HEALTH   DOWN",
+          "TERMINAL: $ yamactl restart api",
+          "api: restarted",
+          "TERMINAL: $ curl localhost:8080/health",
+          "curl: (7) Connection refused"
+        ]
+      },
+      "rubric": {
+        "requiredAny": [
+          [
+            "プロセス",
+            "メモリ",
+            "状態",
+            "リセット"
+          ]
+        ],
+        "passThreshold": 0.5
+      }
+    },
+    {
+      "id": "why-connection-refused",
+      "note": "canvas は why-restart と同一。『Connection refused ってどういう意味ですか?』という用語説明を求める why 質問。ポート/接続/待ち受け/リッスンなど正しい原理説明に向かうかを見る。passThreshold は緩め(0.5)。",
+      "question": "Connection refused ってどういう意味ですか?",
+      "canvas": {
+        "width": 960,
+        "height": 540,
+        "title": "INCIDENT TRAINING / 返事をくれない API の夜",
+        "lines": [
+          "SERVICE HEALTH   DOWN",
+          "TERMINAL: $ yamactl restart api",
+          "api: restarted",
+          "TERMINAL: $ curl localhost:8080/health",
+          "curl: (7) Connection refused"
+        ]
+      },
+      "rubric": {
+        "requiredAny": [
+          [
+            "ポート",
+            "接続",
+            "待ち受け",
+            "リッスン"
+          ]
+        ],
+        "passThreshold": 0.5
+      }
+    },
+    {
+      "id": "why-with-state",
+      "note": "why-restart と同一questionに、followup-with-summary と同じ『状態: …』行のみを stateBlock として付けた対照ケース。状態テキスト併記が why 質問の回答品質に影響するかを見る。rubric は why-restart と同じ。",
+      "question": "なんで再起動で直ることが多いんですか?",
+      "stateBlock": "状態: api は再起動済みだが health は Connection refused のまま。未解決。",
+      "canvas": {
+        "width": 960,
+        "height": 540,
+        "title": "INCIDENT TRAINING / 返事をくれない API の夜",
+        "lines": [
+          "SERVICE HEALTH   DOWN",
+          "TERMINAL: $ yamactl restart api",
+          "api: restarted",
+          "TERMINAL: $ curl localhost:8080/health",
+          "curl: (7) Connection refused"
+        ]
+      },
+      "rubric": {
+        "requiredAny": [
+          [
+            "プロセス",
+            "メモリ",
+            "状態",
+            "リセット"
+          ]
+        ],
+        "passThreshold": 0.5
+      }
+    },
+    {
+      "id": "why-should-not-fabricate",
+      "note": "canvas は why-restart と同一。『このAPIのソースコードのどこにバグがありますか?』は画面(canvas)から答えられない質問で、それらしいバグ箇所を捏造せず不足を宣言できるかを見る。expectInsufficiency: true。",
+      "question": "このAPIのソースコードのどこにバグがありますか?",
+      "canvas": {
+        "width": 960,
+        "height": 540,
+        "title": "INCIDENT TRAINING / 返事をくれない API の夜",
+        "lines": [
+          "SERVICE HEALTH   DOWN",
+          "TERMINAL: $ yamactl restart api",
+          "api: restarted",
+          "TERMINAL: $ curl localhost:8080/health",
+          "curl: (7) Connection refused"
+        ]
+      },
+      "rubric": {
+        "requiredAny": [
+          [
+            "わかりません",
+            "不足",
+            "確認できません",
+            "画面"
+          ]
+        ]
+      },
+      "expectInsufficiency": true
+    },
+    {
+      "id": "why-mixed-intent",
+      "note": "canvas は why-restart と同一。『なんで直らないの?次どうすればいい?』という why と次の一手が混在した質問。次の一手側の妥当性(ログ/プロセス/ポート/ハングなど正しい調査方向を示せているか)で判定する。",
+      "question": "なんで直らないの?次どうすればいい?",
+      "canvas": {
+        "width": 960,
+        "height": 540,
+        "title": "INCIDENT TRAINING / 返事をくれない API の夜",
+        "lines": [
+          "SERVICE HEALTH   DOWN",
+          "TERMINAL: $ yamactl restart api",
+          "api: restarted",
+          "TERMINAL: $ curl localhost:8080/health",
+          "curl: (7) Connection refused"
+        ]
+      },
+      "rubric": {
+        "requiredAny": [
+          [
+            "ログ",
+            "プロセス",
+            "ポート",
+            "ハング"
+          ]
+        ]
+      }
+    }
+  ]
+}

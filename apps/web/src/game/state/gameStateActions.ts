@@ -4,6 +4,10 @@ import type {
   ScenarioDefinition,
 } from '@incident/shared';
 
+type RecoveryLastCheck = NonNullable<
+  NonNullable<GameRenderState['recovery']>['lastCheck']
+>;
+
 export type GameStateAction =
   | {type: 'dismiss_navigation_step'; stepId: string}
   | {type: 'set_right_panel_tab'; tab: 'runbook' | 'chat'}
@@ -47,4 +51,7 @@ export type GameStateAction =
       bodyHash: string;
       stepId: string;
       status: 'done' | 'failed' | 'skipped' | null;
-    };
+    }
+  | {type: 'set_recovery_checking'; checking: boolean}
+  | {type: 'set_recovery_last_check'; lastCheck: RecoveryLastCheck}
+  | {type: 'set_retire_confirming'; confirming: boolean};

@@ -14,6 +14,9 @@ import {
   focusCommandInput,
   setActiveRunbook,
   setCenterTool,
+  setRecoveryChecking,
+  setRecoveryLastCheck,
+  setRetireConfirming,
   setRightPanelTab,
   setChatDraft,
   submitPlayerChatMessage,
@@ -317,6 +320,62 @@ test('advanceGameState pulses when new chat messages arrive from the server', ()
   );
   assert.equal(next.monitors.right.chatMessages.length, 1);
   assert.equal(next.notifications.pulseMs, 2400);
+});
+
+test('setRecoveryChecking flips the checking flag and preserves lastCheck/retireConfirming', () => {
+  const initial = createPlayState();
+  const checking = setRecoveryChecking(initial, true);
+  assert.deepEqual(checking.recovery, {checking: true});
+
+  const withRetire = setRetireConfirming(checking, true);
+  const stillChecking = setRecoveryChecking(withRetire, true);
+  assert.equal(stillChecking, withRetire, 'no-op when value is unchanged');
+
+  const doneChecking = setRecoveryChecking(withRetire, false);
+  assert.deepEqual(doneChecking.recovery, {
+    checking: false,
+    retireConfirming: true,
+  });
+});
+
+test('setRecoveryLastCheck records the result and clears checking', () => {
+  const initial = setRecoveryChecking(createPlayState(), true);
+  const lastCheck = {
+    at: 12_345,
+    declarable: true,
+    allOk: false,
+    checks: [{label: 'health が 200', ok: false}],
+  };
+  const next = setRecoveryLastCheck(initial, lastCheck);
+  assert.deepEqual(next.recovery, {checking: false, lastCheck});
+});
+
+test('setRecoveryLastCheck preserves an in-progress retireConfirming flag', () => {
+  const initial = setRetireConfirming(createPlayState(), true);
+  const lastCheck = {
+    at: 1,
+    declarable: false,
+    allOk: false,
+    checks: [],
+  };
+  const next = setRecoveryLastCheck(initial, lastCheck);
+  assert.deepEqual(next.recovery, {
+    checking: false,
+    lastCheck,
+    retireConfirming: true,
+  });
+});
+
+test('setRetireConfirming toggles the confirmation overlay flag', () => {
+  const initial = createPlayState();
+  const opened = setRetireConfirming(initial, true);
+  assert.equal(opened.recovery.retireConfirming, true);
+
+  const noop = setRetireConfirming(opened, true);
+  assert.equal(noop, opened, 'no-op when value is unchanged');
+
+  const closed = setRetireConfirming(opened, false);
+  assert.equal(closed.recovery.retireConfirming, false);
 });
 
 function metricAt(at) {

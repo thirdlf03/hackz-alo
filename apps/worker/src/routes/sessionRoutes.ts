@@ -286,6 +286,14 @@ export function registerSessionRoutes(app: WorkerApp) {
     if (denied) return denied;
     return proxySession(c, 'resolve');
   });
+  // GET despite triggering a sandbox exec: this is a dry-run recovery
+  // check (no session state change), gated behind the same write-access
+  // check as resolve because it still costs a sandbox exec.
+  app.get('/api/sessions/:sessionId/recovery-check', async (c) => {
+    const denied = await requireSessionWriteAccess(c, c.req.param('sessionId'));
+    if (denied) return denied;
+    return proxySession(c, 'recovery-check');
+  });
   app.post('/api/sessions/:sessionId/retire', async (c) => {
     const denied = await requireSessionWriteAccess(c, c.req.param('sessionId'));
     if (denied) return denied;

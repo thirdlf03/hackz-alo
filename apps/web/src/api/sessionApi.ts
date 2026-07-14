@@ -12,11 +12,24 @@ import type {
   ScenarioDefinition,
   ServiceHealth,
   SessionStatus,
+  SuccessCondition,
   ChatMessageDefinition,
 } from '@incident/shared';
 import type {HttpClient} from './httpClient.js';
 
 export type SessionLogFile = 'access' | 'app' | 'batch';
+
+export interface SuccessConditionCheck {
+  condition: SuccessCondition;
+  ok: boolean;
+}
+
+export interface SessionRecoveryCheckResponse {
+  declarable: boolean;
+  allOk: boolean;
+  checks: SuccessConditionCheck[];
+  evaluatedAt: number;
+}
 
 export interface SessionLogsResponse {
   file: SessionLogFile;
@@ -449,9 +462,16 @@ export class SessionApi {
   }
 
   resolveSession(sessionId: string) {
-    return this.http.post<{ok: boolean}>(
-      `/api/sessions/${encodeURIComponent(sessionId)}/resolve`,
-      {}
+    return this.http.post<{
+      ok: boolean;
+      checks: SuccessConditionCheck[];
+      session: SessionSnapshotResponse;
+    }>(`/api/sessions/${encodeURIComponent(sessionId)}/resolve`, {});
+  }
+
+  checkRecovery(sessionId: string) {
+    return this.http.get<SessionRecoveryCheckResponse>(
+      `/api/sessions/${encodeURIComponent(sessionId)}/recovery-check`
     );
   }
 
