@@ -32,8 +32,12 @@ pnpm run dev:worker   # Worker dev server(別ターミナル)
 | unit        | `pnpm test`                 | 純粋ロジック(`tests/unit/*.mjs`)                                    |
 | integration | `pnpm run test:integration` | Worker ルートを本物の Request/Response で駆動(`tests/integration/`) |
 | e2e         | `pnpm run test:e2e`         | Playwright でブラウザからの主要フロー                               |
+| e2e smoke   | `pnpm run test:e2e:smoke`   | e2e のうちゲームコアフロー(success/failure/terminal/editor/replay-access)のみ |
 | vrt         | `pnpm run test:vrt`         | 全画面のスクリーンショット基準比較(CI の `vrt` ジョブで実行)        |
 | perf        | `pnpm run perf:e2e`         | 性能ベースライン(default の e2e には含まれない)                     |
+
+PR ゲートでは `test:e2e:smoke` を使い、フル(`test:e2e`)は merge 前・CI で実行する
+(フルスイートは workers: 1 で直列実行のため1周に数分かかる)。
 
 `pnpm run test:coverage:check` は line coverage のしきい値ゲート(`.cursor/rules/project-conventions.mdc`
 参照)。CI の `test` ジョブはこれを実行する。

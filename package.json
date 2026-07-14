@@ -9,6 +9,7 @@
     "test:coverage": "node --test --test-concurrency=1 --experimental-test-coverage tests/unit/*.mjs",
     "test:coverage:check": "node --test --test-concurrency=1 --experimental-test-coverage --test-coverage-lines=73.02 tests/unit/*.mjs",
     "test:e2e": "playwright test",
+    "test:e2e:smoke": "playwright test game-success game-failure terminal editor replay-access",
     "test:vrt": "playwright test -c playwright.vrt.config.ts",
     "test:integration": "node --test tests/integration/*.mjs",
     "build:scenarios": "tsx scripts/build-scenarios.mjs",

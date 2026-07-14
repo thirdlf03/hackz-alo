@@ -5,6 +5,8 @@ export default defineConfig({
   testIgnore: '**/perf.spec.ts',
   timeout: 120_000,
   expect: {timeout: 15_000},
+  // 並列化を workers=2 で実測したところ壁時計時間が悪化しフレークも増加したため 1 に据え置き。
+  // 詳細: PR本文/作業ログ参照(sandboxリソース共有下での資源競合が原因と推定)。
   workers: 1,
   retries: process.env.CI ? 2 : 0,
   reporter: process.env.CI ? [['github'], ['list']] : [['list']],
