@@ -66,7 +66,10 @@ test('--state-format is parsed and validated', () => {
 
 test('--monochrome is parsed and rejects combination with --state-text', () => {
   assert.equal(parseAiAssistArgs(['--monochrome']).monochrome, true);
-  assert.equal(parseAiAssistArgs(['--append-image', '--monochrome']).monochrome, true);
+  assert.equal(
+    parseAiAssistArgs(['--append-image', '--monochrome']).monochrome,
+    true
+  );
   assert.throws(
     () => parseAiAssistArgs(['--state-text', '--monochrome']),
     /--monochrome and --state-text cannot be combined/
@@ -246,7 +249,9 @@ test('next-step section is extracted between the first 次の一手 and 根拠 m
     '状況はポート競合の疑いです。次の一手: ss -ltnp を実行して占有プロセスを確認する。根拠: health が unknown service identity のまま。'
   );
   assert.equal(
-    withEvidenceSection.checks.find((check) => check.kind === 'nextStepRequiredAny').passed,
+    withEvidenceSection.checks.find(
+      (check) => check.kind === 'nextStepRequiredAny'
+    ).passed,
     true
   );
 
@@ -255,7 +260,9 @@ test('next-step section is extracted between the first 次の一手 and 根拠 m
     '状況はポート競合の疑いです。次の一手: ss -ltnp を実行して占有プロセスを確認する。'
   );
   assert.equal(
-    withoutEvidenceMarker.checks.find((check) => check.kind === 'nextStepRequiredAny').passed,
+    withoutEvidenceMarker.checks.find(
+      (check) => check.kind === 'nextStepRequiredAny'
+    ).passed,
     true
   );
 
@@ -264,7 +271,9 @@ test('next-step section is extracted between the first 次の一手 and 根拠 m
     'ss -ltnp を実行して占有プロセスを確認する。'
   );
   assert.equal(
-    withoutNextStepMarker.checks.find((check) => check.kind === 'nextStepRequiredAny').passed,
+    withoutNextStepMarker.checks.find(
+      (check) => check.kind === 'nextStepRequiredAny'
+    ).passed,
     false
   );
 });
@@ -286,7 +295,8 @@ test('nextStepRequiredAny and nextStepForbidden score only the 次の一手 sect
     'DB Conn は 40/40 で犯人プロセスが疑われます。次の一手: DB を再起動して、犯人が生きていればすぐ再発する を実行する。'
   );
   assert.equal(
-    misleadingRestart.checks.find((check) => check.kind === 'nextStepForbidden').passed,
+    misleadingRestart.checks.find((check) => check.kind === 'nextStepForbidden')
+      .passed,
     false
   );
   assert.equal(misleadingRestart.passed, false);
@@ -296,11 +306,15 @@ test('nextStepRequiredAny and nextStepForbidden score only the 次の一手 sect
     'DB Conn は 40/40 で犯人プロセスが疑われます。次の一手: cat /workspace/run/fake-db-stats.json で犯人プロセスを特定する。'
   );
   assert.equal(
-    correctInvestigation.checks.find((check) => check.kind === 'nextStepRequiredAny').passed,
+    correctInvestigation.checks.find(
+      (check) => check.kind === 'nextStepRequiredAny'
+    ).passed,
     true
   );
   assert.equal(
-    correctInvestigation.checks.find((check) => check.kind === 'nextStepForbidden').passed,
+    correctInvestigation.checks.find(
+      (check) => check.kind === 'nextStepForbidden'
+    ).passed,
     true
   );
 });
@@ -324,7 +338,9 @@ test('rubrics without next-step fields score identically to before the extension
   assert.equal(result.checkCount, 5);
   assert.equal(
     result.checks.some(
-      (check) => check.kind === 'nextStepRequiredAny' || check.kind === 'nextStepForbidden'
+      (check) =>
+        check.kind === 'nextStepRequiredAny' ||
+        check.kind === 'nextStepForbidden'
     ),
     false
   );

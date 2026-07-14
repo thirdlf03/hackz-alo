@@ -70,14 +70,18 @@ test('serializeScreenLines emits TERMINAL lines (tail 30, ANSI stripped) when ac
 
 test('serializeScreenLines emits EDITOR lines (head 30) when activeTool is editor, and omits TERMINAL', () => {
   const initial = createPlayState();
-  const editorContent = Array.from({length: 35}, (_, index) => `const x${index} = 1;`).join(
-    '\n'
-  );
+  const editorContent = Array.from(
+    {length: 35},
+    (_, index) => `const x${index} = 1;`
+  ).join('\n');
   const state = stateWithMonitors({
     center: {
       ...initial.monitors.center,
       activeTool: 'editor',
-      terminal: {...initial.monitors.center.terminal, lines: ['should not appear']},
+      terminal: {
+        ...initial.monitors.center.terminal,
+        lines: ['should not appear'],
+      },
       editor: {...initial.monitors.center.editor, content: editorContent},
     },
   });
@@ -127,10 +131,15 @@ test('serializeScreenLines emits recentChatMessages as CHAT lines when activePan
       ...initial.monitors.right,
       activePanelTab: 'chat',
       activeRunbook: initial.monitors.right.activeRunbook,
-      chatMessages: [{id: 'srv-1', from: 'bot', body: 'ss -ltnp を見て', atMs: 1_000}],
+      chatMessages: [
+        {id: 'srv-1', from: 'bot', body: 'ss -ltnp を見て', atMs: 1_000},
+      ],
     },
   });
-  const merged = {...state, monitors: {...state.monitors, right: {...state.monitors.right}}};
+  const merged = {
+    ...state,
+    monitors: {...state.monitors, right: {...state.monitors.right}},
+  };
   const viewModel = buildCanvasViewModel(merged, scenario);
 
   const lines = serializeScreenLines(merged, viewModel);
@@ -147,14 +156,18 @@ test('groundAssistNextStep accepts a next-step copied verbatim from serialized T
       activeTool: 'terminal',
       terminal: {
         ...initial.monitors.center.terminal,
-        lines: ['$ ss -ltnp', 'LISTEN 0 128 0.0.0.0:8080 users:(("api",pid=1))'],
+        lines: [
+          '$ ss -ltnp',
+          'LISTEN 0 128 0.0.0.0:8080 users:(("api",pid=1))',
+        ],
       },
     },
   });
   const viewModel = buildCanvasViewModel(state, baseScenario());
   const lines = serializeScreenLines(state, viewModel);
 
-  const answer = '次の一手: ss -ltnp を実行してポート占有を確認する\n根拠: ターミナルの表示より';
+  const answer =
+    '次の一手: ss -ltnp を実行してポート占有を確認する\n根拠: ターミナルの表示より';
   const result = groundAssistNextStep(answer, lines);
 
   assert.equal(result.status, 'ok');
@@ -172,7 +185,8 @@ test('groundAssistNextStep rejects a next-step command absent from the serialize
   const viewModel = buildCanvasViewModel(state, baseScenario());
   const lines = serializeScreenLines(state, viewModel);
 
-  const answer = '次の一手: kubectl rollout restart deployment/api\n根拠: 一般的な復旧手順のため';
+  const answer =
+    '次の一手: kubectl rollout restart deployment/api\n根拠: 一般的な復旧手順のため';
   const result = groundAssistNextStep(answer, lines);
 
   assert.equal(result.status, 'rejected');

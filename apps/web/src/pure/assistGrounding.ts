@@ -54,7 +54,10 @@ export function extractNextStepText(answer: string): string {
   const start = normalized.indexOf(marker);
   if (start < 0) return '';
   const evidenceMarker = normalizeForGrounding(EVIDENCE_MARKER);
-  const evidenceIndex = normalized.indexOf(evidenceMarker, start + marker.length);
+  const evidenceIndex = normalized.indexOf(
+    evidenceMarker,
+    start + marker.length
+  );
   const end = evidenceIndex >= 0 ? evidenceIndex : normalized.length;
   return normalized.slice(start, end);
 }
@@ -79,12 +82,25 @@ export function groundAssistNextStep(
   const nextStep = extractNextStepText(answer);
   if (!nextStep) return {status: 'no_next_step'};
 
-  const normalizedLines = screenLines.map((line) => normalizeForGrounding(line));
+  const normalizedLines = screenLines.map((line) =>
+    normalizeForGrounding(line)
+  );
   const screenText = normalizedLines.join('\n');
-  const candidateResult = evaluateCandidates(nextStep, screenText, normalizedLines);
+  const candidateResult = evaluateCandidates(
+    nextStep,
+    screenText,
+    normalizedLines
+  );
 
-  if (candidateResult.status === 'rejected' || candidateResult.status === 'unverified') {
-    return {status: candidateResult.status, nextStep, reason: candidateResult.reason};
+  if (
+    candidateResult.status === 'rejected' ||
+    candidateResult.status === 'unverified'
+  ) {
+    return {
+      status: candidateResult.status,
+      nextStep,
+      reason: candidateResult.reason,
+    };
   }
 
   const chainCompletion = findChainCompletion(nextStep, normalizedLines);
@@ -98,7 +114,11 @@ export function groundAssistNextStep(
   }
 
   if (candidateResult.status === 'repaired') {
-    return {status: 'repaired', nextStep, repairedNextStep: candidateResult.repairedNextStep};
+    return {
+      status: 'repaired',
+      nextStep,
+      repairedNextStep: candidateResult.repairedNextStep,
+    };
   }
   return candidateResult.reason
     ? {status: 'ok', nextStep, reason: candidateResult.reason}
@@ -140,9 +160,14 @@ function evaluateCandidates(
   }
 
   if (rejectedCandidates.length > 0) {
-    return {status: 'rejected', reason: `unverifiable command: ${rejectedCandidates.join(', ')}`};
+    return {
+      status: 'rejected',
+      reason: `unverifiable command: ${rejectedCandidates.join(', ')}`,
+    };
   }
-  return repairedAny ? {status: 'repaired', repairedNextStep: repairedText} : {status: 'ok'};
+  return repairedAny
+    ? {status: 'repaired', repairedNextStep: repairedText}
+    : {status: 'ok'};
 }
 
 function extractCommandCandidates(text: string): string[] {
@@ -161,7 +186,10 @@ function extractCommandCandidates(text: string): string[] {
  * coverage either way, see isSubstantialLineCopy()) of a non-CHAT line is
  * trusted as 'ok'; everything else is 'unverified'.
  */
-function evaluateLineCopy(nextStep: string, normalizedLines: string[]): CandidateResult {
+function evaluateLineCopy(
+  nextStep: string,
+  normalizedLines: string[]
+): CandidateResult {
   let matchedChatLine = false;
   for (const line of normalizedLines) {
     if (line.length === 0) continue;
@@ -237,7 +265,10 @@ function extractChains(normalizedLines: string[]): string[][] {
  * " -> ") to repair it with. Returns undefined when no chain applies, or
  * when the whole chain is already present.
  */
-function findChainCompletion(nextStep: string, normalizedLines: string[]): string | undefined {
+function findChainCompletion(
+  nextStep: string,
+  normalizedLines: string[]
+): string | undefined {
   for (const elements of extractChains(normalizedLines)) {
     const [first, ...rest] = elements;
     if (
@@ -269,7 +300,9 @@ function findBestWindow(
       if (distance === 0) break;
     }
   }
-  return bestStart >= 0 ? {distance: bestDistance, start: bestStart} : undefined;
+  return bestStart >= 0
+    ? {distance: bestDistance, start: bestStart}
+    : undefined;
 }
 
 /** Expands a matched offset outward to the enclosing whitespace-delimited token. */
@@ -295,7 +328,9 @@ function editDistance(a: string, b: string): number {
       const insertion = current[j - 1] ?? 0;
       const substitution = previous[j - 1] ?? 0;
       current[j] =
-        substitutionCost === 0 ? substitution : 1 + Math.min(deletion, insertion, substitution);
+        substitutionCost === 0
+          ? substitution
+          : 1 + Math.min(deletion, insertion, substitution);
     }
     previous = current;
   }

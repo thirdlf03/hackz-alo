@@ -4,18 +4,18 @@
 
 ## 測るもの
 
-| 指標                     | 意味                                                                     |
-| ------------------------ | ------------------------------------------------------------------------ |
-| `availability.elapsedMs` | Prompt API の利用可否確認時間                                            |
-| `prewarm.sessionCreateMs`| `--current-chrome` でベースセッションを先行作成する時間                   |
-| `sessionCloneMs`         | 先行作成したベースから質問用の独立セッションを複製する時間                |
-| `sessionCreateMs`        | clone方式では複製時間。通常モードでは新規セッション作成時間               |
-| `inputPrepareMs`         | 質問メッセージと合成 canvas の準備時間                                   |
-| `ttftMs`                 | prompt 開始から最初の非空 chunk まで                                     |
-| `totalMs`                | prompt 開始から stream 完了まで                                          |
-| `endToEndMs`             | セッション作成開始から stream 完了まで。prewarmなしの待ち時間            |
-| `charsPerSecond`         | 最初の chunk 後の Unicode 文字/秒。トークン/秒ではない                   |
-| `quality.score`          | 必須根拠、推奨アクション、禁止された推測を rubric で決定論的に採点した値 |
+| 指標                      | 意味                                                                     |
+| ------------------------- | ------------------------------------------------------------------------ |
+| `availability.elapsedMs`  | Prompt API の利用可否確認時間                                            |
+| `prewarm.sessionCreateMs` | `--current-chrome` でベースセッションを先行作成する時間                  |
+| `sessionCloneMs`          | 先行作成したベースから質問用の独立セッションを複製する時間               |
+| `sessionCreateMs`         | clone方式では複製時間。通常モードでは新規セッション作成時間              |
+| `inputPrepareMs`          | 質問メッセージと合成 canvas の準備時間                                   |
+| `ttftMs`                  | prompt 開始から最初の非空 chunk まで                                     |
+| `totalMs`                 | prompt 開始から stream 完了まで                                          |
+| `endToEndMs`              | セッション作成開始から stream 完了まで。prewarmなしの待ち時間            |
+| `charsPerSecond`          | 最初の chunk 後の Unicode 文字/秒。トークン/秒ではない                   |
+| `quality.score`           | 必須根拠、推奨アクション、禁止された推測を rubric で決定論的に採点した値 |
 
 `--current-chrome` は本番UIと同じくベースセッションを先行作成し、ケースごとに `clone()` した独立セッションを使う。通常モードはケースごとに新規セッションを作る。どちらも前の会話や画像が次の回答へ影響しない。最初に warmup を行い、モデルのダウンロード時間は推論速度に含めない。モデルが `downloadable` または `downloading` の場合は計測せず終了する。
 

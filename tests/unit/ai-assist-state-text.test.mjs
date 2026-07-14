@@ -13,8 +13,14 @@ test('STATE_TEXT_SYSTEM_PROMPT addresses the textualized screen instead of an im
 });
 
 test('STATE_TEXT_SYSTEM_PROMPT keeps the full NEXT confirmation-step copy rule', () => {
-  assert.match(STATE_TEXT_SYSTEM_PROMPT, /画面テキストにNEXTまたは復旧手順があれば/);
-  assert.match(STATE_TEXT_SYSTEM_PROMPT, /確認工程を含むコマンド列を省略せずそのまま次の一手にして/);
+  assert.match(
+    STATE_TEXT_SYSTEM_PROMPT,
+    /画面テキストにNEXTまたは復旧手順があれば/
+  );
+  assert.match(
+    STATE_TEXT_SYSTEM_PROMPT,
+    /確認工程を含むコマンド列を省略せずそのまま次の一手にして/
+  );
 });
 
 test('STATE_TEXT_SYSTEM_PROMPT prefers chat/other on-screen hints over an already-executed runbook command', () => {
@@ -25,9 +31,18 @@ test('STATE_TEXT_SYSTEM_PROMPT prefers chat/other on-screen hints over an alread
 });
 
 test('STATE_TEXT_SYSTEM_PROMPT forbids fabricating commands and reciting runbook caution notes', () => {
-  assert.match(STATE_TEXT_SYSTEM_PROMPT, /画面テキストに書かれている文字列をそのままコピーして/);
-  assert.match(STATE_TEXT_SYSTEM_PROMPT, /画面テキストにないコマンド名を作らないでください/);
-  assert.match(STATE_TEXT_SYSTEM_PROMPT, /Runbookの注意書きや方針・精神論.*を次の一手にしない/);
+  assert.match(
+    STATE_TEXT_SYSTEM_PROMPT,
+    /画面テキストに書かれている文字列をそのままコピーして/
+  );
+  assert.match(
+    STATE_TEXT_SYSTEM_PROMPT,
+    /画面テキストにないコマンド名を作らないでください/
+  );
+  assert.match(
+    STATE_TEXT_SYSTEM_PROMPT,
+    /Runbookの注意書きや方針・精神論.*を次の一手にしない/
+  );
 });
 
 test('STATE_TEXT_SYSTEM_PROMPT keeps the answer format rules unchanged', () => {
@@ -37,7 +52,11 @@ test('STATE_TEXT_SYSTEM_PROMPT keeps the answer format rules unchanged', () => {
 });
 
 test('buildStateAskText embeds the title and lines under a 画面テキスト block and keeps the discipline rules', () => {
-  const text = buildStateAskText(['SERVICE HEALTH   DEGRADED'], 'INCIDENT TRAINING', '次の一手は?');
+  const text = buildStateAskText(
+    ['SERVICE HEALTH   DEGRADED'],
+    'INCIDENT TRAINING',
+    '次の一手は?'
+  );
   assert.match(text, /画面テキスト:/);
   assert.match(text, /INCIDENT TRAINING/);
   assert.match(text, /SERVICE HEALTH   DEGRADED/);
@@ -55,7 +74,11 @@ test('buildPanelStateAskText groups db-pool-culprit lines into labeled panels in
     'RUNBOOK: DB を再起動しても、犯人が生きていればすぐ再発する',
     'CHAT: 先輩(仮眠中): ん…月次レポートのバッチ、今夜だったかも…zzz',
   ];
-  const text = buildPanelStateAskText(lines, 'INCIDENT TRAINING / やまびこ API', '状況の判断と次の一手を教えてください。');
+  const text = buildPanelStateAskText(
+    lines,
+    'INCIDENT TRAINING / やまびこ API',
+    '状況の判断と次の一手を教えてください。'
+  );
   const expected = [
     'INCIDENT TRAINING / やまびこ API',
     '以下はゲーム画面の内容をテキスト化したものです。これだけを根拠にし、画面テキストにない事実やコマンドを作らないでください。',

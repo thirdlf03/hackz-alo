@@ -2,10 +2,8 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {tsImport} from 'tsx/esm/api';
 
-const {groundAssistNextStep, extractNextStepText, normalizeForGrounding} = await tsImport(
-  '../../apps/web/src/pure/assistGrounding.ts',
-  import.meta.url
-);
+const {groundAssistNextStep, extractNextStepText, normalizeForGrounding} =
+  await tsImport('../../apps/web/src/pure/assistGrounding.ts', import.meta.url);
 
 test('exact match of a screen command is ok', () => {
   const result = groundAssistNextStep(
@@ -53,7 +51,10 @@ test('a truncated but real path is repaired to the complete screen path', () => 
     ]
   );
   assert.equal(result.status, 'repaired');
-  assert.match(result.repairedNextStep, /\/workspace\/docs\/runbooks\/service-recovery\.md/);
+  assert.match(
+    result.repairedNextStep,
+    /\/workspace\/docs\/runbooks\/service-recovery\.md/
+  );
 });
 
 test('a missing 次の一手 marker is no_next_step', () => {
@@ -84,7 +85,9 @@ test('an arrow written as → matches the same content written as -> on screen',
 
 test('extractNextStepText returns the section between 次の一手 and 根拠', () => {
   assert.equal(
-    extractNextStepText('状況は不明。次の一手: ss -ltnp を実行する。根拠: health が unknown のまま。'),
+    extractNextStepText(
+      '状況は不明。次の一手: ss -ltnp を実行する。根拠: health が unknown のまま。'
+    ),
     '次の一手: ss -ltnp を実行する。'
   );
   assert.equal(extractNextStepText('根拠だけの回答です。'), '');
@@ -105,7 +108,10 @@ test('a next step copying only the first half of an on-screen NEXT chain is comp
   );
   assert.equal(result.status, 'repaired');
   assert.equal(result.reason, 'next-chain-completed');
-  assert.equal(result.repairedNextStep, 'yamactl restart api -> curl localhost:8080/health');
+  assert.equal(
+    result.repairedNextStep,
+    'yamactl restart api -> curl localhost:8080/health'
+  );
 });
 
 test('a next step that already copied the whole NEXT chain stays ok', () => {
@@ -123,7 +129,10 @@ test('the chain completion rule also fires for an ASCII -> chain on screen', () 
   );
   assert.equal(result.status, 'repaired');
   assert.equal(result.reason, 'next-chain-completed');
-  assert.equal(result.repairedNextStep, 'yamactl restart api -> curl localhost:8080/health');
+  assert.equal(
+    result.repairedNextStep,
+    'yamactl restart api -> curl localhost:8080/health'
+  );
 });
 
 test('a fabricated command outside any on-screen chain is still rejected', () => {

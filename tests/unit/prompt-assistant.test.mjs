@@ -182,7 +182,10 @@ test('askPreparedAssistant sends the same instruction text as askAssistant image
   assert.equal(preparedInput[0].role, 'user');
   assert.equal(preparedInput[0].content.length, 1);
   assert.equal(preparedInput[0].content[0].type, 'text');
-  assert.equal(preparedInput[0].content[0].value, imagePathInput[0].content[0].value);
+  assert.equal(
+    preparedInput[0].content[0].value,
+    imagePathInput[0].content[0].value
+  );
 });
 
 test('askAssistant sends text only when no screenshot is attached', () => {

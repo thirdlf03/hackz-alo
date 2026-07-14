@@ -112,9 +112,18 @@ test('system prompt grounds answers in the attached in-game canvas', () => {
 });
 
 test('system prompt forbids reciting runbook caution notes as the next step', () => {
-  assert.match(ASSIST_SYSTEM_PROMPT, /画像に写っている文字列をそのままコピーして/);
-  assert.match(ASSIST_SYSTEM_PROMPT, /画像にないコマンド名を作らないでください/);
-  assert.match(ASSIST_SYSTEM_PROMPT, /Runbookの注意書きや方針・精神論.*を次の一手にしない/);
+  assert.match(
+    ASSIST_SYSTEM_PROMPT,
+    /画像に写っている文字列をそのままコピーして/
+  );
+  assert.match(
+    ASSIST_SYSTEM_PROMPT,
+    /画像にないコマンド名を作らないでください/
+  );
+  assert.match(
+    ASSIST_SYSTEM_PROMPT,
+    /Runbookの注意書きや方針・精神論.*を次の一手にしない/
+  );
   assert.doesNotMatch(ASSIST_SYSTEM_PROMPT, /1つの手順に限定/);
 });
 

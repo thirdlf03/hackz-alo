@@ -26,7 +26,10 @@ test('describeGroundingBadge maps repaired to a badge with the repaired detail l
 });
 
 test('describeGroundingBadge maps repaired without a repairedNextStep to a badge with no detail', () => {
-  const badge = describeGroundingBadge({status: 'repaired', nextStep: 'ss -lt'});
+  const badge = describeGroundingBadge({
+    status: 'repaired',
+    nextStep: 'ss -lt',
+  });
   assert.deepEqual(badge, {tone: 'repaired', label: '修復済み'});
 });
 
