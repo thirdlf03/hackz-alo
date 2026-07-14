@@ -436,6 +436,42 @@ test('case validation validates hardRequired groups and new case meta fields', (
   );
 });
 
+test('case validation accepts an optional non-empty stateBlock and rejects empty/non-string values', () => {
+  assert.equal(
+    validateAiAssistCases({
+      cases: [{id: 'one', question: 'q', stateBlock: '状態: ヘルスチェック 200'}],
+    }).length,
+    1
+  );
+  assert.equal(
+    validateAiAssistCases({
+      cases: [{id: 'one', question: 'q'}],
+    }).length,
+    1
+  );
+  assert.throws(
+    () =>
+      validateAiAssistCases({
+        cases: [{id: 'one', question: 'q', stateBlock: ''}],
+      }),
+    /stateBlock must be a non-empty string/
+  );
+  assert.throws(
+    () =>
+      validateAiAssistCases({
+        cases: [{id: 'one', question: 'q', stateBlock: '   '}],
+      }),
+    /stateBlock must be a non-empty string/
+  );
+  assert.throws(
+    () =>
+      validateAiAssistCases({
+        cases: [{id: 'one', question: 'q', stateBlock: 42}],
+      }),
+    /stateBlock must be a non-empty string/
+  );
+});
+
 test('hardRequired fails the case regardless of score when any group is unmet', () => {
   const testCase = {
     rubric: {

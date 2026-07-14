@@ -77,6 +77,11 @@ export function validateAiAssistCases(value) {
     ids.add(item.id);
     if (typeof item.question !== 'string' || item.question.trim() === '')
       throw new Error(`${item.id}: question must be a non-empty string`);
+    if (
+      item.stateBlock !== undefined &&
+      (typeof item.stateBlock !== 'string' || item.stateBlock.trim() === '')
+    )
+      throw new Error(`${item.id}: stateBlock must be a non-empty string`);
     if (item.canvas !== undefined) validateCanvas(item.id, item.canvas);
     validateStringArray(item.id, 'requiredAll', item.rubric?.requiredAll ?? []);
     validateStringArray(item.id, 'forbidden', item.rubric?.forbidden ?? []);
