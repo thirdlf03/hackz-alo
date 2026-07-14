@@ -44,6 +44,21 @@ type CompletionCard =
   | {kind: 'not_declarable'}
   | {kind: 'error'};
 
+/** The current (not yet done/skipped) Runbook step's instruction, if any —
+ * mirrors the "current" step derivation used by RunbookProgressPanel's
+ * runbook-step-current-banner (playRunbookPanel.tsx) and by
+ * buildAssistStateInput's currentStep. Used as the deterministic fallback
+ * shown in place of a redundant "次の一手" suggestion. */
+function getCurrentRunbookStepInstruction(
+  state: GameRenderState | undefined
+): string | undefined {
+  const activeRunbook = state?.monitors.right.activeRunbook;
+  if (!activeRunbook) return undefined;
+  const steps = parseRunbookSteps(activeRunbook.body, activeRunbook.steps);
+  const resolved = resolveStepStatuses(steps, state.runbookProgress);
+  return resolved.find((entry) => entry.status === 'current')?.step.instruction;
+}
+
 function buildCompletionCard(recovery: RecoveryState): CompletionCard {
   const lastCheck = recovery?.lastCheck;
   if (!lastCheck || lastCheck.error) return {kind: 'error'};
@@ -340,9 +355,14 @@ export function AiAssistPanel(props: {
         accumulatedAnswer,
         screenLines ?? []
       );
+      const recentCommands =
+        props.gameStateRef.current?.monitors.center.terminal.commandHistory.slice(
+          -5
+        );
       const finalizedAnswer = finalizeAssistAnswer(
         accumulatedAnswer,
-        grounding
+        grounding,
+        recentCommands
       );
       setFinalized(finalizedAnswer);
       const adoptedSuggestion =
@@ -622,7 +642,12 @@ export function AiAssistPanel(props: {
               <p class='ai-assist-answer'>{finalized.prose}</p>
             )}
             {finalized.nextStep && (
-              <NextStepDisplay nextStep={finalized.nextStep} />
+              <NextStepDisplay
+                nextStep={finalized.nextStep}
+                currentRunbookStepInstruction={getCurrentRunbookStepInstruction(
+                  props.gameStateRef.current
+                )}
+              />
             )}
           </>
         )}
@@ -682,13 +707,17 @@ const NEXT_STEP_ALERT_VERDICTS = new Set([
 const NEXT_STEP_HIDDEN_COMMAND_VERDICTS = new Set([
   'rejected',
   'danger_blocked',
+  'redundant',
 ]);
 
 /** Renders the finalized "次の一手" per its safety/grounding verdict. See
  * finalizeAssistAnswer() for how the verdict is derived: classifyCommandSafety
  * always overrides a merely-grounded verdict, so a literally on-screen but
  * dangerous command is never shown as if it were vetted. */
-function NextStepDisplay(props: {nextStep: FinalizedAssistNextStep}) {
+function NextStepDisplay(props: {
+  nextStep: FinalizedAssistNextStep;
+  currentRunbookStepInstruction: string | undefined;
+}) {
   const {nextStep} = props;
   const showCommand = !NEXT_STEP_HIDDEN_COMMAND_VERDICTS.has(nextStep.verdict);
   return (
@@ -724,6 +753,21 @@ function NextStepDisplay(props: {nextStep: FinalizedAssistNextStep}) {
         <p class='ai-assist-nextstep-note'>
           ⚠ 画面の手順からは確認できませんでした
         </p>
+      )}
+      {nextStep.verdict === 'redundant' && (
+        <>
+          <p class='ai-assist-nextstep-note'>
+            このコマンドは直近に実行済みです。
+          </p>
+          {props.currentRunbookStepInstruction && (
+            <p class='runbook-step-current-banner'>
+              <span class='runbook-step-marker' aria-hidden='true'>
+                ▸
+              </span>{' '}
+              {props.currentRunbookStepInstruction}
+            </p>
+          )}
+        </>
       )}
     </div>
   );

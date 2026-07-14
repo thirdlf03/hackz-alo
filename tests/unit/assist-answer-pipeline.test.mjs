@@ -116,3 +116,56 @@ test('finalizeAssistAnswer returns no nextStep and full trimmed prose for no_nex
   assert.equal(result.nextStep, undefined);
   assert.equal(result.prose, answer);
 });
+
+test('finalizeAssistAnswer downgrades a next step matching an already-executed command to redundant', () => {
+  const answer = '次の一手: ss -ltnp\n根拠: RUNBOOKの記載に基づく。';
+  const grounding = {status: 'ok', nextStep: '次の一手: ss -ltnp'};
+  const recentCommands = [
+    {command: 'ss -ltnp', at: Date.now() - 1000},
+    {command: 'cat /var/log/app.log', at: Date.now() - 2000},
+  ];
+
+  const result = finalizeAssistAnswer(answer, grounding, recentCommands);
+
+  assert.equal(result.nextStep?.verdict, 'redundant');
+  assert.equal(result.nextStep?.reason, '直近に実行済みのコマンドです');
+});
+
+test('finalizeAssistAnswer matches redundant commands despite backtick/whitespace notational differences', () => {
+  const answer = '次の一手: `ss  -ltnp`\n根拠: RUNBOOKの記載に基づく。';
+  const grounding = {
+    status: 'ok',
+    nextStep: '次の一手: `ss  -ltnp`',
+  };
+  const recentCommands = [{command: 'ss -ltnp', at: Date.now() - 1000}];
+
+  const result = finalizeAssistAnswer(answer, grounding, recentCommands);
+
+  assert.equal(result.nextStep?.verdict, 'redundant');
+});
+
+test('finalizeAssistAnswer keeps a non-executed command verdict unchanged (not redundant)', () => {
+  const answer =
+    '次の一手: ss -ltnp で確認する。\n根拠: RUNBOOKの記載に基づく。';
+  const grounding = {status: 'ok', nextStep: '次の一手: ss -ltnp で確認する'};
+  const recentCommands = [{command: 'df -h', at: Date.now() - 1000}];
+
+  const result = finalizeAssistAnswer(answer, grounding, recentCommands);
+
+  assert.equal(result.nextStep?.verdict, 'ok');
+});
+
+test('finalizeAssistAnswer prioritizes danger over redundant when both apply', () => {
+  const answer = '次の一手: sudo rm -rf /workspace\n根拠: なし。';
+  const grounding = {
+    status: 'ok',
+    nextStep: '次の一手: sudo rm -rf /workspace',
+  };
+  const recentCommands = [
+    {command: 'sudo rm -rf /workspace', at: Date.now() - 1000},
+  ];
+
+  const result = finalizeAssistAnswer(answer, grounding, recentCommands);
+
+  assert.equal(result.nextStep?.verdict, 'danger_blocked');
+});

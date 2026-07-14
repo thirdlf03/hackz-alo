@@ -20,7 +20,10 @@ import {
   classifyCommandSafety,
   type CommandSafetyResult,
 } from './commandSafety.js';
-import type {GroundingResult} from './assistGrounding.js';
+import {
+  normalizeForGrounding,
+  type GroundingResult,
+} from './assistGrounding.js';
 
 export type AssistNextStepVerdict =
   | 'ok'
@@ -28,7 +31,15 @@ export type AssistNextStepVerdict =
   | 'rejected'
   | 'danger_blocked'
   | 'danger_confirm'
+  | 'redundant'
   | 'unverified';
+
+/** A single entry of the terminal's recent command history, used to detect a
+ * re-suggested "次の一手" that was already executed (see isRecentlyExecuted). */
+export interface RecentAssistCommand {
+  command: string;
+  at: number;
+}
 
 export interface FinalizedAssistNextStep {
   command: string;
@@ -44,6 +55,7 @@ export interface FinalizedAssistAnswer {
 
 const NEXT_STEP_MARKER = '次の一手';
 const EVIDENCE_MARKER = '根拠';
+const REDUNDANT_REASON = '直近に実行済みのコマンドです';
 
 const SAFETY_SEVERITY: Record<CommandSafetyResult['level'], number> = {
   ok: 0,
@@ -53,7 +65,8 @@ const SAFETY_SEVERITY: Record<CommandSafetyResult['level'], number> = {
 
 export function finalizeAssistAnswer(
   answer: string,
-  grounding: GroundingResult
+  grounding: GroundingResult,
+  recentCommands?: RecentAssistCommand[]
 ): FinalizedAssistAnswer {
   const prose = extractProse(answer);
 
@@ -84,6 +97,17 @@ export function finalizeAssistAnswer(
       nextStep: safety.reason
         ? {command, verdict: 'danger_confirm', reason: safety.reason}
         : {command, verdict: 'danger_confirm'},
+    };
+  }
+
+  // Danger always wins over redundant (handled above); redundant in turn
+  // wins over every grounding-derived verdict below (ok/repaired/rejected/
+  // unverified) — a command that's grounded but already executed must still
+  // be downgraded, since re-running it is what the model keeps getting wrong.
+  if (isRecentlyExecuted(command, recentCommands)) {
+    return {
+      prose,
+      nextStep: {command, verdict: 'redundant', reason: REDUNDANT_REASON},
     };
   }
 
@@ -119,6 +143,35 @@ export function finalizeAssistAnswer(
         nextStep: {command, verdict: 'ok'},
       };
   }
+}
+
+/**
+ * True when the next-step command (normalized: NFKC, backticks stripped,
+ * whitespace collapsed, lowercased — via normalizeForGrounding) exactly
+ * matches one of the recently executed terminal commands. `command` is the
+ * raw grounding.nextStep text, which still carries the leading "次の一手"
+ * marker (see extractNextStepText in assistGrounding.ts); that marker is
+ * stripped first so it can be compared against a bare shell command from
+ * commandHistory.
+ */
+function isRecentlyExecuted(
+  command: string,
+  recentCommands: RecentAssistCommand[] | undefined
+): boolean {
+  if (!recentCommands || recentCommands.length === 0) return false;
+  const normalizedCommand = normalizeForGrounding(stripNextStepMarker(command));
+  if (!normalizedCommand) return false;
+  return recentCommands.some(
+    (entry) => normalizeForGrounding(entry.command) === normalizedCommand
+  );
+}
+
+/** Strips a leading "次の一手" marker (and its following separator, e.g. ": ")
+ * from a next-step string, if present. */
+function stripNextStepMarker(text: string): string {
+  const index = text.indexOf(NEXT_STEP_MARKER);
+  if (index < 0) return text;
+  return text.slice(index + NEXT_STEP_MARKER.length).replace(/^[:：]\s*/, '');
 }
 
 function worstCommandSafety(commands: string[]): CommandSafetyResult {
