@@ -27,6 +27,10 @@ import {
 import {resolveAnswerPresentation} from '../pure/assistAnswerPresentation.js';
 import {splitAnswerForMasking} from '../pure/assistAnswerMask.js';
 import {groundAssistNextStep} from '../pure/assistGrounding.js';
+import {
+  describeGroundingBadge,
+  type GroundingBadgeInfo,
+} from '../pure/assistGroundingBadge.js';
 import {buildCanvasViewModel} from '../pure/canvasViewModel.js';
 import {serializeScreenLines} from '../pure/serializeScreenLines.js';
 import {parseRunbookSteps, resolveStepStatuses} from '../pure/runbookSteps.js';
@@ -123,6 +127,12 @@ export function AiAssistPanel(props: {
     prose: string;
     nextStep?: FinalizedAssistNextStep;
   }>();
+  // The current finalized nextStep's grounding badge (label/detail derived
+  // from groundAssistNextStep()'s result, including a chat-source caution
+  // when the matched evidence came from a CHAT line). See NextStepDisplay.
+  const [groundingBadge, setGroundingBadge] = useState<
+    GroundingBadgeInfo | undefined
+  >(undefined);
   const [answerIntent, setAnswerIntent] = useState<AssistIntent>();
   const [completionCard, setCompletionCard] = useState<CompletionCard>();
   const [lastExchange, setLastExchange] = useState<AssistStateLastExchange>();
@@ -139,15 +149,19 @@ export function AiAssistPanel(props: {
     sessionPoolRef.current.release(prepared.session);
   };
 
-  // Serializes the literal on-screen text at the current moment (same data
-  // the canvas renders from) so the eventual answer can be cross-checked
-  // against it via groundAssistNextStep(). Returns undefined when the game
-  // state isn't available yet (e.g. before the first render).
+  // Serializes the game's literal text at the current moment (the canvas'
+  // data, plus the non-active center/right panels) so the eventual answer
+  // can be cross-checked against it via groundAssistNextStep(). allPanels is
+  // true here (grounding evidence should cover what the game state can
+  // attest to, not only what's currently rendered) — other callers of
+  // serializeScreenLines must keep the default (visible-only) behavior.
+  // Returns undefined when the game state isn't available yet (e.g. before
+  // the first render).
   const captureScreenLines = (): string[] | undefined => {
     const state = props.gameStateRef.current;
     if (!state) return undefined;
     const viewModel = buildCanvasViewModel(state, props.scenarioRef.current);
-    return serializeScreenLines(state, viewModel);
+    return serializeScreenLines(state, viewModel, {allPanels: true});
   };
 
   // Assembles the state block input from cached game state only: the
@@ -302,6 +316,7 @@ export function AiAssistPanel(props: {
     setAssistError(undefined);
     setAnswer('');
     setFinalized(undefined);
+    setGroundingBadge(undefined);
     setAnswerIntent(detectAssistIntent(prompt));
     let session: AssistantSession | undefined;
     let accumulatedAnswer = '';
@@ -378,6 +393,7 @@ export function AiAssistPanel(props: {
         recentCommands
       );
       setFinalized(finalizedAnswer);
+      setGroundingBadge(describeGroundingBadge(grounding));
       const adoptedSuggestion =
         finalizedAnswer.nextStep &&
         finalizedAnswer.nextStep.verdict !== 'request_context' &&
@@ -400,6 +416,7 @@ export function AiAssistPanel(props: {
       );
       setDownloadProgress(undefined);
       setFinalized(undefined);
+      setGroundingBadge(undefined);
     } finally {
       if (session) sessionPoolRef.current.release(session);
       setBusy(false);
@@ -425,6 +442,7 @@ export function AiAssistPanel(props: {
     setAssistError(undefined);
     setAnswer('');
     setFinalized(undefined);
+    setGroundingBadge(undefined);
     setCompletionCard(undefined);
     await props.checkRecovery();
     setCompletionCard(
@@ -674,6 +692,7 @@ export function AiAssistPanel(props: {
                   presentation.showCommandAs !== 'reference' && (
                     <NextStepDisplay
                       nextStep={finalized.nextStep}
+                      groundingBadge={groundingBadge}
                       currentRunbookStepInstruction={getCurrentRunbookStepInstruction(
                         props.gameStateRef.current
                       )}
@@ -747,6 +766,7 @@ const NEXT_STEP_HIDDEN_COMMAND_VERDICTS = new Set([
  * dangerous command is never shown as if it were vetted. */
 function NextStepDisplay(props: {
   nextStep: FinalizedAssistNextStep;
+  groundingBadge: GroundingBadgeInfo | undefined;
   currentRunbookStepInstruction: string | undefined;
 }) {
   const {nextStep} = props;
@@ -774,14 +794,21 @@ function NextStepDisplay(props: {
       {showCommand && (
         <p class='ai-assist-nextstep-command'>次の一手: {nextStep.command}</p>
       )}
-      {nextStep.verdict === 'ok' && (
-        <p class='ai-assist-nextstep-note'>✓ 画面の手順と一致</p>
-      )}
-      {nextStep.verdict === 'repair_candidate' && nextStep.repairSuggestion && (
-        <p class='ai-assist-nextstep-note'>
-          画面上の近い表記: {nextStep.repairSuggestion}
-        </p>
-      )}
+      {(nextStep.verdict === 'ok' || nextStep.verdict === 'repair_candidate') &&
+        props.groundingBadge && (
+          <div
+            class={`ai-assist-grounding ai-assist-grounding-${props.groundingBadge.tone}`}
+          >
+            <p class='ai-assist-grounding-badge'>
+              {props.groundingBadge.label}
+            </p>
+            {props.groundingBadge.detail && (
+              <p class='ai-assist-grounding-detail'>
+                {props.groundingBadge.detail}
+              </p>
+            )}
+          </div>
+        )}
       {nextStep.verdict === 'rejected' && (
         <p class='ai-assist-nextstep-note'>
           画面から根拠を確認できない提案のため非表示にしました

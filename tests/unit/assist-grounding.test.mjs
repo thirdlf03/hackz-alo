@@ -110,7 +110,7 @@ test('a next step copying only the first half of an on-screen NEXT chain is comp
   assert.equal(result.reason, 'next-chain-completed');
   assert.equal(
     result.repairedNextStep,
-    'yamactl restart api -> curl localhost:8080/health'
+    '次の一手: yamactl restart api -> curl localhost:8080/health'
   );
 });
 
@@ -131,7 +131,30 @@ test('the chain completion rule also fires for an ASCII -> chain on screen', () 
   assert.equal(result.reason, 'next-chain-completed');
   assert.equal(
     result.repairedNextStep,
-    'yamactl restart api -> curl localhost:8080/health'
+    '次の一手: yamactl restart api -> curl localhost:8080/health'
+  );
+});
+
+test('chain completion appends the missing element instead of discarding a distinct command the model correctly kept (regression: was a destructive full-chain replace)', () => {
+  const result = groundAssistNextStep(
+    '次の一手: curl -s http://localhost:8080/health を実行してエンドポイントの応答を確認してから yamactl restart api\n根拠: 直前にヘルスチェックしてから再起動する。',
+    [
+      'TERMINAL: $ curl -s http://localhost:8080/health',
+      'NEXT: yamactl restart api -> curl localhost:8080/health/status',
+    ]
+  );
+  assert.equal(result.status, 'repaired');
+  assert.equal(result.reason, 'next-chain-completed');
+  // The model's correctly-verified curl health-check must survive the
+  // repair: the chain's own (different) confirmation step is appended, not
+  // substituted wholesale for the whole answer.
+  assert.match(
+    result.repairedNextStep,
+    /curl -s http:\/\/localhost:8080\/health を実行してエンドポイントの応答を確認してから yamactl restart api/
+  );
+  assert.match(
+    result.repairedNextStep,
+    / -> curl localhost:8080\/health\/status$/
   );
 });
 
@@ -206,4 +229,79 @@ test('a chat-derived next step that does contain a real command is still ok, una
   );
   assert.equal(result.status, 'ok');
   assert.equal(result.reason, undefined);
+});
+
+test('a fuzzy-matched candidate with no internal whitespace is expanded to the full multi-word screen command, not truncated to its first word (regression: expandToken used to drop everything after the first space)', () => {
+  const result = groundAssistNextStep(
+    '次の一手: `tail-f/workspace/run/app.log` を実行してログを追跡する\n根拠: エラーが継続しているため。',
+    ['TERMINAL: $ tail -f /workspace/run/app.log']
+  );
+  assert.equal(result.status, 'repaired');
+  assert.match(result.repairedNextStep, /tail -f \/workspace\/run\/app\.log/);
+});
+
+test('sourceLabels collects the label of the screen line an exact-match candidate came from', () => {
+  const result = groundAssistNextStep(
+    '次の一手: `cat /workspace/run/fake-db-stats.json` を実行して犯人プロセスを特定する\n根拠: DB Conn が 40/40 です。',
+    ['TERMINAL: $ cat /workspace/run/fake-db-stats.json']
+  );
+  assert.equal(result.status, 'ok');
+  assert.deepEqual(result.sourceLabels, ['TERMINAL']);
+});
+
+test("sourceLabels collects the label of a repaired candidate's screen line", () => {
+  const result = groundAssistNextStep(
+    '次の一手: `cp /workspace/docs/backups/service-recovery.md /workspace/docs/runbooks/service-recovery-`\n根拠: バックアップから復元する。',
+    [
+      'TERMINAL: $ ls /workspace/docs/backups',
+      'TERMINAL: $ cp /workspace/docs/backups/service-recovery.md /workspace/docs/runbooks/service-recovery.md',
+    ]
+  );
+  assert.equal(result.status, 'repaired');
+  assert.deepEqual(result.sourceLabels, ['TERMINAL']);
+});
+
+test('sourceLabels collects RUNBOOK for a line-copy match', () => {
+  const result = groundAssistNextStep(
+    '次の一手: DB を再起動しても、犯人が生きていればすぐ再発する\n根拠: DB接続プールが枯渇しているため。',
+    [
+      'ALERT: DB connection pool exhausted',
+      'RUNBOOK: DB を再起動しても、犯人が生きていればすぐ再発する',
+    ]
+  );
+  assert.equal(result.status, 'ok');
+  assert.deepEqual(result.sourceLabels, ['RUNBOOK']);
+});
+
+test('sourceLabels collects CHAT when a chat message is promoted verbatim to the next step (chat-prose)', () => {
+  const result = groundAssistNextStep(
+    '次の一手: 監視、たまに死ぬんだよな…気づいたら直しといて…\n根拠: チャットの指摘の通り。',
+    [
+      'RUNBOOK: app.log で monitor-agent と api、それぞれの生死を個別に確認する',
+      'CHAT: 先輩(仮眠中): 監視、たまに死ぬんだよな…気づいたら直しといて…zzz',
+    ]
+  );
+  assert.equal(result.status, 'unverified');
+  assert.deepEqual(result.sourceLabels, ['CHAT']);
+});
+
+test('sourceLabels merges labels from multiple matching lines (a candidate on both TERMINAL and RUNBOOK)', () => {
+  const result = groundAssistNextStep(
+    '次の一手: `yamactl restart api` を実行する\n根拠: Runbook通り。',
+    [
+      'RUNBOOK: yamactl restart api で再起動する',
+      'TERMINAL: $ yamactl restart api',
+    ]
+  );
+  assert.equal(result.status, 'ok');
+  assert.deepEqual(result.sourceLabels, ['RUNBOOK', 'TERMINAL']);
+});
+
+test("sourceLabels includes the NEXT-chain line's label alongside any per-candidate label", () => {
+  const result = groundAssistNextStep(
+    '次の一手: yamactl restart api\n根拠: NEXTの通りに再起動する。',
+    ['NEXT: yamactl restart api -> curl localhost:8080/health']
+  );
+  assert.equal(result.status, 'repaired');
+  assert.deepEqual(result.sourceLabels, ['NEXT']);
 });

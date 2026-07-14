@@ -148,6 +148,121 @@ test('serializeScreenLines emits recentChatMessages as CHAT lines when activePan
   assert.ok(!lines.some((line) => line.startsWith('RUNBOOK: ')));
 });
 
+test('serializeScreenLines with {allPanels: true} also includes the inactive EDITOR lines when activeTool is terminal', () => {
+  const initial = createPlayState();
+  const state = stateWithMonitors({
+    center: {
+      ...initial.monitors.center,
+      activeTool: 'terminal',
+      terminal: {...initial.monitors.center.terminal, lines: ['$ ss -ltnp']},
+      editor: {
+        ...initial.monitors.center.editor,
+        content: 'const x = 1;',
+      },
+    },
+  });
+  const viewModel = buildCanvasViewModel(state, baseScenario());
+
+  const defaultLines = serializeScreenLines(state, viewModel);
+  assert.ok(defaultLines.some((line) => line.startsWith('TERMINAL: ')));
+  assert.ok(!defaultLines.some((line) => line.startsWith('EDITOR: ')));
+
+  const allPanelsLines = serializeScreenLines(state, viewModel, {
+    allPanels: true,
+  });
+  assert.ok(allPanelsLines.some((line) => line.startsWith('TERMINAL: ')));
+  assert.ok(allPanelsLines.includes('EDITOR: const x = 1;'));
+});
+
+test('serializeScreenLines with {allPanels: true} also includes the inactive TERMINAL lines when activeTool is editor', () => {
+  const initial = createPlayState();
+  const state = stateWithMonitors({
+    center: {
+      ...initial.monitors.center,
+      activeTool: 'editor',
+      terminal: {...initial.monitors.center.terminal, lines: ['$ ss -ltnp']},
+      editor: {...initial.monitors.center.editor, content: 'const x = 1;'},
+    },
+  });
+  const viewModel = buildCanvasViewModel(state, baseScenario());
+
+  const allPanelsLines = serializeScreenLines(state, viewModel, {
+    allPanels: true,
+  });
+  assert.ok(allPanelsLines.includes('EDITOR: const x = 1;'));
+  assert.ok(allPanelsLines.includes('TERMINAL: $ ss -ltnp'));
+});
+
+test('serializeScreenLines with {allPanels: true} also includes the inactive RUNBOOK lines when activePanelTab is chat', () => {
+  const scenario = {
+    ...baseScenario(),
+    runbooks: [{id: 'rb-1', title: 'Restart the API', body: 'restart it'}],
+  };
+  const initial = createPlayState(scenario);
+  const state = stateWithMonitors({
+    right: {
+      ...initial.monitors.right,
+      activePanelTab: 'chat',
+      activeRunbook: initial.monitors.right.activeRunbook,
+      chatMessages: [
+        {id: 'srv-1', from: 'bot', body: 'ss -ltnp を見て', atMs: 1_000},
+      ],
+    },
+  });
+  const merged = {
+    ...state,
+    monitors: {...state.monitors, right: {...state.monitors.right}},
+  };
+  const viewModel = buildCanvasViewModel(merged, scenario);
+
+  const defaultLines = serializeScreenLines(merged, viewModel);
+  assert.ok(!defaultLines.some((line) => line.startsWith('RUNBOOK: ')));
+
+  const allPanelsLines = serializeScreenLines(merged, viewModel, {
+    allPanels: true,
+  });
+  assert.ok(allPanelsLines.includes('CHAT: bot: ss -ltnp を見て'));
+  assert.ok(allPanelsLines.includes('RUNBOOK: Restart the API'));
+});
+
+test('serializeScreenLines with {allPanels: true} also includes the inactive CHAT lines when activePanelTab is runbook', () => {
+  const scenario = {
+    ...baseScenario(),
+    runbooks: [{id: 'rb-1', title: 'Restart the API', body: 'restart it'}],
+  };
+  const initial = createPlayState(scenario);
+  const state = stateWithMonitors({
+    right: {
+      ...initial.monitors.right,
+      activePanelTab: 'runbook',
+      activeRunbook: initial.monitors.right.activeRunbook,
+      chatMessages: [
+        {id: 'srv-1', from: 'bot', body: 'ss -ltnp を見て', atMs: 1_000},
+      ],
+    },
+  });
+  const merged = {
+    ...state,
+    monitors: {...state.monitors, right: {...state.monitors.right}},
+  };
+  const viewModel = buildCanvasViewModel(merged, scenario);
+
+  // The chat message also surfaces once via the always-present notification
+  // panel summary (independent of activePanelTab), so presence alone can't
+  // distinguish the right-panel CHAT section; count occurrences instead.
+  const countChatLine = (lines) =>
+    lines.filter((line) => line === 'CHAT: bot: ss -ltnp を見て').length;
+
+  const defaultLines = serializeScreenLines(merged, viewModel);
+  assert.equal(countChatLine(defaultLines), 1);
+
+  const allPanelsLines = serializeScreenLines(merged, viewModel, {
+    allPanels: true,
+  });
+  assert.ok(allPanelsLines.includes('RUNBOOK: Restart the API'));
+  assert.equal(countChatLine(allPanelsLines), 2);
+});
+
 test('groundAssistNextStep accepts a next-step copied verbatim from serialized TERMINAL lines', () => {
   const initial = createPlayState();
   const state = stateWithMonitors({

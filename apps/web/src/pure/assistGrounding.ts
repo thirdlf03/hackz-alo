@@ -14,6 +14,9 @@ export interface GroundingResult {
   nextStep?: string;
   repairedNextStep?: string;
   reason?: string;
+  /** Leading labels (e.g. "CHAT", "RUNBOOK", "TERMINAL", "ALERT") of the
+   * screenLines entries that the matched command candidate(s) came from. */
+  sourceLabels?: string[];
 }
 
 const NEXT_STEP_MARKER = '次の一手';
@@ -92,24 +95,32 @@ export function groundAssistNextStep(
     normalizedLines
   );
 
-  if (
-    candidateResult.status === 'rejected' ||
-    candidateResult.status === 'unverified'
-  ) {
+  if (candidateResult.status === 'rejected') {
+    return {status: 'rejected', nextStep, reason: candidateResult.reason};
+  }
+  if (candidateResult.status === 'unverified') {
     return {
-      status: candidateResult.status,
+      status: 'unverified',
       nextStep,
       reason: candidateResult.reason,
+      ...(candidateResult.sourceLabels?.length
+        ? {sourceLabels: candidateResult.sourceLabels}
+        : {}),
     };
   }
 
   const chainCompletion = findChainCompletion(nextStep, normalizedLines);
   if (chainCompletion) {
+    const sourceLabels = mergeLabels(
+      candidateResult.sourceLabels,
+      chainCompletion.label ? [chainCompletion.label] : undefined
+    );
     return {
       status: 'repaired',
       nextStep,
-      repairedNextStep: chainCompletion,
+      repairedNextStep: chainCompletion.repairedNextStep,
       reason: 'next-chain-completed',
+      ...(sourceLabels.length > 0 ? {sourceLabels} : {}),
     };
   }
 
@@ -118,18 +129,39 @@ export function groundAssistNextStep(
       status: 'repaired',
       nextStep,
       repairedNextStep: candidateResult.repairedNextStep,
+      ...(candidateResult.sourceLabels?.length
+        ? {sourceLabels: candidateResult.sourceLabels}
+        : {}),
     };
   }
-  return candidateResult.reason
-    ? {status: 'ok', nextStep, reason: candidateResult.reason}
-    : {status: 'ok', nextStep};
+  return {
+    status: 'ok',
+    nextStep,
+    ...(candidateResult.reason ? {reason: candidateResult.reason} : {}),
+    ...(candidateResult.sourceLabels?.length
+      ? {sourceLabels: candidateResult.sourceLabels}
+      : {}),
+  };
 }
 
 type CandidateResult =
-  | {status: 'ok'; reason?: string}
-  | {status: 'repaired'; repairedNextStep: string}
+  | {status: 'ok'; reason?: string; sourceLabels?: string[]}
+  | {status: 'repaired'; repairedNextStep: string; sourceLabels?: string[]}
   | {status: 'rejected'; reason: string}
-  | {status: 'unverified'; reason: string};
+  | {status: 'unverified'; reason: string; sourceLabels?: string[]};
+
+/** Merges label groups (dropping undefined groups), de-duplicating while
+ * preserving first-seen order. */
+function mergeLabels(...groups: (string[] | undefined)[]): string[] {
+  const merged: string[] = [];
+  for (const group of groups) {
+    if (!group) continue;
+    for (const label of group) {
+      if (!merged.includes(label)) merged.push(label);
+    }
+  }
+  return merged;
+}
 
 /** Per-candidate verification against the screen text (rule (b)-(e) of the design). */
 function evaluateCandidates(
@@ -146,14 +178,24 @@ function evaluateCandidates(
   let repairedText = nextStep;
   let repairedAny = false;
   const rejectedCandidates: string[] = [];
+  const sourceLabels: string[] = [];
+  const addLabels = (token: string) => {
+    for (const label of labelsForToken(token, normalizedLines)) {
+      if (!sourceLabels.includes(label)) sourceLabels.push(label);
+    }
+  };
 
   for (const candidate of candidates) {
-    if (screenText.includes(candidate)) continue;
+    if (screenText.includes(candidate)) {
+      addLabels(candidate);
+      continue;
+    }
     const match = findBestWindow(candidate, screenText);
     if (match && match.distance <= candidate.length * REPAIR_DISTANCE_RATIO) {
-      const expanded = expandToken(screenText, match.start);
+      const expanded = expandToken(screenText, match.start, candidate.length);
       repairedText = repairedText.replace(candidate, expanded);
       repairedAny = true;
+      addLabels(expanded);
     } else {
       rejectedCandidates.push(candidate);
     }
@@ -166,8 +208,26 @@ function evaluateCandidates(
     };
   }
   return repairedAny
-    ? {status: 'repaired', repairedNextStep: repairedText}
-    : {status: 'ok'};
+    ? {
+        status: 'repaired',
+        repairedNextStep: repairedText,
+        ...(sourceLabels.length > 0 ? {sourceLabels} : {}),
+      }
+    : {status: 'ok', ...(sourceLabels.length > 0 ? {sourceLabels} : {})};
+}
+
+/** Leading labels (uppercased, e.g. "CHAT", "RUNBOOK") of every normalized
+ * screen line that contains `token` as a substring. */
+function labelsForToken(token: string, normalizedLines: string[]): string[] {
+  const labels: string[] = [];
+  for (const line of normalizedLines) {
+    if (!line.includes(token)) continue;
+    const label = lineLabel(line);
+    if (!label) continue;
+    const upper = label.toUpperCase();
+    if (!labels.includes(upper)) labels.push(upper);
+  }
+  return labels;
 }
 
 function extractCommandCandidates(text: string): string[] {
@@ -194,14 +254,19 @@ function evaluateLineCopy(
   for (const line of normalizedLines) {
     if (line.length === 0) continue;
     if (!isSubstantialLineCopy(nextStep, stripLabel(line))) continue;
-    if (lineLabel(line) === 'chat') {
+    const label = lineLabel(line);
+    if (label === 'chat') {
       matchedChatLine = true;
       continue;
     }
-    return {status: 'ok', reason: 'line-copy'};
+    return {
+      status: 'ok',
+      reason: 'line-copy',
+      ...(label ? {sourceLabels: [label.toUpperCase()]} : {}),
+    };
   }
   return matchedChatLine
-    ? {status: 'unverified', reason: 'chat-prose'}
+    ? {status: 'unverified', reason: 'chat-prose', sourceLabels: ['CHAT']}
     : {status: 'unverified', reason: 'no-grounded-command'};
 }
 
@@ -241,44 +306,59 @@ function longestCommonSubstringLength(a: string, b: string): number {
   return best;
 }
 
+interface ScreenChain {
+  elements: string[];
+  label?: string;
+}
+
 /**
  * Finds "A -> B [-> C ...]" command chains among the (already normalized)
  * screen lines. A leading label prefix (e.g. "next:", "terminal:") is
  * stripped, but chains are not limited to any particular prefix.
  */
-function extractChains(normalizedLines: string[]): string[][] {
-  const chains: string[][] = [];
+function extractChains(normalizedLines: string[]): ScreenChain[] {
+  const chains: ScreenChain[] = [];
   for (const line of normalizedLines) {
     if (!line.includes('->')) continue;
     const elements = stripLabel(line)
       .split('->')
       .map((part) => part.trim())
       .filter((part) => part.length > 0);
-    if (elements.length >= 2) chains.push(elements);
+    if (elements.length < 2) continue;
+    const label = lineLabel(line);
+    chains.push({elements, ...(label ? {label: label.toUpperCase()} : {})});
   }
   return chains;
 }
 
 /**
  * If the next-step answer contains only the first element of an on-screen
- * chain and is missing a later element, returns the full chain (joined with
- * " -> ") to repair it with. Returns undefined when no chain applies, or
- * when the whole chain is already present.
+ * chain and is missing a later element, appends the missing element(s) to
+ * the answer's existing next-step text (preserving whatever the model
+ * already wrote, e.g. a distinct verified command it correctly kept from
+ * elsewhere on screen) and returns the result. Returns undefined when no
+ * chain applies, or when the whole chain is already present.
+ *
+ * This must not replace nextStep wholesale with the on-screen chain: doing
+ * so would silently discard a legitimate, independently-grounded part of the
+ * model's answer that happens to sit alongside the chain's first element
+ * (e.g. a `curl` health check the model correctly retained from a TERMINAL
+ * line, unrelated to this chain).
  */
 function findChainCompletion(
   nextStep: string,
   normalizedLines: string[]
-): string | undefined {
-  for (const elements of extractChains(normalizedLines)) {
+): {repairedNextStep: string; label?: string} | undefined {
+  for (const {elements, label} of extractChains(normalizedLines)) {
     const [first, ...rest] = elements;
-    if (
-      first !== undefined &&
-      first.length > 0 &&
-      nextStep.includes(first) &&
-      rest.some((element) => !nextStep.includes(element))
-    ) {
-      return elements.join(' -> ');
-    }
+    if (first === undefined || first.length === 0) continue;
+    if (!nextStep.includes(first)) continue;
+    const missing = rest.filter((element) => !nextStep.includes(element));
+    if (missing.length === 0) continue;
+    return {
+      repairedNextStep: `${nextStep.trimEnd()} -> ${missing.join(' -> ')}`,
+      ...(label ? {label} : {}),
+    };
   }
   return undefined;
 }
@@ -305,11 +385,22 @@ function findBestWindow(
     : undefined;
 }
 
-/** Expands a matched offset outward to the enclosing whitespace-delimited token. */
-function expandToken(text: string, start: number): string {
+/**
+ * Expands a matched window ([start, start + matchLength)) outward to the
+ * enclosing whitespace-delimited span: back to the start of the token
+ * containing `start`, and forward to the end of the token containing the
+ * window's last character. Scanning forward from the window's end (not from
+ * `start`) matters whenever the matched candidate has no internal
+ * whitespace but the on-screen text it matched against does (e.g. a
+ * fuzzy-matched, whitespace-less candidate landing on "tail -f /path"):
+ * scanning forward from `start` alone would stop at the first internal
+ * space and return just the first word, silently dropping the rest of the
+ * command.
+ */
+function expandToken(text: string, start: number, matchLength: number): string {
   let begin = start;
   while (begin > 0 && !/\s/.test(text.charAt(begin - 1))) begin -= 1;
-  let end = start;
+  let end = start + matchLength;
   while (end < text.length && !/\s/.test(text.charAt(end))) end += 1;
   return text.slice(begin, end);
 }

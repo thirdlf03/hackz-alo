@@ -2,14 +2,50 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {tsImport} from 'tsx/esm/api';
 
-const {describeGroundingBadge} = await tsImport(
+const {describeGroundingBadge, CHAT_SOURCE_CAUTION} = await tsImport(
   '../../apps/web/src/pure/assistGroundingBadge.ts',
   import.meta.url
 );
 
 test('describeGroundingBadge maps ok to the agreement badge', () => {
   const badge = describeGroundingBadge({status: 'ok', nextStep: 'ss -ltnp'});
-  assert.deepEqual(badge, {tone: 'ok', label: '✓ 画面の手順と一致'});
+  assert.deepEqual(badge, {tone: 'ok', label: '✓ ゲーム内情報で確認'});
+});
+
+test('describeGroundingBadge adds the chat-source caution to an ok badge when sourceLabels includes CHAT', () => {
+  const badge = describeGroundingBadge({
+    status: 'ok',
+    nextStep: 'ss -ltnp',
+    sourceLabels: ['CHAT'],
+  });
+  assert.deepEqual(badge, {
+    tone: 'ok',
+    label: '✓ ゲーム内情報で確認',
+    detail: CHAT_SOURCE_CAUTION,
+  });
+});
+
+test('describeGroundingBadge does not add the chat-source caution to an ok badge when CHAT is not among sourceLabels', () => {
+  const badge = describeGroundingBadge({
+    status: 'ok',
+    nextStep: 'ss -ltnp',
+    sourceLabels: ['TERMINAL'],
+  });
+  assert.deepEqual(badge, {tone: 'ok', label: '✓ ゲーム内情報で確認'});
+});
+
+test("describeGroundingBadge appends the chat-source caution to a repaired badge's detail when sourceLabels includes CHAT", () => {
+  const badge = describeGroundingBadge({
+    status: 'repaired',
+    nextStep: 'ss -lt',
+    repairedNextStep: 'ss -ltnp',
+    sourceLabels: ['CHAT'],
+  });
+  assert.deepEqual(badge, {
+    tone: 'repaired',
+    label: '修復済み',
+    detail: `補完された手順: ss -ltnp ${CHAT_SOURCE_CAUTION}`,
+  });
 });
 
 test('describeGroundingBadge maps repaired to a badge with the repaired detail line', () => {

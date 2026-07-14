@@ -19,6 +19,17 @@ function sanitizeCardLabel(label: string): string {
   return label.replaceAll(':', '').replaceAll('->', '').trim();
 }
 
+export interface SerializeScreenLinesOptions {
+  /** When true, also includes the non-active side of the center panel
+   * (terminal/editor) and the right panel (runbook/chat), instead of just
+   * whichever side is currently displayed. Intended for the AI Assist
+   * grounding validator's evidence pool, which cross-checks against
+   * whatever the game state can attest to, not only what's currently
+   * rendered on screen; other callers should leave this false so they keep
+   * getting exactly what the canvas displays. */
+  allPanels?: boolean;
+}
+
 /**
  * Serializes the literal on-screen text of the game canvas into flat lines,
  * in the same convention as the AI Assist benchmark fixtures
@@ -28,8 +39,10 @@ function sanitizeCardLabel(label: string): string {
  */
 export function serializeScreenLines(
   state: GameRenderState,
-  viewModel: CanvasViewModel
+  viewModel: CanvasViewModel,
+  options?: SerializeScreenLinesOptions
 ): string[] {
+  const allPanels = options?.allPanels ?? false;
   const lines: string[] = [];
 
   const pushLine = (line: string) => {
@@ -65,30 +78,45 @@ export function serializeScreenLines(
   }
 
   const {center} = state.monitors;
-  if (center.activeTool === 'terminal') {
+  const pushTerminalLines = () => {
     for (const line of center.terminal.lines.slice(-TERMINAL_TAIL_LINE_COUNT)) {
       pushPrefixed('TERMINAL: ', stripAnsi(line));
     }
-  } else {
+  };
+  const pushEditorLines = () => {
     for (const line of center.editor.content
       .split('\n')
       .slice(0, EDITOR_HEAD_LINE_COUNT)) {
       pushPrefixed('EDITOR: ', line);
     }
+  };
+  if (center.activeTool === 'terminal') {
+    pushTerminalLines();
+    if (allPanels) pushEditorLines();
+  } else {
+    pushEditorLines();
+    if (allPanels) pushTerminalLines();
   }
 
   const {right} = state.monitors;
-  if (right.activePanelTab === 'runbook') {
-    if (right.activeRunbook) {
-      pushPrefixed('RUNBOOK: ', right.activeRunbook.title);
-      for (const line of right.activeRunbook.body.split('\n')) {
-        pushPrefixed('RUNBOOK: ', line);
-      }
+  const pushRunbookLines = () => {
+    if (!right.activeRunbook) return;
+    pushPrefixed('RUNBOOK: ', right.activeRunbook.title);
+    for (const line of right.activeRunbook.body.split('\n')) {
+      pushPrefixed('RUNBOOK: ', line);
     }
-  } else {
+  };
+  const pushChatLines = () => {
     for (const message of viewModel.recentChatMessages) {
       pushPrefixed('CHAT: ', `${message.from}: ${message.body}`);
     }
+  };
+  if (right.activePanelTab === 'runbook') {
+    pushRunbookLines();
+    if (allPanels) pushChatLines();
+  } else {
+    pushChatLines();
+    if (allPanels) pushRunbookLines();
   }
 
   return lines;
