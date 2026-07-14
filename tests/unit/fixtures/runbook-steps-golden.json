@@ -1,0 +1,444 @@
+{
+  "alert-spam-001": {
+    "runbook.alert-spam": [
+      {
+        "instruction": "大量に鳴っていても、まず SERVICE HEALTH のような実指標を優先して見る",
+        "command": null
+      },
+      {
+        "instruction": "app.log にノイズを吐き続けているプロセスがいないか確認する(ps / pgrep)",
+        "command": "ps"
+      },
+      {
+        "instruction": "ノイズ源を止めたら、ログに残る「本物」の障害の痕跡を探す",
+        "command": null
+      },
+      {
+        "instruction": "見つかった障害に応じて復旧する(例: yamactl restart api)",
+        "command": null
+      },
+      {
+        "instruction": "curl localhost:8080/health で復旧確認する",
+        "command": "curl localhost:8080/health"
+      }
+    ]
+  },
+  "alert-triage-001": {
+    "runbook.alert-triage": [
+      {
+        "instruction": "件数に驚かず、まず SERVICE HEALTH のような実指標を確認する",
+        "command": null
+      },
+      {
+        "instruction": "app.log を見て、ノイズを吐き続けているプロセスがいないか探す(ps aux | grep node)",
+        "command": "ps aux | grep node"
+      },
+      {
+        "instruction": "ノイズ源を止める(pkill -f alert-flood-daemon.mjs)",
+        "command": "pkill -f alert-flood-daemon.mjs"
+      },
+      {
+        "instruction": "ノイズの陰に本物の障害がないか、app.log と health を確認する",
+        "command": null
+      },
+      {
+        "instruction": "見つかった障害を復旧する(例: yamactl restart api)",
+        "command": null
+      },
+      {
+        "instruction": "curl localhost:8080/health で復旧確認する",
+        "command": "curl localhost:8080/health"
+      }
+    ]
+  },
+  "api-hang-001": {
+    "runbook.hang": [
+      {
+        "instruction": "curl --max-time 3 localhost:8080/health で応答を見る (返ってこない=タイムアウトも重要な情報)",
+        "command": "curl --max-time 3 localhost:8080/health"
+      },
+      {
+        "instruction": "yamactl status api。プロセスが生きているのに応答しないなら「ハング」",
+        "command": "yamactl status api"
+      },
+      {
+        "instruction": "ps -o pid,stat,cmd で状態を確認する。STAT が T なら停止シグナルで固まっている",
+        "command": "ps -o pid,stat,cmd"
+      },
+      {
+        "instruction": "直近の app.log に前兆(GC pause など)がないか見る",
+        "command": null
+      },
+      {
+        "instruction": "yamactl restart api で強制再起動し、health で復旧確認する",
+        "command": "yamactl restart api"
+      }
+    ]
+  },
+  "bad-deploy-001": {
+    "runbook.deploy": [
+      {
+        "instruction": "/workspace/logs/deploy.log で直近のデプロイ時刻とバージョンを確認する",
+        "command": null
+      },
+      {
+        "instruction": "エラーログ(app.log)の内容を読み、どこへの接続が失敗しているか把握する",
+        "command": null
+      },
+      {
+        "instruction": "アプリ設定 /workspace/etc/yamabiko-api.json を開き、前リリース (/workspace/releases/yamabiko-api.previous.json)と見比べる",
+        "command": null
+      },
+      {
+        "instruction": "切り戻す(前リリースの設定を書き戻す)か、設定を修正する",
+        "command": null
+      },
+      {
+        "instruction": "curl localhost:8080/health で復旧確認する(設定は自動反映、再起動不要)",
+        "command": "curl localhost:8080/health"
+      }
+    ]
+  },
+  "cable-jumprope-001": {
+    "runbook.jumprope": [
+      {
+        "instruction": "curl localhost:8080/health で API の応答を見る(500 の reason を読む)",
+        "command": "curl localhost:8080/health"
+      },
+      {
+        "instruction": "API 自体の問題か、依存先(DB)の問題かを分ける yamactl status api / yamactl status fake-db",
+        "command": "yamactl status api"
+      },
+      {
+        "instruction": "依存先が死んでいたら復旧する(yamactl restart fake-db)",
+        "command": "yamactl restart fake-db"
+      },
+      {
+        "instruction": "app.log に現場の痕跡が残っていることがある。報告に添える",
+        "command": null
+      },
+      {
+        "instruction": "health で復旧確認する",
+        "command": null
+      }
+    ]
+  },
+  "chaotic-night-001": {
+    "runbook.chaos": [
+      {
+        "instruction": "鳴っているアラートを鵜呑みにせず、まず影響度(サービス全停止 > 一部劣化 > ノイズ)で 優先順位を付ける",
+        "command": null
+      },
+      {
+        "instruction": "ノイズ源には惑わされない。手当てが必要な本物の障害から着手する",
+        "command": null
+      },
+      {
+        "instruction": "Runbook を含め、表示されている情報そのものの信頼性を疑ってかかる",
+        "command": null
+      },
+      {
+        "instruction": "個々の障害の切り分け・復旧は、これまで扱ってきた単発の障害と同じ考え方 (プロセスの生死・ログ・容量)がそのまま使える",
+        "command": null
+      },
+      {
+        "instruction": "すべて対処したら health とディスク使用率の両方で最終確認する",
+        "command": null
+      }
+    ]
+  },
+  "config-rollback-001": {
+    "runbook.config-rollback": [
+      {
+        "instruction": "tail /workspace/logs/deploy.log で直近のデプロイ時刻とバージョンを確認する",
+        "command": "tail /workspace/logs/deploy.log"
+      },
+      {
+        "instruction": "diff /workspace/releases/yamabiko-api.previous.json /workspace/etc/yamabiko-api.json で何が変わったか確認する",
+        "command": "diff /workspace/releases/yamabiko-api.previous.json /workspace/etc/yamabiko-api.json"
+      },
+      {
+        "instruction": "app.log でエラー内容(接続失敗など)を確認する",
+        "command": null
+      },
+      {
+        "instruction": "cp /workspace/releases/yamabiko-api.previous.json /workspace/etc/yamabiko-api.json で前リリースに戻す",
+        "command": "cp /workspace/releases/yamabiko-api.previous.json /workspace/etc/yamabiko-api.json"
+      },
+      {
+        "instruction": "curl localhost:8080/health で復旧確認する(設定は自動反映、再起動不要)",
+        "command": "curl localhost:8080/health"
+      }
+    ]
+  },
+  "db-pool-001": {
+    "runbook.db-pool": [
+      {
+        "instruction": "監視の DB Conn が上限(40)に張り付いていないか確認する",
+        "command": null
+      },
+      {
+        "instruction": "fake-db の統計で「どのアプリが」接続を握っているか見る (統計は /workspace/run/fake-db-stats.json に出ている)",
+        "command": null
+      },
+      {
+        "instruction": "接続を握っているプロセスを特定して止める(ps / kill)",
+        "command": "ps"
+      },
+      {
+        "instruction": "DB を再起動しても、犯人が生きていればすぐ再発する",
+        "command": null
+      },
+      {
+        "instruction": "curl localhost:8080/health で復旧確認する",
+        "command": "curl localhost:8080/health"
+      }
+    ]
+  },
+  "disk-full-001": {
+    "runbook.disk-full": [
+      {
+        "instruction": "df -h で全体の使用率を見る",
+        "command": "df -h"
+      },
+      {
+        "instruction": "犯人を決めつけず、du -sh /workspace/logs/* でどのログが肥大化しているか特定する",
+        "command": "du -sh /workspace/logs/*"
+      },
+      {
+        "instruction": "tail で中身を確認し、消してよいログか判断する",
+        "command": "tail"
+      },
+      {
+        "instruction": "不要なログを退避または削除する",
+        "command": null
+      },
+      {
+        "instruction": "curl localhost:8080/health で復旧確認する",
+        "command": "curl localhost:8080/health"
+      }
+    ]
+  },
+  "disk-restart-loop-001": {
+    "runbook.loop": [
+      {
+        "instruction": "yamactl restart api",
+        "command": "yamactl restart api"
+      },
+      {
+        "instruction": "すぐ再発する場合は原因が残っている。df -h と du -sh /workspace/logs/* で容量を見る",
+        "command": "df -h"
+      },
+      {
+        "instruction": "容量を確保してから再起動し直す",
+        "command": null
+      },
+      {
+        "instruction": "health 確認",
+        "command": null
+      }
+    ]
+  },
+  "hang-basics-001": {
+    "runbook.hang-basics": [
+      {
+        "instruction": "curl --max-time 3 localhost:8080/health を実行する(タイムアウトも重要な情報)",
+        "command": "curl --max-time 3 localhost:8080/health"
+      },
+      {
+        "instruction": "yamactl status api でプロセスの生死を確認する。動いているのに応答しないなら「ハング」",
+        "command": "yamactl status api"
+      },
+      {
+        "instruction": "ps -o pid,stat,cmd で状態を見る。STAT が T なら停止シグナルで固まっている",
+        "command": "ps -o pid,stat,cmd"
+      },
+      {
+        "instruction": "app.log に前兆(GC pause など)がないか確認する",
+        "command": null
+      },
+      {
+        "instruction": "yamactl restart api で再起動し、health で復旧確認する",
+        "command": "yamactl restart api"
+      }
+    ]
+  },
+  "janitor-power-001": {
+    "runbook.janitor": [
+      {
+        "instruction": "curl localhost:8080/health で影響範囲を確認する",
+        "command": "curl localhost:8080/health"
+      },
+      {
+        "instruction": "yamactl status api でプロセスの生死を確認する",
+        "command": "yamactl status api"
+      },
+      {
+        "instruction": "app.log を確認し、なぜ落ちたのか手がかりになる記述がないか探す(電源断など外的要因の痕跡)",
+        "command": null
+      },
+      {
+        "instruction": "見つかった証跡は復旧後の報告用に控えておく",
+        "command": null
+      },
+      {
+        "instruction": "yamactl restart api で復旧し、health で確認する",
+        "command": "yamactl restart api"
+      }
+    ]
+  },
+  "keyboard-spill-001": {
+    "runbook.spill": [
+      {
+        "instruction": "メトリクス画面で RPS / レイテンシに異常が出ていないか確認する",
+        "command": null
+      },
+      {
+        "instruction": "/workspace/logs/access.log や app.log を見て、リクエストの様子を確認する",
+        "command": null
+      },
+      {
+        "instruction": "ps や pgrep でアクセスを送り続けているプロセスを特定する",
+        "command": "ps"
+      },
+      {
+        "instruction": "特定できたら該当プロセスを止める",
+        "command": null
+      },
+      {
+        "instruction": "curl localhost:8080/health でサービスを確認する",
+        "command": "curl localhost:8080/health"
+      }
+    ]
+  },
+  "kodama-batch-001": {
+    "runbook.kodama": [],
+    "runbook.kodama-spec": []
+  },
+  "kodama-mystery-001": {
+    "runbook.ar.page1": [
+      {
+        "instruction": "فحص السجل tail -n 50 /workspace/logs/batch.log → إذا ظهر «こだまが返ってきません»: خطأ وقت التشغيل في لغة こだま",
+        "command": "tail -n 50 /workspace/logs/batch.log"
+      },
+      {
+        "instruction": "عرض الشيفرة المصدرية cat /workspace/services/batch/sales.kdm",
+        "command": "cat /workspace/services/batch/sales.kdm"
+      }
+    ],
+    "runbook.ar.page2": [],
+    "runbook.ar.page3": [
+      {
+        "instruction": "تصحيح الملف sed -i 's/よぶ y = しずか/よぶ y = こだま/' /workspace/services/batch/sales.kdm أو vim /workspace/services/batch/sales.kdm",
+        "command": "sed -i 's/"
+      },
+      {
+        "instruction": "اختبار kodama run /workspace/services/batch/sales.kdm → رقم = OK. «こだまが返ってきません» = ما زال معطلاً",
+        "command": "kodama run /workspace/services/batch/sales.kdm"
+      },
+      {
+        "instruction": "إفراغ السجل : > /workspace/logs/batch.log",
+        "command": null
+      }
+    ]
+  },
+  "log-bloat-001": {
+    "runbook.log-bloat": [
+      {
+        "instruction": "Disk メトリクスとログクォータの超過を疑う。disk full の一歩手前の閾値で先に /health が落ちる",
+        "command": null
+      },
+      {
+        "instruction": "du -sh /workspace/logs/* でどのログが肥大化しているか特定する",
+        "command": "du -sh /workspace/logs/*"
+      },
+      {
+        "instruction": "中身を確認し、不要なログを削除または退避する",
+        "command": null
+      },
+      {
+        "instruction": "curl localhost:8080/health で復旧を確認する",
+        "command": "curl localhost:8080/health"
+      }
+    ]
+  },
+  "monitor-blind-001": {
+    "runbook.blind": [
+      {
+        "instruction": "メトリクスが「0」ではなく「NO DATA」であることに気づく。これは値ではなく欠測を意味する",
+        "command": null
+      },
+      {
+        "instruction": "監視が壊れていても、サービス本体が無事とは限らない。curl で直接ヘルスを確認する",
+        "command": "curl"
+      },
+      {
+        "instruction": "app.log で monitor-agent と api、それぞれの生死を個別に確認する",
+        "command": null
+      },
+      {
+        "instruction": "死んでいるプロセスをそれぞれ復旧する(例: yamactl restart monitor-agent, yamactl restart api)",
+        "command": null
+      },
+      {
+        "instruction": "監視が復旧したら、メトリクスが実データに戻っているか確認する",
+        "command": null
+      }
+    ]
+  },
+  "port-conflict-001": {
+    "runbook.port-conflict": []
+  },
+  "process-stop-001": {
+    "runbook.process": [
+      {
+        "instruction": "左の監視画面で HTTP 5xx と SERVICE HEALTH を確認し、何が起きているか把握する",
+        "command": null
+      },
+      {
+        "instruction": "tail -n 50 /workspace/logs/app.log でプロセスが落ちた形跡がないか確認する",
+        "command": "tail -n 50 /workspace/logs/app.log"
+      },
+      {
+        "instruction": "yamactl status api でプロセスの生死を確認する(動いているのに応答しない場合はハングを疑う)",
+        "command": "yamactl status api"
+      },
+      {
+        "instruction": "プロセスが落ちていれば yamactl restart api で暫定復旧する",
+        "command": "yamactl restart api"
+      },
+      {
+        "instruction": "curl localhost:8080/health で復旧確認する",
+        "command": "curl localhost:8080/health"
+      }
+    ]
+  },
+  "runbook-gaslight-001": {
+    "runbook.gaslight": [
+      {
+        "instruction": "curl -s localhost:8080/health で実際の状態を確認する",
+        "command": "curl -s localhost:8080/health"
+      },
+      {
+        "instruction": "yamactl status api / yamactl status fake-db でプロセスとポートの状態を見る",
+        "command": "yamactl status api"
+      },
+      {
+        "instruction": "プロセスが死んでいれば yamactl restart <service> で再起動する",
+        "command": "yamactl restart <service>"
+      },
+      {
+        "instruction": "設定が壊れていれば /workspace/releases/*.previous.json から復元する",
+        "command": null
+      },
+      {
+        "instruction": "ディスクが逼迫していれば不要なログを削除してから yamactl restart api",
+        "command": "yamactl restart api"
+      },
+      {
+        "instruction": "監視エージェントが応答しなければ yamactl restart monitor-agent",
+        "command": "yamactl restart monitor-agent"
+      }
+    ]
+  }
+}

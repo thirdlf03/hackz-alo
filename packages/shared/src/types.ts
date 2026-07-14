@@ -344,6 +344,26 @@ export type SuccessCondition =
   | {type: 'log_absent'; path: string; pattern: string}
   | {type: 'kodama_batch_ok'; jobId: string};
 
+export type RunbookStepStatus =
+  | 'pending'
+  | 'current'
+  | 'done'
+  | 'failed'
+  | 'skipped';
+
+export interface RunbookStepDefinition {
+  id: string;
+  instruction: string;
+  command?: string;
+}
+
+/** コマンド履歴との正規化後完全一致で見つかった、手順が実行された痕跡。 */
+export interface RunbookStepEvidence {
+  kind: 'command_executed';
+  command: string;
+  at: number;
+}
+
 export interface RunbookDefinition {
   id: string;
   title: string;
@@ -351,6 +371,8 @@ export interface RunbookDefinition {
   availableAtMs?: number;
   /** Sandbox path whose live content should override `body` once fetched. */
   file?: string;
+  /** 番号付き行のパース結果を上書きする明示的な手順一覧(任意)。 */
+  steps?: RunbookStepDefinition[];
 }
 
 export interface ChatMessageDefinition {
@@ -494,6 +516,19 @@ export interface GameRenderState {
     draft: string;
   };
   openedRunbookIds: string[];
+  /**
+   * アクティブな Runbook の手順進捗。runbookId+bodyHash がキー
+   * (gaslight 等で本文が書き換わると自然に破棄・再構築される)。
+   */
+  runbookProgress?: {
+    runbookId: string;
+    bodyHash: string;
+    steps: Array<{
+      stepId: string;
+      manualStatus?: 'done' | 'failed' | 'skipped';
+      evidence?: RunbookStepEvidence;
+    }>;
+  };
   alertFlashMs: number;
   warning?: {message: string; flashMs: number};
   world: {

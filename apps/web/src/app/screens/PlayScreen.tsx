@@ -8,6 +8,7 @@ import type {
 import {
   activateChatCompose,
   deactivateChatCompose,
+  markRunbookStep,
   setCenterTool,
   setChatDraft,
   updateEditorPanel,
@@ -182,6 +183,8 @@ export function PlayScreen(props: {
         gameStateRef={props.gameStateRef}
         scenarioRef={props.scenarioRef}
         scenario={props.scenario}
+        activeRunbook={props.gameState?.monitors.right.activeRunbook}
+        runbookProgress={props.gameState?.runbookProgress}
         commandInputFocused={props.gameState?.commandInputFocused ?? false}
         onCreateTask={props.onCreateTask}
         onUpdateTask={props.onUpdateTask}
@@ -190,6 +193,11 @@ export function PlayScreen(props: {
         onUpdateIncidentLog={props.onUpdateIncidentLog}
         onDeleteIncidentLog={props.onDeleteIncidentLog}
         onFireInject={props.onFireInject}
+        onMarkRunbookStep={(runbookId, bodyHash, stepId, status) => {
+          props.patchGameStateRef((current) =>
+            markRunbookStep(current, runbookId, bodyHash, stepId, status)
+          );
+        }}
         voice={props.voice}
       />
       <p id='canvas-play-hint' class='visually-hidden'>

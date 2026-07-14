@@ -2,6 +2,7 @@ import type {
   EditorPanelState,
   GameRenderState,
   MetricsSnapshot,
+  RunbookDefinition,
   ScenarioDefinition,
   TerminalMirrorState,
 } from '@incident/shared';
@@ -9,6 +10,11 @@ import type {GameStateAction} from './gameStateActions.js';
 import {computeNarrativeHour, visibleRunbooks} from './gameSelectors.js';
 import {reduceGameState} from './gameStateReduce.js';
 import {appendEdgeRttHistory} from '../../pure/sessionEdgeRtt.js';
+import {
+  deriveStepEvidence,
+  hashRunbookBody,
+  parseRunbookSteps,
+} from '../../pure/runbookSteps.js';
 
 export type {GameStateAction};
 export {reduceGameState};
@@ -195,6 +201,8 @@ export function advanceGameState(
       ? state.session.status
       : 'running';
 
+  const runbookProgress = deriveRunbookProgress(state, nextActiveRunbook);
+
   return {
     ...state,
     session: {...state.session, status: nextStatus},
@@ -218,6 +226,7 @@ export function advanceGameState(
         ...(nextActiveRunbook ? {activeRunbook: nextActiveRunbook} : {}),
       },
     },
+    ...(runbookProgress ? {runbookProgress} : {}),
     navigation: {
       dismissedStepIds: state.navigation.dismissedStepIds,
       ...(activeStep ? {activeStepId: activeStep.id} : {}),
@@ -232,6 +241,69 @@ export function advanceGameState(
       expandedMonitor: state.world.expandedMonitor,
     },
   };
+}
+
+/**
+ * アクティブ Runbook の実効 body から手順を導出し、evidence を再計算する。
+ * body(bodyHash)が変わった場合は runbookProgress を丸ごとリセットする
+ * (gaslight による書き換えで自然に手順・進捗が縮退する)。
+ * commandHistory・bodyHash が実際に変化していなければ既存の参照をそのまま
+ * 返し、rAF ループではなくこの 500ms tick でのみ再計算が走るようにする。
+ */
+function deriveRunbookProgress(
+  state: GameRenderState,
+  activeRunbook: RunbookDefinition | undefined
+): GameRenderState['runbookProgress'] {
+  if (!activeRunbook) return state.runbookProgress;
+
+  const bodyHash = hashRunbookBody(activeRunbook.body);
+  const priorMatches =
+    state.runbookProgress?.runbookId === activeRunbook.id &&
+    state.runbookProgress.bodyHash === bodyHash;
+  const priorSteps =
+    state.runbookProgress && priorMatches ? state.runbookProgress.steps : [];
+  const priorById = new Map(priorSteps.map((entry) => [entry.stepId, entry]));
+
+  const steps = parseRunbookSteps(activeRunbook.body, activeRunbook.steps);
+  const evidenceByStepId = deriveStepEvidence(
+    steps,
+    state.monitors.center.terminal.commandHistory
+  );
+
+  const nextSteps = steps
+    .map((step) => {
+      const prior = priorById.get(step.id);
+      const evidence = evidenceByStepId[step.id] ?? prior?.evidence;
+      if (!prior?.manualStatus && !evidence) return undefined;
+      return {
+        stepId: step.id,
+        ...(prior?.manualStatus ? {manualStatus: prior.manualStatus} : {}),
+        ...(evidence ? {evidence} : {}),
+      };
+    })
+    .filter((entry): entry is NonNullable<typeof entry> => entry !== undefined);
+
+  if (priorMatches && shallowEqualProgressSteps(priorSteps, nextSteps)) {
+    return state.runbookProgress;
+  }
+  return {runbookId: activeRunbook.id, bodyHash, steps: nextSteps};
+}
+
+function shallowEqualProgressSteps(
+  a: NonNullable<GameRenderState['runbookProgress']>['steps'],
+  b: NonNullable<GameRenderState['runbookProgress']>['steps']
+) {
+  if (a.length !== b.length) return false;
+  return a.every((entry, index) => {
+    const other = b[index];
+    return (
+      other !== undefined &&
+      entry.stepId === other.stepId &&
+      entry.manualStatus === other.manualStatus &&
+      entry.evidence?.command === other.evidence?.command &&
+      entry.evidence?.at === other.evidence?.at
+    );
+  });
 }
 
 function resolveNavigationStep(
@@ -405,6 +477,22 @@ export function toggleExpandedMonitor(
   return reduceGameState(state, {
     type: 'toggle_expanded_monitor',
     monitor,
+  });
+}
+
+export function markRunbookStep(
+  state: GameRenderState,
+  runbookId: string,
+  bodyHash: string,
+  stepId: string,
+  status: 'done' | 'failed' | 'skipped' | null
+): GameRenderState {
+  return reduceGameState(state, {
+    type: 'mark_runbook_step',
+    runbookId,
+    bodyHash,
+    stepId,
+    status,
   });
 }
 

@@ -40,4 +40,11 @@ export type GameStateAction =
   | {
       type: 'toggle_expanded_monitor';
       monitor: 'metrics' | 'terminal' | 'runbook';
+    }
+  | {
+      type: 'mark_runbook_step';
+      runbookId: string;
+      bodyHash: string;
+      stepId: string;
+      status: 'done' | 'failed' | 'skipped' | null;
     };
