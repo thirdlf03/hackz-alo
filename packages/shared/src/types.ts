@@ -277,6 +277,7 @@ export interface IncidentLogEntry {
   body: string;
   actorParticipantId?: string | undefined;
   createdAt: string;
+  updatedAt?: string | undefined;
 }
 
 export interface HotwashNote {

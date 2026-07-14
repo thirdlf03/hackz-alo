@@ -1,5 +1,6 @@
 import type {
   ExerciseSnapshot,
+  ExerciseTaskStatus,
   GameRenderState,
   IncidentLogEntryKind,
   ScenarioDefinition,
@@ -15,13 +16,8 @@ import {centerEditorOverlayRegion} from '../../game/render/canvasLayout.js';
 import {canContributeRecords} from '../../pure/rolePermissions.js';
 import {PerfOverlay} from '../PerfOverlay.js';
 import type {VoiceChatControls} from '../useVoiceChat.js';
-import type {NpcColleagueControls} from '../useNpcColleague.js';
 import type {MonitorPipControls} from '../useMonitorPip.js';
-import {
-  TeamExercisePanel,
-  PlayStatusBar,
-  MonitorPipToolbar,
-} from './playPanels.js';
+import {TeamExercisePanel, MonitorPipToolbar} from './playPanels.js';
 
 type PatchGameState = (
   updater: (state: GameRenderState) => GameRenderState,
@@ -48,10 +44,19 @@ export function PlayScreen(props: {
   onCanvasPaste: (event: ClipboardEvent) => void;
   onChatSubmit: () => void;
   onCreateTask: (title: string) => void;
+  onUpdateTask: (
+    taskId: string,
+    input: {title?: string; status?: ExerciseTaskStatus}
+  ) => void;
+  onDeleteTask: (taskId: string) => void;
   onAppendIncidentLog: (body: string, kind?: IncidentLogEntryKind) => void;
+  onUpdateIncidentLog: (
+    entryId: string,
+    input: {body?: string; kind?: IncidentLogEntryKind}
+  ) => void;
+  onDeleteIncidentLog: (entryId: string) => void;
   onFireInject: (injectId: string) => void;
   voice: VoiceChatControls;
-  npc: NpcColleagueControls;
   pip: MonitorPipControls;
 }) {
   return (
@@ -162,7 +167,6 @@ export function PlayScreen(props: {
             />
           )}
         </canvas>
-        <PlayStatusBar gameState={props.gameState} />
         <PerfOverlay />
         <MonitorPipToolbar pip={props.pip} />
       </div>
@@ -176,10 +180,13 @@ export function PlayScreen(props: {
         scenario={props.scenario}
         commandInputFocused={props.gameState?.commandInputFocused ?? false}
         onCreateTask={props.onCreateTask}
+        onUpdateTask={props.onUpdateTask}
+        onDeleteTask={props.onDeleteTask}
         onAppendIncidentLog={props.onAppendIncidentLog}
+        onUpdateIncidentLog={props.onUpdateIncidentLog}
+        onDeleteIncidentLog={props.onDeleteIncidentLog}
         onFireInject={props.onFireInject}
         voice={props.voice}
-        npc={props.npc}
       />
       <p id='canvas-play-hint' class='visually-hidden'>
         ターミナルにフォーカスしてキーボードでコマンドを入力できます。画面上のボタンはマウスで操作します。

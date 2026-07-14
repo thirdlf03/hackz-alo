@@ -1780,7 +1780,52 @@ canvas:focus-visible {
 }
 
 .team-task-title {
+  flex: 1;
   overflow-wrap: anywhere;
+}
+
+.team-item-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.team-item-actions button,
+.team-item-actions select {
+  min-height: 26px;
+  padding: 3px 6px;
+  font-size: 11px;
+}
+
+.team-item-actions select,
+.team-item-editor select {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-s);
+  background: var(--surface-input);
+  color: var(--text-secondary);
+  font-family: var(--font-family-mono);
+}
+
+.team-panel button.danger {
+  color: var(--tone-red);
+}
+
+.team-item-editor {
+  display: grid;
+  flex: 1;
+  gap: 6px;
+}
+
+.team-item-editor input {
+  min-width: 0;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-m);
+  background: var(--surface-input);
+  color: var(--terminal-text);
+  padding: 7px 10px;
+  font-family: var(--font-family-mono);
+  font-size: 12.5px;
 }
 
 .team-task-in_progress .team-task-marker {
@@ -1833,6 +1878,8 @@ canvas:focus-visible {
 }
 
 .team-log-entry {
+  display: grid;
+  gap: 4px;
   color: var(--text-secondary);
 }
 
@@ -1882,6 +1929,19 @@ canvas:focus-visible {
   font-size: 12.5px;
 }
 
+.ai-assist-capture-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.ai-assist-capture-controls span {
+  flex-basis: 100%;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
 .ai-assist-error {
   margin: 0;
   color: var(--text-error);
@@ -1909,6 +1969,44 @@ canvas:focus-visible {
   font-size: 12.5px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+.ai-assist-selection-overlay {
+  position: fixed;
+  z-index: 1000;
+  overflow: hidden;
+  cursor: crosshair;
+  touch-action: none;
+  border: 1px solid var(--accent-primary-bright);
+  background: rgb(0 0 0 / 42%);
+  box-shadow: 0 0 0 100vmax rgb(0 0 0 / 38%);
+  user-select: none;
+}
+
+.ai-assist-selection-hint {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  z-index: 2;
+  margin: 0;
+  transform: translateX(-50%);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-m);
+  background: var(--surface-overlay);
+  color: var(--text-primary);
+  padding: 7px 10px;
+  font-family: var(--font-family-mono);
+  font-size: 12px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.ai-assist-selection-box {
+  position: absolute;
+  border: 2px solid var(--accent-primary-bright);
+  background: rgb(142 255 170 / 8%);
+  box-shadow: 0 0 0 100vmax rgb(0 0 0 / 52%);
+  pointer-events: none;
 }
 
 .speech-log {
@@ -2206,7 +2304,7 @@ canvas:focus-visible {
   font-size: 11px;
 }
 
-.npc-toggle {
+.ai-assist-attachment-toggle {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -2278,56 +2376,6 @@ canvas:focus-visible {
 .play-pip-toolbar button.active {
   color: var(--text-secondary);
   border-color: var(--border-focus);
-}
-
-/* canvas-stage の左上に重ねる STAGE 名・ゲーム内時計・経過表示。
-   PiP ツールバーと同じく canvas 外側の余白に重ねるため録画には映らない。 */
-.play-status-bar {
-  position: absolute;
-  top: 6px;
-  left: 8px;
-  right: 8px;
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  z-index: 3;
-  color: var(--text-secondary);
-  font-family: var(--font-family-mono);
-  font-size: 13px;
-  pointer-events: none;
-}
-
-.play-status-stage {
-  overflow: hidden;
-  color: var(--accent-primary-bright);
-  font-family: var(--font-family-display);
-  font-size: 19px;
-  font-weight: 400;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-.play-status-session {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  margin-left: auto;
-  white-space: nowrap;
-}
-
-.play-status-rec-dot {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  background: var(--tone-red);
-}
-
-.play-status-clock {
-  color: var(--text-warning);
-  font-family: var(--font-family-display);
-  font-size: 22px;
-  font-weight: 400;
-  white-space: nowrap;
 }
 
 /* --- AI postmortem panel --- */

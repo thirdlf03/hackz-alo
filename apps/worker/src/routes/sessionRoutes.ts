@@ -436,6 +436,18 @@ export function registerSessionRoutes(app: WorkerApp) {
       taskId: c.req.param('taskId'),
     });
   });
+  app.delete('/api/sessions/:sessionId/tasks/:taskId', async (c) => {
+    const denied = await requireSessionWriteAccess(c, c.req.param('sessionId'));
+    if (denied) return denied;
+    const body = await readRouteJsonObject(c, SESSION_CONTROL_BODY_MAX_BYTES, {
+      emptyValue: {},
+    });
+    if (body instanceof Response) return body;
+    return proxySession(c, 'task-delete', {
+      ...body,
+      taskId: c.req.param('taskId'),
+    });
+  });
   app.post('/api/sessions/:sessionId/injects/:injectId/fire', async (c) => {
     const denied = await requireSessionWriteAccess(c, c.req.param('sessionId'));
     if (denied) return denied;
@@ -465,6 +477,38 @@ export function registerSessionRoutes(app: WorkerApp) {
     });
     if (body instanceof Response) return body;
     return proxySession(c, 'incident-log', body);
+  });
+  app.post(
+    '/api/sessions/:sessionId/incident-log/:entryId/update',
+    async (c) => {
+      const denied = await requireSessionWriteAccess(
+        c,
+        c.req.param('sessionId')
+      );
+      if (denied) return denied;
+      const body = await readRouteJsonObject(
+        c,
+        SESSION_CONTROL_BODY_MAX_BYTES,
+        {emptyValue: {}}
+      );
+      if (body instanceof Response) return body;
+      return proxySession(c, 'incident-log-update', {
+        ...body,
+        entryId: c.req.param('entryId'),
+      });
+    }
+  );
+  app.delete('/api/sessions/:sessionId/incident-log/:entryId', async (c) => {
+    const denied = await requireSessionWriteAccess(c, c.req.param('sessionId'));
+    if (denied) return denied;
+    const body = await readRouteJsonObject(c, SESSION_CONTROL_BODY_MAX_BYTES, {
+      emptyValue: {},
+    });
+    if (body instanceof Response) return body;
+    return proxySession(c, 'incident-log-delete', {
+      ...body,
+      entryId: c.req.param('entryId'),
+    });
   });
   app.post('/api/sessions/:sessionId/hotwash', async (c) => {
     const denied = await requireSessionWriteAccess(c, c.req.param('sessionId'));

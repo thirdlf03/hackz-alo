@@ -27,9 +27,12 @@ export type SessionRouteName =
   | 'exerciseReady'
   | 'taskCreate'
   | 'taskUpdate'
+  | 'taskDelete'
   | 'injectFire'
   | 'exercisePhase'
   | 'incidentLog'
+  | 'incidentLogUpdate'
+  | 'incidentLogDelete'
   | 'hotwash'
   | 'aar'
   | 'rtcSignal'
@@ -54,9 +57,12 @@ const routeTable: Record<string, Partial<Record<string, SessionRouteName>>> = {
     'exercise-ready': 'exerciseReady',
     'task-create': 'taskCreate',
     'task-update': 'taskUpdate',
+    'task-delete': 'taskDelete',
+    'incident-log-update': 'incidentLogUpdate',
     'inject-fire': 'injectFire',
     phase: 'exercisePhase',
     'incident-log': 'incidentLog',
+    'incident-log-delete': 'incidentLogDelete',
     hotwash: 'hotwash',
     signal: 'rtcSignal',
   },

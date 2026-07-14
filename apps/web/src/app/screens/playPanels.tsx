@@ -1,21 +1,20 @@
+import {useState} from 'preact/hooks';
 import type {
   ExerciseSnapshot,
+  ExerciseTask,
   ExerciseTaskStatus,
-  GameRenderState,
+  IncidentLogEntry,
   IncidentLogEntryKind,
   ScenarioDefinition,
 } from '@incident/shared';
-import {formatNarrativeClock, formatTime} from '../../pure/canvasFormat.js';
-import {describeAssistAvailability} from '../../pure/aiAssist.js';
+import {formatTime} from '../../pure/canvasFormat.js';
 import {describeVoiceStatus} from '../../pure/voiceChat.js';
 import {INCIDENT_LOG_KIND_LABELS} from '../../pure/speechPhrases.js';
 import {PIP_MONITOR_LABELS, type PipMonitorId} from '../../pure/pipMonitor.js';
 import {AiAssistPanel} from '../AiAssistPanel.js';
 import {SpeechIncidentLogPanel} from '../SpeechIncidentLogPanel.js';
 import type {VoiceChatControls} from '../useVoiceChat.js';
-import type {NpcColleagueControls} from '../useNpcColleague.js';
 import type {MonitorPipControls} from '../useMonitorPip.js';
-import {difficultyOptions} from './SelectScreen.js';
 import {participantRoleLabels} from './LobbyScreen.js';
 
 /** タスク一覧の状態マーカー(6a サイドバー: 完了 ✓ / 進行中 ▸ など)。 */
@@ -33,14 +32,23 @@ export function TeamExercisePanel(props: {
   scenario: ScenarioDefinition | undefined;
   commandInputFocused: boolean;
   onCreateTask: (title: string) => void;
+  onUpdateTask: (
+    taskId: string,
+    input: {title?: string; status?: ExerciseTaskStatus}
+  ) => void;
+  onDeleteTask: (taskId: string) => void;
   onAppendIncidentLog: (body: string, kind?: IncidentLogEntryKind) => void;
+  onUpdateIncidentLog: (
+    entryId: string,
+    input: {body?: string; kind?: IncidentLogEntryKind}
+  ) => void;
+  onDeleteIncidentLog: (entryId: string) => void;
   onFireInject: (injectId: string) => void;
   voice: VoiceChatControls;
-  npc: NpcColleagueControls;
 }) {
   const participants = props.exercise?.participants ?? [];
   const tasks = props.exercise?.tasks ?? [];
-  const incidentLog = props.exercise?.incidentLog.slice(-6) ?? [];
+  const incidentLog = props.exercise?.incidentLog ?? [];
   return (
     <aside class='team-panel' aria-label='訓練ルーム'>
       <section aria-label='オンコール名簿'>
@@ -69,21 +77,21 @@ export function TeamExercisePanel(props: {
           Observer は閲覧専用です
         </p>
       )}
-      <section class='npc-panel' aria-label='AI NPC 後輩ソラ'>
+      <section class='npc-panel' aria-label='AIアシスタント'>
         <h2>ASSIST — ソラ (AI)</h2>
-        <NpcColleaguePanel npc={props.npc} onCreateTask={props.onCreateTask} />
         <AiAssistPanel canvasRef={props.canvasRef} />
       </section>
       <section>
         <h2>TASKS</h2>
         <ol class='team-list'>
-          {tasks.slice(-6).map((task) => (
-            <li key={task.id} class={`team-task team-task-${task.status}`}>
-              <span class='team-task-marker' aria-hidden='true'>
-                {taskStatusMarkers[task.status]}
-              </span>
-              <span class='team-task-title'>{task.title}</span>
-            </li>
+          {tasks.map((task) => (
+            <TaskRow
+              key={task.id}
+              task={task}
+              disabled={!props.canContribute}
+              onUpdate={props.onUpdateTask}
+              onDelete={props.onDeleteTask}
+            />
           ))}
         </ol>
         <TaskComposer
@@ -132,12 +140,13 @@ export function TeamExercisePanel(props: {
         <h2>NOTES / INCIDENT LOG</h2>
         <ol class='team-list'>
           {incidentLog.map((entry) => (
-            <li key={entry.id} class='team-log-entry'>
-              <span class='team-log-kind'>
-                {INCIDENT_LOG_KIND_LABELS[entry.kind]}
-              </span>{' '}
-              <span class='team-log-body'>{entry.body}</span>
-            </li>
+            <IncidentLogRow
+              key={entry.id}
+              entry={entry}
+              disabled={!props.canContribute}
+              onUpdate={props.onUpdateIncidentLog}
+              onDelete={props.onDeleteIncidentLog}
+            />
           ))}
         </ol>
         <LogComposer
@@ -157,29 +166,266 @@ export function TeamExercisePanel(props: {
   );
 }
 
-/** プレイ中の canvas 左上に重ねるステージ名・ゲーム内時計・経過表示。
- * gameState が届く前(接続直後)は何も表示しない。 */
-export function PlayStatusBar(props: {gameState: GameRenderState | undefined}) {
-  const state = props.gameState;
-  if (!state) return null;
-  const level =
-    difficultyOptions.findIndex(
-      (option) => option.difficulty === state.session.difficulty
-    ) + 1;
-  const recording = state.recording.status === 'recording';
+const taskStatusLabels: Record<ExerciseTaskStatus, string> = {
+  open: '未着手',
+  in_progress: '進行中',
+  done: '完了',
+  blocked: 'ブロック',
+};
+
+function TaskRow(props: {
+  task: ExerciseTask;
+  disabled: boolean;
+  onUpdate: (
+    taskId: string,
+    input: {title?: string; status?: ExerciseTaskStatus}
+  ) => void;
+  onDelete: (taskId: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [title, setTitle] = useState(props.task.title);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+
+  if (editing) {
+    return (
+      <li class={`team-task team-task-${props.task.status}`}>
+        <form
+          class='team-item-editor'
+          onSubmit={(event) => {
+            event.preventDefault();
+            const nextTitle = title.trim();
+            if (!nextTitle) return;
+            props.onUpdate(props.task.id, {title: nextTitle});
+            setEditing(false);
+          }}
+        >
+          <input
+            value={title}
+            maxLength={160}
+            aria-label='タスク名'
+            onInput={(event) => {
+              setTitle(event.currentTarget.value);
+            }}
+          />
+          <div class='team-item-actions'>
+            <button type='submit'>保存</button>
+            <button
+              type='button'
+              class='ghost'
+              onClick={() => {
+                setTitle(props.task.title);
+                setEditing(false);
+              }}
+            >
+              キャンセル
+            </button>
+          </div>
+        </form>
+      </li>
+    );
+  }
+
   return (
-    <div class='play-status-bar'>
-      <span class='play-status-stage'>
-        STAGE: {state.session.scenarioTitle} ── LV.{level}
+    <li class={`team-task team-task-${props.task.status}`}>
+      <span class='team-task-marker' aria-hidden='true'>
+        {taskStatusMarkers[props.task.status]}
       </span>
-      <span class='play-status-session'>
-        {recording && <span class='play-status-rec-dot' aria-hidden='true' />}
-        SESSION {formatTime(state.clock.elapsedMs)}
+      <span class='team-task-title'>{props.task.title}</span>
+      {!props.disabled && (
+        <div class='team-item-actions'>
+          <select
+            value={props.task.status}
+            aria-label={`${props.task.title}の状態`}
+            onChange={(event) => {
+              props.onUpdate(props.task.id, {
+                status: event.currentTarget.value as ExerciseTaskStatus,
+              });
+            }}
+          >
+            {Object.entries(taskStatusLabels).map(([status, label]) => (
+              <option key={status} value={status}>
+                {label}
+              </option>
+            ))}
+          </select>
+          <button
+            type='button'
+            aria-label={`${props.task.title}を編集`}
+            onClick={() => {
+              setTitle(props.task.title);
+              setConfirmingDelete(false);
+              setEditing(true);
+            }}
+          >
+            編集
+          </button>
+          {confirmingDelete ? (
+            <>
+              <button
+                type='button'
+                class='danger'
+                aria-label={`${props.task.title}を削除する`}
+                onClick={() => {
+                  props.onDelete(props.task.id);
+                }}
+              >
+                削除する
+              </button>
+              <button
+                type='button'
+                class='ghost'
+                onClick={() => {
+                  setConfirmingDelete(false);
+                }}
+              >
+                やめる
+              </button>
+            </>
+          ) : (
+            <button
+              type='button'
+              class='danger ghost'
+              aria-label={`${props.task.title}の削除を確認`}
+              onClick={() => {
+                setConfirmingDelete(true);
+              }}
+            >
+              削除
+            </button>
+          )}
+        </div>
+      )}
+    </li>
+  );
+}
+
+function IncidentLogRow(props: {
+  entry: IncidentLogEntry;
+  disabled: boolean;
+  onUpdate: (
+    entryId: string,
+    input: {body?: string; kind?: IncidentLogEntryKind}
+  ) => void;
+  onDelete: (entryId: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [body, setBody] = useState(props.entry.body);
+  const [kind, setKind] = useState(props.entry.kind);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const entryLabel = props.entry.body.slice(0, 40);
+
+  if (editing) {
+    return (
+      <li class='team-log-entry'>
+        <form
+          class='team-item-editor'
+          onSubmit={(event) => {
+            event.preventDefault();
+            const nextBody = body.trim();
+            if (!nextBody) return;
+            props.onUpdate(props.entry.id, {body: nextBody, kind});
+            setEditing(false);
+          }}
+        >
+          <select
+            value={kind}
+            aria-label='記録の種類'
+            onChange={(event) => {
+              setKind(event.currentTarget.value as IncidentLogEntryKind);
+            }}
+          >
+            {Object.entries(INCIDENT_LOG_KIND_LABELS).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+          <input
+            value={body}
+            maxLength={2000}
+            aria-label='記録内容'
+            onInput={(event) => {
+              setBody(event.currentTarget.value);
+            }}
+          />
+          <div class='team-item-actions'>
+            <button type='submit'>保存</button>
+            <button
+              type='button'
+              class='ghost'
+              onClick={() => {
+                setBody(props.entry.body);
+                setKind(props.entry.kind);
+                setEditing(false);
+              }}
+            >
+              キャンセル
+            </button>
+          </div>
+        </form>
+      </li>
+    );
+  }
+
+  return (
+    <li class='team-log-entry'>
+      <span>
+        <span class='team-log-kind'>
+          {INCIDENT_LOG_KIND_LABELS[props.entry.kind]}
+        </span>{' '}
+        <span class='team-log-body'>{props.entry.body}</span>
       </span>
-      <span class='play-status-clock'>
-        {formatNarrativeClock(state.world.narrativeHour)}
-      </span>
-    </div>
+      {!props.disabled && (
+        <div class='team-item-actions'>
+          <button
+            type='button'
+            aria-label={`${entryLabel}を編集`}
+            onClick={() => {
+              setBody(props.entry.body);
+              setKind(props.entry.kind);
+              setConfirmingDelete(false);
+              setEditing(true);
+            }}
+          >
+            編集
+          </button>
+          {confirmingDelete ? (
+            <>
+              <button
+                type='button'
+                class='danger'
+                aria-label={`${entryLabel}を削除する`}
+                onClick={() => {
+                  props.onDelete(props.entry.id);
+                }}
+              >
+                削除する
+              </button>
+              <button
+                type='button'
+                class='ghost'
+                onClick={() => {
+                  setConfirmingDelete(false);
+                }}
+              >
+                やめる
+              </button>
+            </>
+          ) : (
+            <button
+              type='button'
+              class='danger ghost'
+              aria-label={`${entryLabel}の削除を確認`}
+              onClick={() => {
+                setConfirmingDelete(true);
+              }}
+            >
+              削除
+            </button>
+          )}
+        </div>
+      )}
+    </li>
   );
 }
 
@@ -268,75 +514,6 @@ function WarRoomVoicePanel(props: {voice: VoiceChatControls}) {
       )}
       <small class='voice-note'>参加中の会話はリプレイ録画に残ります</small>
     </section>
-  );
-}
-
-/** Prompt API structured output で動く AI NPC「後輩ソラ」の操作パネル。 */
-function NpcColleaguePanel(props: {
-  npc: NpcColleagueControls;
-  onCreateTask: (title: string) => void;
-}) {
-  const {npc} = props;
-  const unavailable =
-    npc.availability === 'unsupported' || npc.availability === 'unavailable';
-  return (
-    <>
-      {unavailable || npc.availability === undefined ? (
-        <p class='npc-status' role='status'>
-          {npc.availability === undefined
-            ? '利用可否を確認中…'
-            : describeAssistAvailability(npc.availability)}
-        </p>
-      ) : (
-        <>
-          <label class='npc-toggle'>
-            <input
-              type='checkbox'
-              checked={npc.enabled}
-              onChange={(event) => {
-                npc.setEnabled(event.currentTarget.checked);
-              }}
-            />
-            チャットに常駐させる
-          </label>
-          <p class='npc-status' role='status'>
-            {npc.enabled
-              ? npc.thinking
-                ? '状況を観察中…'
-                : '数十秒おきに状況を見て発言します(提案の採否はあなた次第)'
-              : 'オフ'}
-          </p>
-          {npc.suggestedTask && (
-            <div class='npc-suggestion' role='group' aria-label='後輩の提案'>
-              <p class='npc-suggestion-quote'>「{npc.suggestedTask}」</p>
-              <div class='npc-suggestion-actions'>
-                <button
-                  type='button'
-                  class='primary'
-                  onClick={() => {
-                    if (npc.suggestedTask) {
-                      props.onCreateTask(npc.suggestedTask);
-                    }
-                    npc.dismissSuggestedTask();
-                  }}
-                >
-                  タスクに採用
-                </button>
-                <button
-                  type='button'
-                  class='ghost'
-                  onClick={() => {
-                    npc.dismissSuggestedTask();
-                  }}
-                >
-                  却下
-                </button>
-              </div>
-            </div>
-          )}
-        </>
-      )}
-    </>
   );
 }
 

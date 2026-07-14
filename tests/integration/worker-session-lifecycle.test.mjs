@@ -121,6 +121,85 @@ test('session control routes require the write token and proxy to the Durable Ob
   assert.equal(unknownSession.status, 401);
 });
 
+test('task and incident-log CRUD routes require write access and proxy record identifiers', async () => {
+  const {app, env, state} = createSessionHarness();
+  const created = await json(
+    await app.fetch(createSessionRequest({difficulty: 'beginner'}), env)
+  );
+  const sessionId = created.data.sessionId;
+  const headers = {
+    authorization: `Bearer ${created.data.writeToken}`,
+    'content-type': 'application/json',
+  };
+
+  const requests = [
+    new Request(`http://test/api/sessions/${sessionId}/tasks/task_1`, {
+      method: 'DELETE',
+      headers,
+      body: JSON.stringify({actorParticipantId: 'part_1'}),
+    }),
+    new Request(
+      `http://test/api/sessions/${sessionId}/incident-log/log_1/update`,
+      {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          body: 'Updated note',
+          actorParticipantId: 'part_1',
+        }),
+      }
+    ),
+    new Request(`http://test/api/sessions/${sessionId}/incident-log/log_1`, {
+      method: 'DELETE',
+      headers,
+      body: JSON.stringify({actorParticipantId: 'part_1'}),
+    }),
+  ];
+
+  for (const request of requests) {
+    const response = await app.fetch(request, env);
+    assert.equal(response.status, 200);
+  }
+
+  const taskDelete = state.doCalls.find((call) =>
+    call.path.endsWith('/task-delete')
+  );
+  assert.equal(taskDelete.method, 'POST');
+  assert.deepEqual(JSON.parse(taskDelete.body), {
+    actorParticipantId: 'part_1',
+    taskId: 'task_1',
+  });
+
+  const logUpdate = state.doCalls.find((call) =>
+    call.path.endsWith('/incident-log-update')
+  );
+  assert.equal(logUpdate.method, 'POST');
+  assert.deepEqual(JSON.parse(logUpdate.body), {
+    body: 'Updated note',
+    actorParticipantId: 'part_1',
+    entryId: 'log_1',
+  });
+
+  const logDelete = state.doCalls.find((call) =>
+    call.path.endsWith('/incident-log-delete')
+  );
+  assert.equal(logDelete.method, 'POST');
+  assert.deepEqual(JSON.parse(logDelete.body), {
+    actorParticipantId: 'part_1',
+    entryId: 'log_1',
+  });
+
+  const denied = await app.fetch(
+    new Request(`http://test/api/sessions/${sessionId}/tasks/task_1`, {
+      method: 'DELETE',
+      headers: {'content-type': 'application/json'},
+      body: '{}',
+    }),
+    env
+  );
+  assert.equal(denied.status, 401);
+});
+
 test('issued read token grants read-only snapshot access with expiry enforced', async () => {
   const {app, env, state} = createSessionHarness();
   const created = await json(

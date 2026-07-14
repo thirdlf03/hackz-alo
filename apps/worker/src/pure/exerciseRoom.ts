@@ -227,6 +227,13 @@ export function updateTask(
   };
 }
 
+export function deleteTask(
+  room: StoredExerciseRoom,
+  taskId: string
+): StoredExerciseRoom {
+  return {...room, tasks: room.tasks.filter((task) => task.id !== taskId)};
+}
+
 export function appendIncidentLog(
   room: StoredExerciseRoom,
   input: Record<string, unknown>,
@@ -243,6 +250,40 @@ export function appendIncidentLog(
   };
   if (room.incidentLog.some((item) => item.id === entry.id)) return room;
   return {...room, incidentLog: [...room.incidentLog, entry]};
+}
+
+export function updateIncidentLog(
+  room: StoredExerciseRoom,
+  entryId: string,
+  input: Record<string, unknown>,
+  nowIso = new Date().toISOString()
+): StoredExerciseRoom {
+  return {
+    ...room,
+    incidentLog: room.incidentLog.map((entry) => {
+      if (entry.id !== entryId) return entry;
+      return {
+        ...entry,
+        ...(typeof input.body === 'string' && input.body.trim()
+          ? {body: input.body.trim().slice(0, 2000)}
+          : {}),
+        ...(input.kind === undefined
+          ? {}
+          : {kind: cleanLogKind(input.kind, entry.kind)}),
+        updatedAt: nowIso,
+      };
+    }),
+  };
+}
+
+export function deleteIncidentLog(
+  room: StoredExerciseRoom,
+  entryId: string
+): StoredExerciseRoom {
+  return {
+    ...room,
+    incidentLog: room.incidentLog.filter((entry) => entry.id !== entryId),
+  };
 }
 
 export function fireInject(

@@ -41,7 +41,12 @@ export function createSessionProxyRequest(
   const headers = proxyTraceHeaders(source.headers, 'application/json');
   applyExtraHeaders(headers, extraHeaders);
   return new Request(target, {
-    method: source.method === 'GET' ? 'POST' : source.method,
+    // Internal mutation actions consistently use POST so their JSON bodies
+    // survive proxies that discard DELETE request bodies.
+    method:
+      source.method === 'GET' || source.method === 'DELETE'
+        ? 'POST'
+        : source.method,
     headers,
     body: JSON.stringify(body),
     signal: source.signal,

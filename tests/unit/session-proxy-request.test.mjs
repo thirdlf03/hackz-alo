@@ -65,6 +65,23 @@ test('session proxy request serializes an explicit body', async () => {
   assert.deepEqual(JSON.parse(await proxied.text()), {speed: 2});
 });
 
+test('session proxy request converts a DELETE with JSON body to an internal POST', async () => {
+  const source = new Request('https://worker/api/sessions/s1/tasks/task_1', {
+    method: 'DELETE',
+  });
+  const proxied = createSessionProxyRequest(
+    source,
+    new URL('https://session.internal/internal/sessions/s1/task-delete'),
+    {taskId: 'task_1', actorParticipantId: 'part_1'}
+  );
+
+  assert.equal(proxied.method, 'POST');
+  assert.deepEqual(JSON.parse(await proxied.text()), {
+    taskId: 'task_1',
+    actorParticipantId: 'part_1',
+  });
+});
+
 test('session proxy request strips a client-supplied write-access header', async () => {
   const source = new Request('https://worker/api/sessions/s1/ws/terminal', {
     headers: {[INTERNAL_WRITE_ACCESS_HEADER]: '1'},

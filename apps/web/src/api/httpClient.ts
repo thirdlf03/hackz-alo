@@ -93,6 +93,18 @@ export class HttpClient {
     });
   }
 
+  async delete<T>(path: string, body?: unknown): Promise<T> {
+    return this.request<T>(path, {
+      method: 'DELETE',
+      ...(body === undefined
+        ? {}
+        : {
+            headers: {'content-type': 'application/json'},
+            body: JSON.stringify(body),
+          }),
+    });
+  }
+
   async fetch(path: string, init?: RequestInit): Promise<Response> {
     const span = this.startRequestSpan(path, init);
     try {

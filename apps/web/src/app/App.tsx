@@ -32,7 +32,6 @@ import {
 import {useCanvasInteraction} from './useCanvasInteraction.js';
 import {useWebMcpTools} from './useWebMcpTools.js';
 import {useVoiceChat} from './useVoiceChat.js';
-import {useNpcColleague} from './useNpcColleague.js';
 import {useMonitorPip} from './useMonitorPip.js';
 import {detectHtmlInCanvasSupport} from '../effect/htmlInCanvas.js';
 import {useMetricsPolling} from './useMetricsPolling.js';
@@ -257,15 +256,6 @@ export function App() {
   rtcSignalHandlerRef.current = (data) => {
     voice.handleSignal(data);
   };
-
-  const npc = useNpcColleague({
-    screen,
-    session,
-    gameStateRef,
-    eventEmitterRef,
-    patchGameStateRef,
-    currentGameTimeMs,
-  });
 
   const pip = useMonitorPip({screen, canvasRef, setAppError});
 
@@ -561,7 +551,6 @@ export function App() {
           participantId={participantId}
           exercise={exerciseSnapshot}
           voice={voice}
-          npc={npc}
           pip={pip}
           onCreateTask={(title) => {
             if (!session) return;
@@ -577,12 +566,66 @@ export function App() {
                 setAppError(describeSessionActionError(error, 'task'));
               });
           }}
+          onUpdateTask={(taskId, input) => {
+            if (!session) return;
+            void api
+              .updateTask(session.sessionId, taskId, {
+                ...input,
+                actorParticipantId: participantId,
+              })
+              .then(({exercise}) => {
+                setExerciseSnapshot(exercise);
+              })
+              .catch((error: unknown) => {
+                setAppError(describeSessionActionError(error, 'task'));
+              });
+          }}
+          onDeleteTask={(taskId) => {
+            if (!session) return;
+            void api
+              .deleteTask(session.sessionId, taskId, {
+                actorParticipantId: participantId,
+              })
+              .then(({exercise}) => {
+                setExerciseSnapshot(exercise);
+              })
+              .catch((error: unknown) => {
+                setAppError(describeSessionActionError(error, 'task'));
+              });
+          }}
           onAppendIncidentLog={(body, kind) => {
             if (!session) return;
             void api
               .appendIncidentLog(session.sessionId, {
                 body,
                 kind: kind ?? 'note',
+                actorParticipantId: participantId,
+              })
+              .then(({exercise}) => {
+                setExerciseSnapshot(exercise);
+              })
+              .catch((error: unknown) => {
+                setAppError(describeSessionActionError(error, 'incidentLog'));
+              });
+          }}
+          onUpdateIncidentLog={(entryId, input) => {
+            if (!session) return;
+            void api
+              .updateIncidentLog(session.sessionId, entryId, {
+                ...input,
+                actorParticipantId: participantId,
+              })
+              .then(({exercise}) => {
+                setExerciseSnapshot(exercise);
+              })
+              .catch((error: unknown) => {
+                setAppError(describeSessionActionError(error, 'incidentLog'));
+              });
+          }}
+          onDeleteIncidentLog={(entryId) => {
+            if (!session) return;
+            void api
+              .deleteIncidentLog(session.sessionId, entryId, {
                 actorParticipantId: participantId,
               })
               .then(({exercise}) => {

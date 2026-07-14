@@ -37,8 +37,11 @@ function stubHandlers(overrides = {}) {
     'exerciseReady',
     'taskCreate',
     'taskUpdate',
+    'taskDelete',
     'injectFire',
     'incidentLog',
+    'incidentLogUpdate',
+    'incidentLogDelete',
     'hotwash',
     'aar',
     'snapshot',
@@ -87,6 +90,30 @@ test('matchSessionRoute maps durable object HTTP actions', () => {
       new Request('https://do/task-create', {method: 'POST', body: '{}'})
     ),
     'taskCreate'
+  );
+  assert.equal(
+    matchSessionRoute(
+      new Request('https://do/task-delete', {method: 'POST', body: '{}'})
+    ),
+    'taskDelete'
+  );
+  assert.equal(
+    matchSessionRoute(
+      new Request('https://do/incident-log-update', {
+        method: 'POST',
+        body: '{}',
+      })
+    ),
+    'incidentLogUpdate'
+  );
+  assert.equal(
+    matchSessionRoute(
+      new Request('https://do/incident-log-delete', {
+        method: 'POST',
+        body: '{}',
+      })
+    ),
+    'incidentLogDelete'
   );
   assert.equal(
     matchSessionRoute(new Request('https://do/aar', {method: 'GET'})),

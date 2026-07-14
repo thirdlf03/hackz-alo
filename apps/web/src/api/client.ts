@@ -105,8 +105,11 @@ export interface ApiClientSurface
       | 'advanceExercisePhase'
       | 'createTask'
       | 'updateTask'
+      | 'deleteTask'
       | 'fireInject'
       | 'appendIncidentLog'
+      | 'updateIncidentLog'
+      | 'deleteIncidentLog'
       | 'submitHotwash'
       | 'getAfterActionReport'
       | 'getRtcIceServers'
@@ -188,6 +191,11 @@ export interface ApiClientSurface
       actorParticipantId?: string;
     }
   ): Promise<{exercise: ExerciseSnapshot}>;
+  deleteTask(
+    sessionId: string,
+    taskId: string,
+    input?: {actorParticipantId?: string}
+  ): Promise<{exercise: ExerciseSnapshot}>;
   fireInject(
     sessionId: string,
     injectId: string,
@@ -206,6 +214,20 @@ export interface ApiClientSurface
       entryId?: string;
       actorParticipantId?: string;
     }
+  ): Promise<{exercise: ExerciseSnapshot}>;
+  updateIncidentLog(
+    sessionId: string,
+    entryId: string,
+    input: {
+      body?: string;
+      kind?: IncidentLogEntryKind;
+      actorParticipantId?: string;
+    }
+  ): Promise<{exercise: ExerciseSnapshot}>;
+  deleteIncidentLog(
+    sessionId: string,
+    entryId: string,
+    input?: {actorParticipantId?: string}
   ): Promise<{exercise: ExerciseSnapshot}>;
   submitHotwash(
     sessionId: string,
@@ -271,8 +293,11 @@ export class ApiClient {
       'advanceExercisePhase',
       'createTask',
       'updateTask',
+      'deleteTask',
       'fireInject',
       'appendIncidentLog',
+      'updateIncidentLog',
+      'deleteIncidentLog',
       'submitHotwash',
       'getAfterActionReport',
       'getRtcIceServers',

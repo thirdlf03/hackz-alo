@@ -11,9 +11,13 @@ const {
   canPerformRoleGatedAction,
   createExerciseRoom,
   createTask,
+  deleteIncidentLog,
+  deleteTask,
   fireInject,
   joinParticipant,
   updateParticipantCursor,
+  updateIncidentLog,
+  updateTask,
 } = await tsImport(
   '../../apps/worker/src/pure/exerciseRoom.ts',
   import.meta.url
@@ -72,6 +76,57 @@ test('exercise room tracks participants, tasks, injects, and log', () => {
   assert.equal(snapshot.tasks[0].title, 'Check DB pool');
   assert.equal(snapshot.injects[0].fired, true);
   assert.equal(snapshot.incidentLog.at(-1).kind, 'decision');
+});
+
+test('tasks support update and deletion without mutating the prior room', () => {
+  const created = createTask(
+    createExerciseRoom(scenario),
+    {taskId: 'task_1', title: 'Check DB pool'},
+    '2026-07-13T00:00:00.000Z'
+  );
+  const updated = updateTask(
+    created,
+    'task_1',
+    {title: 'Restart DB proxy', status: 'in_progress'},
+    '2026-07-13T00:01:00.000Z'
+  );
+  const deleted = deleteTask(updated, 'task_1');
+
+  assert.equal(created.tasks[0].title, 'Check DB pool');
+  assert.equal(updated.tasks[0].title, 'Restart DB proxy');
+  assert.equal(updated.tasks[0].status, 'in_progress');
+  assert.equal(updated.tasks[0].updatedAt, '2026-07-13T00:01:00.000Z');
+  assert.deepEqual(deleted.tasks, []);
+  assert.equal(updated.tasks.length, 1);
+});
+
+test('incident log entries support update and deletion without changing creation metadata', () => {
+  const created = appendIncidentLog(
+    createExerciseRoom(scenario),
+    {
+      entryId: 'log_1',
+      kind: 'note',
+      body: 'Investigating',
+      actorParticipantId: 'part_1',
+    },
+    '2026-07-13T00:00:00.000Z'
+  );
+  const updated = updateIncidentLog(
+    created,
+    'log_1',
+    {kind: 'decision', body: 'Rolling back'},
+    '2026-07-13T00:02:00.000Z'
+  );
+  const deleted = deleteIncidentLog(updated, 'log_1');
+
+  assert.equal(created.incidentLog[0].body, 'Investigating');
+  assert.equal(updated.incidentLog[0].body, 'Rolling back');
+  assert.equal(updated.incidentLog[0].kind, 'decision');
+  assert.equal(updated.incidentLog[0].createdAt, '2026-07-13T00:00:00.000Z');
+  assert.equal(updated.incidentLog[0].actorParticipantId, 'part_1');
+  assert.equal(updated.incidentLog[0].updatedAt, '2026-07-13T00:02:00.000Z');
+  assert.deepEqual(deleted.incidentLog, []);
+  assert.equal(updated.incidentLog.length, 1);
 });
 
 test('canPerformRoleGatedAction allows anyone when the room has no host', () => {

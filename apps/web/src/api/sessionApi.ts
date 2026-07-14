@@ -289,6 +289,17 @@ export class SessionApi {
     );
   }
 
+  deleteTask(
+    sessionId: string,
+    taskId: string,
+    input: {actorParticipantId?: string} = {}
+  ) {
+    return this.http.delete<{exercise: ExerciseSnapshot}>(
+      `/api/sessions/${encodeURIComponent(sessionId)}/tasks/${encodeURIComponent(taskId)}`,
+      input
+    );
+  }
+
   fireInject(
     sessionId: string,
     injectId: string,
@@ -316,6 +327,32 @@ export class SessionApi {
   ) {
     return this.http.post<{exercise: ExerciseSnapshot}>(
       `/api/sessions/${encodeURIComponent(sessionId)}/incident-log`,
+      input
+    );
+  }
+
+  updateIncidentLog(
+    sessionId: string,
+    entryId: string,
+    input: {
+      body?: string;
+      kind?: IncidentLogEntryKind;
+      actorParticipantId?: string;
+    }
+  ) {
+    return this.http.post<{exercise: ExerciseSnapshot}>(
+      `/api/sessions/${encodeURIComponent(sessionId)}/incident-log/${encodeURIComponent(entryId)}/update`,
+      input
+    );
+  }
+
+  deleteIncidentLog(
+    sessionId: string,
+    entryId: string,
+    input: {actorParticipantId?: string} = {}
+  ) {
+    return this.http.delete<{exercise: ExerciseSnapshot}>(
+      `/api/sessions/${encodeURIComponent(sessionId)}/incident-log/${encodeURIComponent(entryId)}`,
       input
     );
   }

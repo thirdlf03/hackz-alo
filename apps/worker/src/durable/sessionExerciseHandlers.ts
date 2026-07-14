@@ -20,6 +20,8 @@ import {
   canPerformRoleGatedAction,
   createExerciseRoom,
   createTask,
+  deleteIncidentLog,
+  deleteTask,
   fireInject,
   generateAfterActionReport,
   heartbeatParticipant,
@@ -28,6 +30,7 @@ import {
   submitHotwash,
   updateParticipantCursor,
   updateParticipantRole,
+  updateIncidentLog,
   updateTask,
   type StoredExerciseRoom,
 } from '../pure/exerciseRoom.js';
@@ -206,6 +209,18 @@ export class SessionExerciseHub {
     );
   }
 
+  async taskDelete(request: Request) {
+    const session = await this.deps.requireSession();
+    const body = await readControlBody(request);
+    if (typeof body.taskId !== 'string') {
+      throw new HttpError(400, 'bad_request', 'taskId is required');
+    }
+    const room = await this.loadOrCreate(session);
+    const decision = canContributeRecords(room, actorIdFrom(body));
+    if (!decision.allowed) return observerReadOnlyResponse();
+    return this.saveResponse(session, deleteTask(room, body.taskId), 'task');
+  }
+
   async injectFire(request: Request) {
     const session = await this.deps.requireSession();
     const body = (await readControlBody(request)) as {
@@ -268,6 +283,38 @@ export class SessionExerciseHub {
     return this.saveResponse(
       session,
       appendIncidentLog(room, body),
+      'incident_log'
+    );
+  }
+
+  async incidentLogUpdate(request: Request) {
+    const session = await this.deps.requireSession();
+    const body = await readControlBody(request);
+    if (typeof body.entryId !== 'string') {
+      throw new HttpError(400, 'bad_request', 'entryId is required');
+    }
+    const room = await this.loadOrCreate(session);
+    const decision = canContributeRecords(room, actorIdFrom(body));
+    if (!decision.allowed) return observerReadOnlyResponse();
+    return this.saveResponse(
+      session,
+      updateIncidentLog(room, body.entryId, body),
+      'incident_log'
+    );
+  }
+
+  async incidentLogDelete(request: Request) {
+    const session = await this.deps.requireSession();
+    const body = await readControlBody(request);
+    if (typeof body.entryId !== 'string') {
+      throw new HttpError(400, 'bad_request', 'entryId is required');
+    }
+    const room = await this.loadOrCreate(session);
+    const decision = canContributeRecords(room, actorIdFrom(body));
+    if (!decision.allowed) return observerReadOnlyResponse();
+    return this.saveResponse(
+      session,
+      deleteIncidentLog(room, body.entryId),
       'incident_log'
     );
   }

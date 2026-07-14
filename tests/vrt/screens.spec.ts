@@ -87,7 +87,6 @@ test('play screen', async ({page}) => {
   await expect(page).toHaveScreenshot('play.png', {
     mask: [
       page.locator('canvas'),
-      page.locator('.play-status-bar'),
       // TASKS / INJECTS / NOTES はシナリオ進行時間に応じて内容が変わるため、
       // ふりかえりコンテンツ自体は VRT の対象から外す。
       page.locator('.team-list'),
