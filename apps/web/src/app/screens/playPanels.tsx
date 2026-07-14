@@ -3,6 +3,7 @@ import type {
   ExerciseSnapshot,
   ExerciseTask,
   ExerciseTaskStatus,
+  GameRenderState,
   IncidentLogEntry,
   IncidentLogEntryKind,
   ScenarioDefinition,
@@ -29,6 +30,8 @@ export function TeamExercisePanel(props: {
   exercise: ExerciseSnapshot | undefined;
   canContribute: boolean;
   canvasRef: {current: HTMLCanvasElement | null};
+  gameStateRef: {current: GameRenderState | undefined};
+  scenarioRef: {current: ScenarioDefinition | undefined};
   scenario: ScenarioDefinition | undefined;
   commandInputFocused: boolean;
   onCreateTask: (title: string) => void;
@@ -79,7 +82,11 @@ export function TeamExercisePanel(props: {
       )}
       <section class='npc-panel' aria-label='AIアシスタント'>
         <h2>ASSIST — ソラ (AI)</h2>
-        <AiAssistPanel canvasRef={props.canvasRef} />
+        <AiAssistPanel
+          canvasRef={props.canvasRef}
+          gameStateRef={props.gameStateRef}
+          scenarioRef={props.scenarioRef}
+        />
       </section>
       <section>
         <h2>TASKS</h2>

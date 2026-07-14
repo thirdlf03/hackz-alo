@@ -31,6 +31,8 @@ export function PlayScreen(props: {
   scenario: ScenarioDefinition | undefined;
   exercise: ExerciseSnapshot | undefined;
   canvasRef: {current: HTMLCanvasElement | null};
+  gameStateRef: {current: GameRenderState | undefined};
+  scenarioRef: {current: ScenarioDefinition | undefined};
   chatInputRef: {current: HTMLInputElement | null};
   htmlInCanvasChat: boolean;
   editorTextareaRef: {current: HTMLTextAreaElement | null};
@@ -177,6 +179,8 @@ export function PlayScreen(props: {
           props.participantId
         )}
         canvasRef={props.canvasRef}
+        gameStateRef={props.gameStateRef}
+        scenarioRef={props.scenarioRef}
         scenario={props.scenario}
         commandInputFocused={props.gameState?.commandInputFocused ?? false}
         onCreateTask={props.onCreateTask}
