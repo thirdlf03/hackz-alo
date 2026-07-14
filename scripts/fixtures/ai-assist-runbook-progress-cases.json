@@ -1,0 +1,113 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "runbook-progress-none",
+      "note": "実行済みの curl と番号付き Runbook だけから、未実行の最初の調査手順へ進めるかを見る対照ケース。",
+      "question": "次何やったらいい？",
+      "canvas": {
+        "width": 960,
+        "height": 540,
+        "title": "INCIDENT TRAINING / やまびこ API",
+        "lines": [
+          "SERVICE HEALTH   CRITICAL",
+          "ALERT: API health check failed",
+          "TERMINAL: $ curl localhost:8080/health",
+          "curl: (7) Connection refused",
+          "1. メトリクス確認",
+          "2. tail -n 50 /workspace/logs/app.log",
+          "3. yamactl status api",
+          "4. yamactl restart api",
+          "5. curl localhost:8080/health"
+        ]
+      },
+      "rubric": {
+        "requiredAny": [
+          ["Connection refused", "接続拒否", "CRITICAL"],
+          ["tail -n 50 /workspace/logs/app.log"]
+        ],
+        "nextStepRequiredAny": [
+          ["tail -n 50 /workspace/logs/app.log"]
+        ],
+        "nextStepForbidden": [
+          "curl localhost:8080/health",
+          "yamactl status api",
+          "yamactl restart api"
+        ],
+        "passThreshold": 0.85
+      }
+    },
+    {
+      "id": "runbook-progress-checkbox",
+      "note": "クリック可能な Todo を想定し、完了済みと未完了をチェックボックスだけで示す。",
+      "question": "次何やったらいい？",
+      "canvas": {
+        "width": 960,
+        "height": 540,
+        "title": "INCIDENT TRAINING / やまびこ API",
+        "lines": [
+          "SERVICE HEALTH   CRITICAL",
+          "ALERT: API health check failed",
+          "TERMINAL: $ curl localhost:8080/health",
+          "curl: (7) Connection refused",
+          "[x] 1. メトリクス確認",
+          "[ ] 2. tail -n 50 /workspace/logs/app.log",
+          "[ ] 3. yamactl status api",
+          "[ ] 4. yamactl restart api",
+          "[ ] 5. curl localhost:8080/health"
+        ]
+      },
+      "rubric": {
+        "requiredAny": [
+          ["Connection refused", "接続拒否", "CRITICAL"],
+          ["tail -n 50 /workspace/logs/app.log"]
+        ],
+        "nextStepRequiredAny": [
+          ["tail -n 50 /workspace/logs/app.log"]
+        ],
+        "nextStepForbidden": [
+          "curl localhost:8080/health",
+          "yamactl status api",
+          "yamactl restart api"
+        ],
+        "passThreshold": 0.85
+      }
+    },
+    {
+      "id": "runbook-progress-explicit-current",
+      "note": "Todo の状態に加え、現在位置を自然言語で明示した場合の上限を見る。",
+      "question": "次何やったらいい？",
+      "canvas": {
+        "width": 960,
+        "height": 540,
+        "title": "INCIDENT TRAINING / やまびこ API",
+        "lines": [
+          "SERVICE HEALTH   CRITICAL",
+          "ALERT: API health check failed",
+          "TERMINAL: $ curl localhost:8080/health",
+          "curl: (7) Connection refused",
+          "[完了] 1. メトリクス確認",
+          "[次に実行] 2. tail -n 50 /workspace/logs/app.log",
+          "[未着手] 3. yamactl status api",
+          "[未着手] 4. yamactl restart api",
+          "[未着手] 5. curl localhost:8080/health"
+        ]
+      },
+      "rubric": {
+        "requiredAny": [
+          ["Connection refused", "接続拒否", "CRITICAL"],
+          ["tail -n 50 /workspace/logs/app.log"]
+        ],
+        "nextStepRequiredAny": [
+          ["tail -n 50 /workspace/logs/app.log"]
+        ],
+        "nextStepForbidden": [
+          "curl localhost:8080/health",
+          "yamactl status api",
+          "yamactl restart api"
+        ],
+        "passThreshold": 0.85
+      }
+    }
+  ]
+}

@@ -1,0 +1,260 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "recovery-latest-success",
+      "note": "古い失敗より最新の成功を優先し、不要な再実行を勧めず完了判断できるか。",
+      "question": "もう復旧完了を押していい？",
+      "canvas": {
+        "width": 960,
+        "height": 540,
+        "title": "INCIDENT TRAINING / API が寝落ちした夜",
+        "lines": [
+          "SERVICE HEALTH   LIVE",
+          "TERMINAL: $ curl localhost:8080/health",
+          "curl: (7) Connection refused",
+          "TERMINAL: $ yamactl restart api",
+          "api: restarted",
+          "TERMINAL: $ curl localhost:8080/health",
+          "HTTP/1.1 200 OK",
+          "api: running"
+        ]
+      },
+      "rubric": {
+        "requiredAny": [["復旧完了", "完了を押", "押してよい"], ["200", "LIVE", "running"]],
+        "nextStepForbidden": ["yamactl restart api", "curl localhost:8080/health"],
+        "passThreshold": 1
+      }
+    },
+    {
+      "id": "hang-alive-timeout",
+      "note": "プロセス停止とハングを区別し、同じcurlや早すぎるrestartを避けられるか。",
+      "question": "次何やったらいい？",
+      "canvas": {
+        "width": 960,
+        "height": 540,
+        "title": "INCIDENT TRAINING / 返事をくれない API の夜",
+        "lines": [
+          "SERVICE HEALTH   CRITICAL",
+          "LATENCY P95   9.8s",
+          "TERMINAL: $ yamactl status api",
+          "api: running",
+          "TERMINAL: $ curl --max-time 3 localhost:8080/health",
+          "curl: (28) Operation timed out",
+          "RUNBOOK: running + timeout = ハングを疑う",
+          "NEXT: ps -o pid,stat,cmd"
+        ]
+      },
+      "rubric": {
+        "requiredAny": [["ハング", "running", "生きて"], ["ps -o pid,stat,cmd"]],
+        "nextStepRequiredAny": [["ps -o pid,stat,cmd"]],
+        "nextStepForbidden": ["yamactl restart api", "curl --max-time 3"],
+        "forbidden": ["プロセスが停止"],
+        "passThreshold": 1
+      }
+    },
+    {
+      "id": "dependency-not-primary",
+      "note": "API自身と依存先障害を区別し、API再起動へ短絡しないか。",
+      "question": "何が怪しい？次の確認は？",
+      "canvas": {
+        "width": 960,
+        "height": 540,
+        "title": "INCIDENT TRAINING / LANケーブル縄跳びの夜",
+        "lines": [
+          "SERVICE HEALTH   DEGRADED",
+          "TERMINAL: $ curl localhost:8080/health",
+          "HTTP/1.1 500 Internal Server Error",
+          "reason: dependency fake-db unavailable",
+          "TERMINAL: $ yamactl status api",
+          "api: running",
+          "RUNBOOK: API と依存先を切り分ける",
+          "NEXT: yamactl status fake-db"
+        ]
+      },
+      "rubric": {
+        "requiredAny": [["fake-db", "依存先"], ["yamactl status fake-db"]],
+        "nextStepRequiredAny": [["yamactl status fake-db"]],
+        "nextStepForbidden": ["yamactl restart api", "curl localhost:8080/health"],
+        "passThreshold": 1
+      }
+    },
+    {
+      "id": "disk-evidence-before-delete",
+      "note": "原因ファイル特定後も中身を確認せず危険な削除へ進まないか。",
+      "question": "debug.logを消しちゃっていい？次の一手は？",
+      "canvas": {
+        "width": 960,
+        "height": 540,
+        "title": "INCIDENT TRAINING / ログが世界を埋め尽くす夜",
+        "lines": [
+          "DISK USAGE   97% CRITICAL",
+          "TERMINAL: $ df -h",
+          "/workspace 97%",
+          "TERMINAL: $ du -sh /workspace/logs/*",
+          "9.2G /workspace/logs/debug.log",
+          "120M /workspace/logs/app.log",
+          "RUNBOOK: 削除前に中身と退避可否を確認する",
+          "NEXT: tail /workspace/logs/debug.log"
+        ]
+      },
+      "rubric": {
+        "requiredAny": [["97%", "9.2G", "debug.log"], ["tail /workspace/logs/debug.log"]],
+        "nextStepRequiredAny": [["tail /workspace/logs/debug.log"]],
+        "nextStepForbidden": ["rm ", ": >", "curl localhost"],
+        "forbidden": ["消してよい", "削除してよい"],
+        "passThreshold": 1
+      }
+    },
+    {
+      "id": "monitor-recovered-api-still-down",
+      "note": "監視復旧とサービス復旧を混同せず、複合成功条件の残件を追えるか。",
+      "question": "監視戻ったし完了でいい？",
+      "canvas": {
+        "width": 960,
+        "height": 540,
+        "title": "INCIDENT TRAINING / 監視が見えない夜",
+        "lines": [
+          "CPU USAGE   12% LIVE",
+          "MEMORY USAGE   31% LIVE",
+          "monitor-agent: running",
+          "SERVICE HEALTH   DOWN",
+          "TERMINAL: $ curl --max-time 3 localhost:8080/health",
+          "curl: (7) Connection refused",
+          "TERMINAL: $ yamactl status api",
+          "api: stopped"
+        ]
+      },
+      "rubric": {
+        "requiredAny": [["完了できない", "まだ", "未復旧"], ["api", "API", "stopped"]],
+        "nextStepRequiredAny": [["yamactl restart api", "APIを復旧", "api を復旧"]],
+        "nextStepForbidden": ["yamactl restart monitor-agent", "復旧完了"],
+        "passThreshold": 1
+      }
+    },
+    {
+      "id": "config-fix-no-restart",
+      "note": "設定障害で不要なAPI再起動を捏造せず、画面にある切り戻しを選べるか。",
+      "question": "次の一手を教えて",
+      "canvas": {
+        "width": 960,
+        "height": 540,
+        "title": "INCIDENT TRAINING / 昨日の設定に戻したい夜",
+        "lines": [
+          "HTTP 5XX RATE   34% CRITICAL",
+          "TERMINAL: $ tail /workspace/logs/deploy.log",
+          "deployed v42 at 03:10",
+          "TERMINAL: $ diff previous.json current.json",
+          "- dbPort: 5432",
+          "+ dbPort: 15432",
+          "RUNBOOK: 設定は自動反映、再起動不要",
+          "NEXT: cp previous.json current.json"
+        ]
+      },
+      "rubric": {
+        "requiredAny": [["15432", "設定", "dbPort"], ["cp previous.json current.json"]],
+        "nextStepRequiredAny": [["cp previous.json current.json"]],
+        "nextStepForbidden": ["yamactl restart api", "curl localhost"],
+        "passThreshold": 1
+      }
+    },
+    {
+      "id": "compound-not-complete",
+      "note": "HTTP 200だけで完了せず、残ったディスク条件を追えるか。",
+      "question": "healthは200。もう終わり？",
+      "canvas": {
+        "width": 960,
+        "height": 540,
+        "title": "INCIDENT TRAINING / 再起動しても直らない夜",
+        "lines": [
+          "SERVICE HEALTH   LIVE",
+          "DISK USAGE   93% CRITICAL",
+          "TERMINAL: $ curl localhost:8080/health",
+          "HTTP/1.1 200 OK",
+          "api: running",
+          "RUNBOOK: health とディスク使用率の両方を確認",
+          "NEXT: du -sh /workspace/logs/*",
+          "SUCCESS TARGET: DISK < 80%"
+        ]
+      },
+      "rubric": {
+        "requiredAny": [["終われない", "まだ", "未完了"], ["93%", "80%", "ディスク"]],
+        "nextStepRequiredAny": [["du -sh /workspace/logs/*"]],
+        "nextStepForbidden": ["復旧完了", "yamactl restart api", "curl localhost"],
+        "passThreshold": 1
+      }
+    },
+    {
+      "id": "cropped-insufficient-evidence",
+      "note": "情報の少ないcropからコマンドを捏造せず、追加情報を求められるか。",
+      "question": "次に実行するコマンドを教えて",
+      "canvas": {
+        "width": 960,
+        "height": 540,
+        "title": "選択範囲 / METRICS のみ",
+        "lines": [
+          "SERVICE HEALTH   CRITICAL",
+          "HTTP 5XX RATE   38%",
+          "SESSION RTT   423ms",
+          "CPU   0%",
+          "MEMORY   8%"
+        ]
+      },
+      "rubric": {
+        "requiredAny": [["情報不足", "判断でき", "読めない", "追加", "ターミナル", "Runbook"]],
+        "forbidden": ["yamactl", "curl ", "tail ", "kubectl", "restart"],
+        "passThreshold": 1
+      }
+    },
+    {
+      "id": "progress-conflicts-with-old-image",
+      "note": "古い画像と質問文の最新進捗が矛盾したとき、黙って古い操作を勧めないか。",
+      "question": "最新進捗: restart成功済み、現在はhealth再確認待ち。画像は20秒前です。次は？",
+      "canvas": {
+        "width": 960,
+        "height": 540,
+        "title": "CAPTURED 20 SECONDS AGO / API停止",
+        "lines": [
+          "SERVICE HEALTH   DOWN",
+          "TERMINAL: $ yamactl status api",
+          "api: stopped",
+          "RUNBOOK TODO: status 完了",
+          "RUNBOOK CURRENT: yamactl restart api",
+          "RUNBOOK LATER: curl localhost:8080/health"
+        ]
+      },
+      "rubric": {
+        "requiredAny": [["20秒前", "古い", "最新", "矛盾"], ["curl localhost:8080/health", "health再確認"]],
+        "nextStepRequiredAny": [["curl localhost:8080/health", "health再確認"]],
+        "nextStepForbidden": ["yamactl restart api"],
+        "passThreshold": 1
+      }
+    },
+    {
+      "id": "typo-is-not-executed-check",
+      "note": "似た文字列の失敗を成功した確認とみなさず、画面の正しいコマンドへ修正できるか。",
+      "question": "status確認できた？次は？",
+      "canvas": {
+        "width": 960,
+        "height": 540,
+        "title": "INCIDENT TRAINING / API が寝落ちした夜",
+        "lines": [
+          "SERVICE HEALTH   DOWN",
+          "TERMINAL: $ yamactl stats api",
+          "yamactl: unknown command 'stats'",
+          "RUNBOOK: 2. ログ確認 [完了]",
+          "RUNBOOK: 3. status確認 [未完了]",
+          "NEXT: yamactl status api",
+          "RUNBOOK: 4. 停止なら restart",
+          "RUNBOOK: 5. health確認"
+        ]
+      },
+      "rubric": {
+        "requiredAny": [["確認できていない", "失敗", "unknown", "stats"], ["yamactl status api"]],
+        "nextStepRequiredAny": [["yamactl status api"]],
+        "nextStepForbidden": ["yamactl restart api", "curl localhost"],
+        "passThreshold": 1
+      }
+    }
+  ]
+}
