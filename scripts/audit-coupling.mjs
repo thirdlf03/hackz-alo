@@ -33,6 +33,8 @@ const thresholds = new Map([
   ['apps/web/src/app/screens/LobbyScreen.tsx', {loc: 180}],
   ['apps/web/src/app/screens/PlayScreen.tsx', {loc: 250}],
   ['apps/web/src/app/screens/playPanels.tsx', {loc: 450}],
+  ['apps/web/src/app/screens/playTaskPanel.tsx', {loc: 200}],
+  ['apps/web/src/app/screens/playIncidentLogPanel.tsx', {loc: 190}],
   ['apps/web/src/app/screens/HotwashScreen.tsx', {loc: 130}],
   ['apps/web/src/app/screens/ResultScreen.tsx', {loc: 35}],
   ['apps/web/src/app/screens/ReplayScreen.tsx', {loc: 20}],
