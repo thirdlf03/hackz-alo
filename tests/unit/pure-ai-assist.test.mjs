@@ -139,6 +139,13 @@ test('system prompt prefers on-screen evidence over the runbook when they confli
   assert.match(ASSIST_SYSTEM_PROMPT, /Runbookの記述より画面上の他の証拠を優先/);
 });
 
+test('system prompt asks for "不足:" instead of a fabricated command when ungrounded', () => {
+  assert.match(
+    ASSIST_SYSTEM_PROMPT,
+    /画像と質問文から答えの根拠が見つからない場合は、コマンドを作らずに次の一手へ「不足:」に続けて知りたい情報を書いてください。/
+  );
+});
+
 test('buildAssistPrompt trims input and rejects empty questions', () => {
   assert.equal(buildAssistPrompt('  障害箇所は?  '), '障害箇所は?');
   assert.equal(buildAssistPrompt('   '), undefined);
