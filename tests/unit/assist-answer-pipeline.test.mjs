@@ -169,3 +169,62 @@ test('finalizeAssistAnswer prioritizes danger over redundant when both apply', (
 
   assert.equal(result.nextStep?.verdict, 'danger_blocked');
 });
+
+test('finalizeAssistAnswer treats a leading "不足:" next step as request_context', () => {
+  const answer =
+    '次の一手: 不足: ターミナルの最新出力\n根拠: 画像に該当情報がありません。';
+  const grounding = {
+    status: 'unverified',
+    nextStep: '次の一手: 不足: ターミナルの最新出力',
+    reason: 'no-grounded-command',
+  };
+
+  const result = finalizeAssistAnswer(answer, grounding);
+
+  assert.equal(result.nextStep?.verdict, 'request_context');
+  assert.equal(result.nextStep?.requestedInfo, 'ターミナルの最新出力');
+  assert.equal(result.nextStep?.command, undefined);
+});
+
+test('finalizeAssistAnswer falls back to normal classification when "不足" is not at the start', () => {
+  const answer =
+    '次の一手: ss -ltnp で確認する(不足していれば再確認)。\n根拠: RUNBOOKの記載に基づく。';
+  const grounding = {
+    status: 'ok',
+    nextStep: '次の一手: ss -ltnp で確認する(不足していれば再確認)',
+  };
+
+  const result = finalizeAssistAnswer(answer, grounding);
+
+  assert.equal(result.nextStep?.verdict, 'ok');
+  assert.equal(result.nextStep?.requestedInfo, undefined);
+});
+
+test('finalizeAssistAnswer does not apply danger classification to a "不足:" request_context', () => {
+  const answer =
+    '次の一手: 不足: sudo rm -rf /workspace の実行結果\n根拠: 画像に写っていません。';
+  const grounding = {
+    status: 'unverified',
+    nextStep: '次の一手: 不足: sudo rm -rf /workspace の実行結果',
+    reason: 'no-grounded-command',
+  };
+
+  const result = finalizeAssistAnswer(answer, grounding);
+
+  assert.equal(result.nextStep?.verdict, 'request_context');
+});
+
+test('finalizeAssistAnswer does not apply the redundant check to a "不足:" request_context', () => {
+  const answer =
+    '次の一手: 不足: ss -ltnpの実行結果\n根拠: 画像に写っていません。';
+  const grounding = {
+    status: 'unverified',
+    nextStep: '次の一手: 不足: ss -ltnpの実行結果',
+    reason: 'no-grounded-command',
+  };
+  const recentCommands = [{command: 'ss -ltnp', at: Date.now() - 1000}];
+
+  const result = finalizeAssistAnswer(answer, grounding, recentCommands);
+
+  assert.equal(result.nextStep?.verdict, 'request_context');
+});

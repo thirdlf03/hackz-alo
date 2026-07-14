@@ -367,6 +367,7 @@ export function AiAssistPanel(props: {
       setFinalized(finalizedAnswer);
       const adoptedSuggestion =
         finalizedAnswer.nextStep &&
+        finalizedAnswer.nextStep.verdict !== 'request_context' &&
         !NEXT_STEP_HIDDEN_COMMAND_VERDICTS.has(finalizedAnswer.nextStep.verdict)
           ? finalizedAnswer.nextStep.command
           : undefined;
@@ -719,6 +720,21 @@ function NextStepDisplay(props: {
   currentRunbookStepInstruction: string | undefined;
 }) {
   const {nextStep} = props;
+  if (nextStep.verdict === 'request_context') {
+    return (
+      <div
+        class='ai-assist-nextstep ai-assist-nextstep-request_context'
+        role='status'
+      >
+        <p class='ai-assist-nextstep-note'>
+          AIが追加情報を求めています: {nextStep.requestedInfo}
+        </p>
+        <p class='ai-assist-nextstep-note'>
+          スクショの範囲を広げるか、該当パネルを開いて再質問してください。
+        </p>
+      </div>
+    );
+  }
   const showCommand = !NEXT_STEP_HIDDEN_COMMAND_VERDICTS.has(nextStep.verdict);
   return (
     <div

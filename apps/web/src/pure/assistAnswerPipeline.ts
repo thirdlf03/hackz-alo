@@ -32,7 +32,8 @@ export type AssistNextStepVerdict =
   | 'danger_blocked'
   | 'danger_confirm'
   | 'redundant'
-  | 'unverified';
+  | 'unverified'
+  | 'request_context';
 
 /** A single entry of the terminal's recent command history, used to detect a
  * re-suggested "次の一手" that was already executed (see isRecentlyExecuted). */
@@ -41,12 +42,25 @@ export interface RecentAssistCommand {
   at: number;
 }
 
-export interface FinalizedAssistNextStep {
+export interface FinalizedAssistNextStepCommand {
   command: string;
-  verdict: AssistNextStepVerdict;
+  verdict: Exclude<AssistNextStepVerdict, 'request_context'>;
   reason?: string;
   repairSuggestion?: string;
 }
+
+/** The model declined to guess and instead reported what it would need to
+ * see to answer (see the "不足:" contract in ASSIST_SYSTEM_PROMPT). There is
+ * no command here, so none of the command-oriented checks (danger/redundant/
+ * grounding) apply. */
+export interface FinalizedAssistNextStepRequestContext {
+  verdict: 'request_context';
+  requestedInfo: string;
+}
+
+export type FinalizedAssistNextStep =
+  | FinalizedAssistNextStepCommand
+  | FinalizedAssistNextStepRequestContext;
 
 export interface FinalizedAssistAnswer {
   prose: string;
@@ -56,6 +70,11 @@ export interface FinalizedAssistAnswer {
 const NEXT_STEP_MARKER = '次の一手';
 const EVIDENCE_MARKER = '根拠';
 const REDUNDANT_REASON = '直近に実行済みのコマンドです';
+/** The model's "次の一手" contract: when it can't ground an answer, it writes
+ * "不足: <知りたい情報>" instead of fabricating a command. This is checked
+ * before any command extraction/safety/grounding logic, since there is no
+ * command to classify. */
+const REQUEST_CONTEXT_MARKER = '不足';
 
 const SAFETY_SEVERITY: Record<CommandSafetyResult['level'], number> = {
   ok: 0,
@@ -75,6 +94,15 @@ export function finalizeAssistAnswer(
   }
 
   const command = grounding.nextStep;
+
+  // "不足: ..." is not a command: skip danger/redundant/grounding checks
+  // entirely and surface the requested info instead. This must run before
+  // command extraction (the checks below) since there is nothing to extract.
+  const requestedInfo = extractRequestedInfo(command);
+  if (requestedInfo !== undefined) {
+    return {prose, nextStep: {verdict: 'request_context', requestedInfo}};
+  }
+
   // Classify both the original and (if repaired) the pre-repair command:
   // a fake chat line can hide a dangerous instruction in either form.
   const safety = worstCommandSafety(
@@ -172,6 +200,20 @@ function stripNextStepMarker(text: string): string {
   const index = text.indexOf(NEXT_STEP_MARKER);
   if (index < 0) return text;
   return text.slice(index + NEXT_STEP_MARKER.length).replace(/^[:：]\s*/, '');
+}
+
+/**
+ * Returns the requested-info text when the next-step command (after
+ * stripping the "次の一手" marker) starts with "不足:" — the model's declared
+ * contract for "I can't ground an answer" — and undefined otherwise (e.g.
+ * "不足" appearing later in the text does not count).
+ */
+function extractRequestedInfo(command: string): string | undefined {
+  const stripped = stripNextStepMarker(command);
+  if (!stripped.startsWith(REQUEST_CONTEXT_MARKER)) return undefined;
+  const afterMarker = stripped.slice(REQUEST_CONTEXT_MARKER.length);
+  if (!/^[:：]/.test(afterMarker)) return undefined;
+  return afterMarker.replace(/^[:：]\s*/, '').trim();
 }
 
 function worstCommandSafety(commands: string[]): CommandSafetyResult {
