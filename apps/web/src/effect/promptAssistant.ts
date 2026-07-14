@@ -334,19 +334,20 @@ export function captureCanvasSnapshot(
   return {canvas: snapshot, previewUrl: snapshot.toDataURL('image/jpeg', 0.7)};
 }
 
-function buildImageAskText(question: string): string {
+function buildImageAskText(question: string, stateBlock?: string): string {
   return [
     '最新の添付画像だけを根拠にしてください。読めない文字は推測しないでください。',
     '画像にNEXTがあれば、そのコマンド列を確認工程まで次の一手へ完全にコピーしてください(途中で切らないでください)。ただしそのコマンドが実行済みで解決していない場合は、チャットの助言など他の画面内のコマンドを次の一手にしてください。',
     '次の一手のコマンドは画像内の文字列をそのままコピーし、画像にないコマンドを作らず、Runbookの注意書きや方針の復唱はしないでください。必ず180文字以内で答えてください。',
-    `質問: ${question}`,
+    stateBlock ? `${stateBlock}\n質問: ${question}` : `質問: ${question}`,
   ].join('\n');
 }
 
 export function askAssistant(
   session: AssistantSession,
   question: string,
-  snapshot?: HTMLCanvasElement
+  snapshot?: HTMLCanvasElement,
+  stateBlock?: string
 ): ReadableStream<string> & AsyncIterable<string> {
   if (!snapshot) {
     return session.promptStreaming([
@@ -368,7 +369,7 @@ export function askAssistant(
     {
       role: 'user',
       content: [
-        {type: 'text', value: buildImageAskText(question)},
+        {type: 'text', value: buildImageAskText(question, stateBlock)},
         {type: 'image', value: snapshot},
       ],
     },
@@ -407,12 +408,13 @@ export async function appendSnapshot(
  */
 export function askPreparedAssistant(
   session: AssistantSession,
-  question: string
+  question: string,
+  stateBlock?: string
 ): ReadableStream<string> & AsyncIterable<string> {
   return session.promptStreaming([
     {
       role: 'user',
-      content: [{type: 'text', value: buildImageAskText(question)}],
+      content: [{type: 'text', value: buildImageAskText(question, stateBlock)}],
     },
   ]);
 }

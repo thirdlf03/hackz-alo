@@ -28,6 +28,12 @@ import {splitAnswerForMasking} from '../pure/assistAnswerMask.js';
 import {groundAssistNextStep} from '../pure/assistGrounding.js';
 import {buildCanvasViewModel} from '../pure/canvasViewModel.js';
 import {serializeScreenLines} from '../pure/serializeScreenLines.js';
+import {parseRunbookSteps, resolveStepStatuses} from '../pure/runbookSteps.js';
+import {
+  buildAssistStateBlock,
+  type AssistStateBlockInput,
+  type AssistStateLastExchange,
+} from '../pure/assistStateBlock.js';
 import {ModelDownloadProgress} from './ModelDownloadProgress.js';
 
 type RecoveryState = GameRenderState['recovery'];
@@ -96,6 +102,7 @@ export function AiAssistPanel(props: {
     nextStep?: FinalizedAssistNextStep;
   }>();
   const [completionCard, setCompletionCard] = useState<CompletionCard>();
+  const [lastExchange, setLastExchange] = useState<AssistStateLastExchange>();
   const selectionStartRef = useRef<{x: number; y: number} | null>(null);
   const preparedSessionRef = useRef<PreparedAssistSession | undefined>(
     undefined
@@ -118,6 +125,37 @@ export function AiAssistPanel(props: {
     if (!state) return undefined;
     const viewModel = buildCanvasViewModel(state, props.scenarioRef.current);
     return serializeScreenLines(state, viewModel);
+  };
+
+  // Assembles the state block input from cached game state only: the
+  // recovery-check result is whatever useSessionRuntime last cached (no new
+  // request is fired here), and the current Runbook step is re-derived the
+  // same way playRunbookPanel.tsx does.
+  const buildAssistStateInput = (): AssistStateBlockInput => {
+    const state = props.gameStateRef.current;
+    const activeRunbook = state?.monitors.right.activeRunbook;
+    const steps = activeRunbook
+      ? parseRunbookSteps(activeRunbook.body, activeRunbook.steps)
+      : [];
+    const resolved = resolveStepStatuses(steps, state?.runbookProgress);
+    const currentIndex = resolved.findIndex(
+      (entry) => entry.status === 'current'
+    );
+    const recoveryLastCheck = state?.recovery?.lastCheck;
+    const commandHistory = state?.monitors.center.terminal.commandHistory;
+    return {
+      ...(recoveryLastCheck ? {recoveryLastCheck} : {}),
+      ...(commandHistory ? {commandHistory} : {}),
+      ...(currentIndex >= 0
+        ? {
+            currentStep: {
+              index: currentIndex + 1,
+              instruction: resolved[currentIndex]?.step.instruction ?? '',
+            },
+          }
+        : {}),
+      ...(lastExchange ? {lastExchange} : {}),
+    };
   };
 
   useEffect(() => {
@@ -242,6 +280,7 @@ export function AiAssistPanel(props: {
     let session: AssistantSession | undefined;
     let accumulatedAnswer = '';
     let screenLines: string[] | undefined;
+    const stateBlock = buildAssistStateBlock(buildAssistStateInput());
     try {
       let usedPrepared = false;
       if (attachScreenshot && preparedSessionRef.current) {
@@ -269,7 +308,7 @@ export function AiAssistPanel(props: {
       }
 
       if (usedPrepared && session) {
-        const stream = askPreparedAssistant(session, prompt);
+        const stream = askPreparedAssistant(session, prompt, stateBlock);
         for await (const chunk of stream) {
           accumulatedAnswer += chunk;
           setAnswer(accumulatedAnswer);
@@ -285,7 +324,12 @@ export function AiAssistPanel(props: {
         // dangerous "次の一手" must never reach the user un-flagged.
         screenLines = captureScreenLines();
         session = await ensureSession();
-        const stream = askAssistant(session, prompt, snapshot?.canvas);
+        const stream = askAssistant(
+          session,
+          prompt,
+          snapshot?.canvas,
+          stateBlock
+        );
         for await (const chunk of stream) {
           accumulatedAnswer += chunk;
           setAnswer(accumulatedAnswer);
@@ -296,7 +340,20 @@ export function AiAssistPanel(props: {
         accumulatedAnswer,
         screenLines ?? []
       );
-      setFinalized(finalizeAssistAnswer(accumulatedAnswer, grounding));
+      const finalizedAnswer = finalizeAssistAnswer(
+        accumulatedAnswer,
+        grounding
+      );
+      setFinalized(finalizedAnswer);
+      const adoptedSuggestion =
+        finalizedAnswer.nextStep &&
+        !NEXT_STEP_HIDDEN_COMMAND_VERDICTS.has(finalizedAnswer.nextStep.verdict)
+          ? finalizedAnswer.nextStep.command
+          : undefined;
+      setLastExchange({
+        question: prompt,
+        ...(adoptedSuggestion ? {suggestion: adoptedSuggestion} : {}),
+      });
     } catch (error) {
       console.error(error);
       setAssistError(
