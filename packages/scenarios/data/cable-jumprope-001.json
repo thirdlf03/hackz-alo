@@ -60,7 +60,7 @@
   "triggers": [
     {
       "id": "jumprope",
-      "atMs": 55000,
+      "atMs": 30000,
       "type": "cable_jumprope",
       "params": {
         "processId": "fake-db"
@@ -70,14 +70,14 @@
   "alerts": [
     {
       "id": "api-500",
-      "atMs": 75000,
+      "atMs": 50000,
       "severity": "critical",
       "message": "やまびこ API health check failed",
       "source": "monitor"
     },
     {
       "id": "db-link",
-      "atMs": 90000,
+      "atMs": 65000,
       "severity": "warning",
       "message": "DB rack link down",
       "source": "scenario"
@@ -108,7 +108,7 @@
   "chatMessages": [
     {
       "id": "infra-joke",
-      "atMs": 110000,
+      "atMs": 85000,
       "from": "インフラ",
       "body": "縄跳び大会やってる？DB ラックの前に人が集まってるんだけど。"
     }
@@ -116,27 +116,27 @@
   "navigationSteps": [
     {
       "id": "nav-health",
-      "atMs": 30000,
+      "atMs": 15000,
       "hint": "curl localhost:8080/health で reason を読む",
       "panel": "terminal",
       "suggestedCommand": "curl localhost:8080/health"
     },
     {
       "id": "nav-db-status",
-      "atMs": 70000,
+      "atMs": 45000,
       "hint": "依存先の状態を確認する",
       "panel": "terminal",
       "suggestedCommand": "yamactl status fake-db"
     },
     {
       "id": "nav-runbook",
-      "atMs": 85000,
+      "atMs": 60000,
       "hint": "依存先の切り分け Runbook を開いて手順を追う",
       "panel": "runbook"
     },
     {
       "id": "nav-restart",
-      "atMs": 95000,
+      "atMs": 70000,
       "hint": "依存先が死んでいたら復旧する",
       "panel": "terminal",
       "suggestedCommand": "yamactl restart fake-db"

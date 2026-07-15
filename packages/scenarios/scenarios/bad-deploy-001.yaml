@@ -38,12 +38,12 @@ topology:
       to: fake-db
 triggers:
   - id: bad-deploy
-    atMs: 45000
+    atMs: 30000
     type: bad_deploy
     params: {}
 alerts:
   - id: deploy-500
-    atMs: 70000
+    atMs: 55000
     severity: critical
     message: HTTP 500 spike after deploy
     source: scenario
@@ -65,7 +65,7 @@ runbooks:
       5. curl localhost:8080/health で復旧確認する(設定は自動反映、再起動不要)
 chatMessages:
   - id: boss-deploy
-    atMs: 95000
+    atMs: 80000
     from: 上司
     body: さっきのデプロイ？僕は何も変えてないよ。おやすみ。
 navigationSteps:
@@ -74,11 +74,11 @@ navigationSteps:
     hint: HTTP 5xx が上がっていないか監視画面で確認する
     panel: metrics
   - id: nav-deploy-log
-    atMs: 50000
+    atMs: 35000
     hint: 直近のデプロイ履歴を確認する
     panel: terminal
     suggestedCommand: tail /workspace/logs/deploy.log
   - id: nav-config
-    atMs: 80000
+    atMs: 65000
     hint: 設定を前リリースと見比べる
     panel: editor

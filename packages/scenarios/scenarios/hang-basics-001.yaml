@@ -38,18 +38,18 @@ topology:
       to: fake-db
 triggers:
   - id: hang
-    atMs: 90000
+    atMs: 30000
     type: process_hang
     params:
       processId: api
 alerts:
   - id: latency
-    atMs: 110000
+    atMs: 50000
     severity: warning
     message: API latency p95 is above 5s
     source: monitor
   - id: health-fail
-    atMs: 130000
+    atMs: 70000
     severity: critical
     message: やまびこ API health check failed
     source: monitor
@@ -70,26 +70,26 @@ runbooks:
       5. yamactl restart api で再起動し、health で復旧確認する
 chatMessages:
   - id: boss-hang-basics
-    atMs: 150000
+    atMs: 90000
     from: 上司
     body: 落ちてはいないんでしょ？なら平気そうだけど。おやすみ。
 navigationSteps:
   - id: nav-status
-    atMs: 30000
+    atMs: 10000
     hint: yamactl status api でプロセスの生死を確認する(動いて見える点に注意)
     panel: terminal
     suggestedCommand: yamactl status api
   - id: nav-curl
-    atMs: 95000
+    atMs: 35000
     hint: タイムアウト付きで応答を確認する。固まっていれば返ってこない
     panel: terminal
     suggestedCommand: curl --max-time 3 localhost:8080/health
   - id: nav-ps
-    atMs: 110000
+    atMs: 50000
     hint: ps aux | grep node で状態を確認する。STAT が T なら停止シグナルで固まっている
     panel: terminal
     suggestedCommand: ps aux | grep node
   - id: nav-runbook
-    atMs: 130000
+    atMs: 70000
     hint: ハングの切り分け Runbook で復旧手順を確認する
     panel: runbook

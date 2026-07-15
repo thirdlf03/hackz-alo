@@ -45,14 +45,14 @@ topology:
       to: fake-db
 triggers:
   - id: kodama
-    atMs: 90000
+    atMs: 45000
     type: kodama_batch_failure
     params:
       jobId: sales-nightly
       path: /workspace/services/batch/sales.kdm
 alerts:
   - id: batch-failed
-    atMs: 100000
+    atMs: 55000
     severity: critical
     message: sales-nightly batch failed
     source: scenario
@@ -65,7 +65,7 @@ successConditions:
 runbooks:
   - id: runbook.ar.page1
     title: صفحة 1 – السجل
-    availableAtMs: 90000
+    availableAtMs: 45000
     body: |-
       استعادة sales-nightly
 
@@ -77,7 +77,7 @@ runbooks:
       cat /workspace/services/batch/sales.kdm
   - id: runbook.ar.page2
     title: صفحة 2 – الشيفرة المصدرية
-    availableAtMs: 93000
+    availableAtMs: 48000
     body: |-
       إرشادات لغة こだま
 
@@ -91,7 +91,7 @@ runbooks:
       よぶ y = しずか  يبقى كما هو → x わる y يفشل
   - id: runbook.ar.page3
     title: صفحة 3 – الإصلاح
-    availableAtMs: 96000
+    availableAtMs: 51000
     body: |-
       الإصلاح والاختبار
 
@@ -109,10 +109,10 @@ runbooks:
       : > /workspace/logs/batch.log
 chatMessages:
   - id: arabic-docs
-    atMs: 92000
+    atMs: 47000
     from: 運用
     body: 謎の人物からアラビア語の紙が3枚届いた。誰も読めない。
   - id: keiri
-    atMs: 110000
+    atMs: 65000
     from: 経理
     body: またこだまが返ってきません

@@ -38,12 +38,12 @@ topology:
       to: fake-db
 triggers:
   - id: bad-deploy
-    atMs: 60000
+    atMs: 30000
     type: bad_deploy
     params: {}
 alerts:
   - id: deploy-500
-    atMs: 90000
+    atMs: 60000
     severity: critical
     message: HTTP 500 spike after deploy
     source: scenario
@@ -64,7 +64,7 @@ runbooks:
       5. curl localhost:8080/health で復旧確認する(設定は自動反映、再起動不要)
 chatMessages:
   - id: boss-config-rollback
-    atMs: 110000
+    atMs: 80000
     from: 上司
     body: さっきのデプロイ、僕は見てないけど戻せば直るんじゃない？おやすみ。
 navigationSteps:
@@ -73,17 +73,17 @@ navigationSteps:
     hint: HTTP 5xx が上がっていないか監視画面で確認する
     panel: metrics
   - id: nav-deploy-log
-    atMs: 65000
+    atMs: 35000
     hint: 直近のデプロイ履歴を確認する
     panel: terminal
     suggestedCommand: tail /workspace/logs/deploy.log
   - id: nav-diff
-    atMs: 85000
+    atMs: 55000
     hint: 前リリースとの差分を diff で確認する
     panel: terminal
     suggestedCommand: diff /workspace/releases/yamabiko-api.previous.json /workspace/etc/yamabiko-api.json
   - id: nav-rollback
-    atMs: 100000
+    atMs: 70000
     hint: 前リリースの設定に戻す
     panel: terminal
     suggestedCommand: cp /workspace/releases/yamabiko-api.previous.json /workspace/etc/yamabiko-api.json

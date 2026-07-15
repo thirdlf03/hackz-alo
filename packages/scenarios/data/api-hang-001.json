@@ -60,7 +60,7 @@
   "triggers": [
     {
       "id": "hang",
-      "atMs": 60000,
+      "atMs": 30000,
       "type": "process_hang",
       "params": {
         "processId": "api"
@@ -70,14 +70,14 @@
   "alerts": [
     {
       "id": "latency",
-      "atMs": 80000,
+      "atMs": 50000,
       "severity": "critical",
       "message": "API latency p95 is above 5s",
       "source": "monitor"
     },
     {
       "id": "health-fail",
-      "atMs": 95000,
+      "atMs": 65000,
       "severity": "critical",
       "message": "やまびこ API health check failed",
       "source": "monitor"
@@ -104,7 +104,7 @@
   "chatMessages": [
     {
       "id": "boss-hang",
-      "atMs": 115000,
+      "atMs": 85000,
       "from": "上司",
       "body": "落ちてはいないんでしょ？なら大丈夫じゃない。おやすみ。"
     }
@@ -118,7 +118,7 @@
     },
     {
       "id": "nav-curl",
-      "atMs": 65000,
+      "atMs": 35000,
       "hint": "タイムアウト付きで応答を確認する",
       "panel": "terminal",
       "suggestedCommand": "curl --max-time 3 localhost:8080/health"

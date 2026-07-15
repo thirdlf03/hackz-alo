@@ -27,26 +27,26 @@ const FIXES = {
     commands: ["yamactl restart api"]
   },
   "disk-full-001": {
-    waitGameMs: 60_000,
+    waitGameMs: 30_000,
     commands: ["rm -f /workspace/logs/debug.log", "yamactl restart api"]
   },
   "hang-basics-001": {
-    waitGameMs: 105_000,
+    waitGameMs: 45_000,
     commands: ["yamactl restart api", "curl -s --max-time 5 localhost:8080/health"]
   },
   "config-rollback-001": {
-    waitGameMs: 75_000,
+    waitGameMs: 45_000,
     commands: [
       "cp /workspace/releases/yamabiko-api.previous.json /workspace/etc/yamabiko-api.json",
       "curl -s localhost:8080/health"
     ]
   },
   "alert-triage-001": {
-    waitGameMs: 165_000,
+    waitGameMs: 135_000,
     commands: ["pkill -f alert-flood-daemon.mjs", "yamactl restart api"]
   },
   "kodama-batch-001": {
-    waitGameMs: 90_000,
+    waitGameMs: 45_000,
     files: [{ path: "/workspace/services/batch/sales.kdm", content: SALES_KDM_FIXED }],
     commands: [
       "kodama run /workspace/services/batch/sales.kdm",
@@ -54,30 +54,30 @@ const FIXES = {
     ]
   },
   "db-pool-001": {
-    waitGameMs: 60_000,
+    waitGameMs: 30_000,
     commands: ["pkill -f report-batch.mjs", "curl -s localhost:8080/health"]
   },
   "bad-deploy-001": {
-    waitGameMs: 45_000,
+    waitGameMs: 30_000,
     commands: [
       "cp /workspace/releases/yamabiko-api.previous.json /workspace/etc/yamabiko-api.json",
       "curl -s localhost:8080/health"
     ]
   },
   "api-hang-001": {
-    waitGameMs: 75_000,
+    waitGameMs: 45_000,
     commands: ["yamactl restart api", "curl -s --max-time 5 localhost:8080/health"]
   },
   "port-conflict-001": {
-    waitGameMs: 50_000,
+    waitGameMs: 30_000,
     commands: ["pkill -f legacy-metrics-agent.mjs", "yamactl restart api"]
   },
   "log-bloat-001": {
-    waitGameMs: 50_000,
+    waitGameMs: 30_000,
     commands: ["rm -f /workspace/logs/access.log", "curl -s localhost:8080/health"]
   },
   "disk-restart-loop-001": {
-    waitGameMs: 60_000,
+    waitGameMs: 30_000,
     commands: ["rm -f /workspace/logs/debug.log", "yamactl restart api"]
   },
   "monitor-blind-001": {
@@ -85,7 +85,7 @@ const FIXES = {
     commands: ["yamactl restart monitor-agent", "yamactl restart api"]
   },
   "kodama-mystery-001": {
-    waitGameMs: 90_000,
+    waitGameMs: 45_000,
     files: [{ path: "/workspace/services/batch/sales.kdm", content: SALES_KDM_FIXED }],
     commands: [
       "kodama run /workspace/services/batch/sales.kdm",
@@ -93,23 +93,23 @@ const FIXES = {
     ]
   },
   "janitor-power-001": {
-    waitGameMs: 60_000,
+    waitGameMs: 30_000,
     commands: ["yamactl restart api"]
   },
   "cable-jumprope-001": {
-    waitGameMs: 55_000,
+    waitGameMs: 30_000,
     commands: ["yamactl restart fake-db", "curl -s localhost:8080/health"]
   },
   "keyboard-spill-001": {
-    waitGameMs: 50_000,
+    waitGameMs: 30_000,
     commands: ["pkill -f loadgen.mjs"]
   },
   "alert-spam-001": {
-    waitGameMs: 120_000,
+    waitGameMs: 105_000,
     commands: ["pkill -f alert-flood-daemon.mjs", "yamactl restart api"]
   },
   "runbook-gaslight-001": {
-    waitGameMs: 40_000,
+    waitGameMs: 30_000,
     commands: [
       "cp /workspace/docs/backups/service-recovery.md /workspace/docs/runbooks/service-recovery.md"
     ]

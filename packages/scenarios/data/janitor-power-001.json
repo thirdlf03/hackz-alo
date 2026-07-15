@@ -69,7 +69,7 @@
   "triggers": [
     {
       "id": "janitor-pull",
-      "atMs": 60000,
+      "atMs": 30000,
       "type": "janitor_power_pull",
       "params": {
         "processId": "api"
@@ -79,14 +79,14 @@
   "alerts": [
     {
       "id": "power-lost",
-      "atMs": 75000,
+      "atMs": 45000,
       "severity": "critical",
       "message": "やまびこ API health check failed",
       "source": "monitor"
     },
     {
       "id": "janitor-cam",
-      "atMs": 90000,
+      "atMs": 60000,
       "severity": "warning",
       "message": "Janitor camera detected unplugged cable",
       "source": "scenario"
@@ -113,7 +113,7 @@
   "chatMessages": [
     {
       "id": "janitor-sorry",
-      "atMs": 100000,
+      "atMs": 70000,
       "from": "掃除のおばちゃん",
       "body": "ごめんなさい、掃除中に抜いちゃいました。"
     }
@@ -127,14 +127,14 @@
     },
     {
       "id": "nav-evidence",
-      "atMs": 45000,
+      "atMs": 20000,
       "hint": "app.log で原因の手がかりを探す。復旧後の報告のためにも記録しておく",
       "panel": "terminal",
       "suggestedCommand": "tail /workspace/logs/app.log"
     },
     {
       "id": "nav-runbook",
-      "atMs": 70000,
+      "atMs": 40000,
       "hint": "プロセス停止時の初動 Runbook を開く",
       "panel": "runbook"
     }

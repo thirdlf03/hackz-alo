@@ -60,7 +60,7 @@
   "triggers": [
     {
       "id": "fill-debug-log",
-      "atMs": 60000,
+      "atMs": 30000,
       "type": "disk_full",
       "params": {
         "path": "/workspace/logs/debug.log",
@@ -71,14 +71,14 @@
   "alerts": [
     {
       "id": "disk-95",
-      "atMs": 90000,
+      "atMs": 60000,
       "severity": "critical",
       "message": "Disk usage is above 95%",
       "source": "monitor"
     },
     {
       "id": "http-500",
-      "atMs": 100000,
+      "atMs": 70000,
       "severity": "critical",
       "message": "HTTP 500 rate is above threshold",
       "source": "scenario"
@@ -110,7 +110,7 @@
   "chatMessages": [
     {
       "id": "runbook-old",
-      "atMs": 105000,
+      "atMs": 75000,
       "from": "先輩",
       "body": "昔は /var/log を見てたけど、今は /workspace/logs かも。"
     }
@@ -124,14 +124,14 @@
     },
     {
       "id": "nav-df",
-      "atMs": 45000,
+      "atMs": 20000,
       "hint": "df -h でマウント使用率を確認する",
       "panel": "terminal",
       "suggestedCommand": "df -h"
     },
     {
       "id": "nav-runbook-disk",
-      "atMs": 75000,
+      "atMs": 45000,
       "hint": "Disk Full Runbook を開いて手順を追う",
       "panel": "runbook"
     }

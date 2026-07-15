@@ -45,7 +45,7 @@ topology:
       to: fake-db
 triggers:
   - id: break-sales-batch
-    atMs: 90000
+    atMs: 45000
     type: kodama_batch_failure
     params:
       jobId: sales-nightly
@@ -53,7 +53,7 @@ triggers:
       specInComments: true
 alerts:
   - id: batch-failed
-    atMs: 120000
+    atMs: 75000
     severity: critical
     message: sales-nightly batch failed
     source: scenario
@@ -95,7 +95,7 @@ runbooks:
       例: よぶ price = 100、よぶ tax = こだま のとき price かける tax は price のまま
 chatMessages:
   - id: mystery-error
-    atMs: 130000
+    atMs: 85000
     from: 経理
     body: 売上集計が止まってるんですが、こだまが返ってきません。
 navigationSteps:
@@ -104,11 +104,11 @@ navigationSteps:
     hint: バッチ失敗のアラートが出ていないか監視画面で確認する
     panel: metrics
   - id: nav-batch-log
-    atMs: 95000
+    atMs: 50000
     hint: batch.log でエラー内容を確認する
     panel: terminal
     suggestedCommand: tail /workspace/logs/batch.log
   - id: nav-batch-source
-    atMs: 105000
+    atMs: 60000
     hint: sales.kdm のソースをこだま仕様表と見比べる
     panel: editor

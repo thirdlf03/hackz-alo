@@ -59,7 +59,7 @@
   "triggers": [
     {
       "id": "loop",
-      "atMs": 60000,
+      "atMs": 30000,
       "type": "composite_restart_loop",
       "params": {
         "diskPath": "/workspace/logs/debug.log",
@@ -71,14 +71,14 @@
   "alerts": [
     {
       "id": "disk-full",
-      "atMs": 70000,
+      "atMs": 40000,
       "severity": "critical",
       "message": "Disk usage is above 95%",
       "source": "monitor"
     },
     {
       "id": "api-down",
-      "atMs": 80000,
+      "atMs": 50000,
       "severity": "critical",
       "message": "API process is down",
       "source": "scenario"

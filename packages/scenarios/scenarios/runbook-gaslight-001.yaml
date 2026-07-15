@@ -38,13 +38,13 @@ topology:
       to: fake-db
 triggers:
   - id: gaslight
-    atMs: 40000
+    atMs: 30000
     type: runbook_gaslight
     params:
       replacement: 気合いで直す。根性。深呼吸。
 alerts:
   - id: runbook-tamper
-    atMs: 55000
+    atMs: 45000
     severity: warning
     message: Runbook integrity check failed
     source: scenario
@@ -68,7 +68,7 @@ runbooks:
       6. 監視エージェントが応答しなければ yamactl restart monitor-agent
 chatMessages:
   - id: wiki-broken
-    atMs: 65000
+    atMs: 55000
     from: 先輩
     body: Wiki 壊れてる。Runbook 信じないで。
 navigationSteps:
@@ -77,21 +77,21 @@ navigationSteps:
     hint: Runbook パネルの内容を一度読んでおく
     panel: runbook
   - id: nav-doubt
-    atMs: 45000
+    atMs: 35000
     hint: Runbook の文言に違和感がないか、書いてある通りに動いて大丈夫か疑ってみる
     panel: runbook
   - id: nav-find-backup
-    atMs: 60000
+    atMs: 50000
     hint: 手順書が改ざんされているなら、正しい版がどこかに残っていないか探す
     panel: terminal
     suggestedCommand: ls /workspace/docs/backups
   - id: nav-restore
-    atMs: 75000
+    atMs: 65000
     hint: バックアップから Runbook を復元する
     panel: terminal
     suggestedCommand: cp /workspace/docs/backups/service-recovery.md /workspace/docs/runbooks/service-recovery.md
   - id: nav-health
-    atMs: 90000
+    atMs: 80000
     hint: curl で実際のヘルスを確認する
     panel: terminal
     suggestedCommand: curl localhost:8080/health

@@ -60,7 +60,7 @@
   "triggers": [
     {
       "id": "conflict",
-      "atMs": 50000,
+      "atMs": 30000,
       "type": "port_conflict",
       "params": {
         "port": 8080
@@ -70,14 +70,14 @@
   "alerts": [
     {
       "id": "api-down",
-      "atMs": 70000,
+      "atMs": 50000,
       "severity": "critical",
       "message": "やまびこ API health check failed",
       "source": "monitor"
     },
     {
       "id": "identity",
-      "atMs": 210000,
+      "atMs": 190000,
       "severity": "warning",
       "message": "Health endpoint returns unknown service identity",
       "source": "scenario"
@@ -104,7 +104,7 @@
   "chatMessages": [
     {
       "id": "senpai-hint",
-      "atMs": 180000,
+      "atMs": 160000,
       "from": "先輩(仮眠中)",
       "body": "前にも一回あったな…直った気がして直ってないやつ。ポート見てみ。ss -ltnp"
     }

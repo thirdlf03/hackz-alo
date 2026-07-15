@@ -69,7 +69,7 @@
   "triggers": [
     {
       "id": "pool-exhaust",
-      "atMs": 60000,
+      "atMs": 30000,
       "type": "db_pool_exhaust",
       "params": {
         "connections": 40
@@ -79,14 +79,14 @@
   "alerts": [
     {
       "id": "db-pool",
-      "atMs": 90000,
+      "atMs": 60000,
       "severity": "critical",
       "message": "DB connection pool exhausted",
       "source": "monitor"
     },
     {
       "id": "api-5xx",
-      "atMs": 105000,
+      "atMs": 75000,
       "severity": "critical",
       "message": "HTTP 5xx rate is above threshold",
       "source": "scenario"
@@ -117,13 +117,13 @@
   "chatMessages": [
     {
       "id": "dba",
-      "atMs": 100000,
+      "atMs": 70000,
       "from": "DBA",
       "body": "プールサイズいじった？上限は 40 のはずだけど。"
     },
     {
       "id": "senpai",
-      "atMs": 160000,
+      "atMs": 130000,
       "from": "先輩(仮眠中)",
       "body": "ん…月次レポートのバッチ、今夜だったかも…zzz"
     }
@@ -137,7 +137,7 @@
     },
     {
       "id": "nav-stats",
-      "atMs": 70000,
+      "atMs": 40000,
       "hint": "fake-db の統計で接続元の内訳を確認する",
       "panel": "terminal",
       "suggestedCommand": "cat /workspace/run/fake-db-stats.json"

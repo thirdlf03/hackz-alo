@@ -37,19 +37,19 @@ topology:
       to: fake-db
 triggers:
   - id: log-bloat
-    atMs: 50000
+    atMs: 30000
     type: disk_full
     params:
       path: /workspace/logs/access.log
       bytes: 536870912
 alerts:
   - id: disk-high
-    atMs: 80000
+    atMs: 60000
     severity: warning
     message: Disk usage is above 90%
     source: monitor
   - id: http-500
-    atMs: 95000
+    atMs: 75000
     severity: critical
     message: HTTP 500 rate is above threshold
     source: scenario
@@ -71,11 +71,11 @@ navigationSteps:
     hint: Disk メトリクスの上昇を確認する
     panel: metrics
   - id: nav-du
-    atMs: 55000
+    atMs: 35000
     hint: どのログが肥大化したか調べる
     panel: terminal
     suggestedCommand: du -sh /workspace/logs/*
   - id: nav-runbook
-    atMs: 85000
+    atMs: 65000
     hint: ログ肥大化 Runbook を開く
     panel: runbook

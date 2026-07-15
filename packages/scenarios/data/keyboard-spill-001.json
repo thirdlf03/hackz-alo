@@ -60,7 +60,7 @@
   "triggers": [
     {
       "id": "spill",
-      "atMs": 50000,
+      "atMs": 30000,
       "type": "runaway_loadgen",
       "params": {}
     }
@@ -68,21 +68,21 @@
   "alerts": [
     {
       "id": "traffic-spike",
-      "atMs": 58000,
+      "atMs": 38000,
       "severity": "warning",
       "message": "RPS is trending well above baseline",
       "source": "monitor"
     },
     {
       "id": "input-noise",
-      "atMs": 68000,
+      "atMs": 48000,
       "severity": "warning",
       "message": "Terminal input anomaly detected",
       "source": "scenario"
     },
     {
       "id": "fridge-cam",
-      "atMs": 82000,
+      "atMs": 62000,
       "severity": "info",
       "message": "Fridge camera: beverage level dropping",
       "source": "monitor"
@@ -109,7 +109,7 @@
   "chatMessages": [
     {
       "id": "boss-dont-drink",
-      "atMs": 90000,
+      "atMs": 70000,
       "from": "上司",
       "body": "対応中は飲まないで。キーボード洗って。"
     }
@@ -123,20 +123,20 @@
     },
     {
       "id": "nav-traffic",
-      "atMs": 55000,
+      "atMs": 35000,
       "hint": "RPS やレイテンシに普段と違う動きが出ていないか確認する",
       "panel": "metrics"
     },
     {
       "id": "nav-log",
-      "atMs": 70000,
+      "atMs": 50000,
       "hint": "access.log や app.log で、何が起きているか手がかりを探す",
       "panel": "terminal",
       "suggestedCommand": "tail -n 50 /workspace/logs/access.log"
     },
     {
       "id": "nav-process",
-      "atMs": 90000,
+      "atMs": 70000,
       "hint": "見覚えのないプロセスがいないか ps で確認し、怪しいものを pgrep -f <名前> で特定して止める",
       "panel": "terminal",
       "suggestedCommand": "ps aux | grep node"
