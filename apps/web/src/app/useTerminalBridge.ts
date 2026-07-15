@@ -4,11 +4,7 @@ import type {
   ParticipantPresence,
   ScenarioDefinition,
 } from '@incident/shared';
-import {
-  deactivateChatCompose,
-  focusCommandInput,
-  setChatDraft,
-} from '../game/state/gameState.js';
+import {focusCommandInput} from '../game/state/gameState.js';
 import {
   defaultTerminalDimensions,
   expandedTerminalDimensions,
@@ -258,6 +254,10 @@ export function useTerminalBridge(options: {
   }, [options.screen, options.gameState?.world.expandedMonitor]);
 
   function handleCanvasPaste(event: ClipboardEvent) {
+    // 埋め込み/オーバーレイの chat input 由来のイベントは無視する。
+    // HTML-in-Canvas 環境ではチャット入力欄が canvas の子 DOM のため、paste が
+    // ここまでバブルしてくる。弾かないとターミナルへの二重貼り付けになる。
+    if (event.target !== event.currentTarget) return;
     const clipboard = event.clipboardData;
     if (!clipboard || !terminalRef.current) return;
     if (
@@ -279,41 +279,16 @@ export function useTerminalBridge(options: {
   }
 
   function handleTerminalKey(event: KeyboardEvent) {
+    // 埋め込み/オーバーレイの chat input 由来のイベントは無視する。
+    // HTML-in-Canvas 環境ではチャット入力欄が canvas の子 DOM のため、keydown
+    // がここまでバブルしてくる。弾かないと real <input> の既定の文字入力と
+    // ここでのターミナル処理が二重に走ってしまう(IMEも壊れる)。
+    if (event.target !== event.currentTarget) return;
     if (options.screen !== 'play') return;
     if (options.gameStateRef.current?.monitors.center.activeTool === 'editor') {
       return;
     }
-    if (options.gameStateRef.current?.chatCompose.active) {
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        options.patchGameStateRef((current) => deactivateChatCompose(current));
-        return;
-      }
-      if (event.key === 'Enter') {
-        event.preventDefault();
-        options.submitChatMessage();
-        return;
-      }
-      if (event.key === 'Backspace') {
-        event.preventDefault();
-        options.patchGameStateRef((current) =>
-          setChatDraft(current, current.chatCompose.draft.slice(0, -1))
-        );
-        return;
-      }
-      if (
-        event.key.length === 1 &&
-        !event.ctrlKey &&
-        !event.metaKey &&
-        !event.altKey
-      ) {
-        event.preventDefault();
-        options.patchGameStateRef((current) =>
-          setChatDraft(current, `${current.chatCompose.draft}${event.key}`)
-        );
-      }
-      return;
-    }
+    if (options.gameStateRef.current?.chatCompose.active) return;
     if (!terminalRef.current) return;
     if (
       !canOperateSandbox(

@@ -1,3 +1,4 @@
+import {useEffect} from 'preact/hooks';
 import type {
   ExerciseSnapshot,
   ExerciseTaskStatus,
@@ -13,7 +14,12 @@ import {
   setChatDraft,
   updateEditorPanel,
 } from '../../game/state/gameState.js';
-import {centerEditorOverlayRegion} from '../../game/render/canvasLayout.js';
+import {
+  centerEditorOverlayRegion,
+  chatComposeRegion,
+  type MonitorId,
+  type RightPanelTab,
+} from '../../game/render/canvasLayout.js';
 import {canContributeRecords} from '../../pure/rolePermissions.js';
 import {shouldShowEditorOverlay} from '../../pure/editorOverlayVisibility.js';
 import {PerfOverlay} from '../PerfOverlay.js';
@@ -64,6 +70,23 @@ export function PlayScreen(props: {
   pip: MonitorPipControls;
   checkRecovery: () => Promise<void>;
 }) {
+  // HTML-in-Canvas 非対応環境で chatCompose がアクティブな間だけ、canvas 上に
+  // 実 DOM の <input> を重ねて表示する(下の JSX 内 canvas-chat-overlay-input)。
+  // 日本語 IME は実 DOM のフォーカスがないと機能しないため、canvas 疑似入力
+  // (useTerminalBridge の pseudo-input)ではなくこちらに一本化する。
+  // マウント時に自動でフォーカスし、非アクティブ化(送信・Escape・他クリック)
+  // でアンマウントされたタイミングで canvas にフォーカスを戻し、ターミナル
+  // 操作を継続できるようにする。
+  const overlayChatActive =
+    !props.htmlInCanvasChat && Boolean(props.gameState?.chatCompose.active);
+  useEffect(() => {
+    if (!overlayChatActive) return;
+    props.chatInputRef.current?.focus();
+    return () => {
+      props.canvasRef.current?.focus();
+    };
+  }, [overlayChatActive]);
+
   return (
     <section class='game-layout'>
       {props.gameState &&
@@ -168,7 +191,8 @@ export function PlayScreen(props: {
                 );
               }}
               onKeyDown={(event) => {
-                if (event.key === 'Enter') {
+                // IME変換確定のEnter(isComposing/keyCode 229)は送信しない。
+                if (event.key === 'Enter' && !event.isComposing && event.keyCode !== 229) {
                   event.preventDefault();
                   props.onChatSubmit();
                 }
@@ -176,6 +200,58 @@ export function PlayScreen(props: {
             />
           )}
         </canvas>
+        {/* HTML-in-Canvas 非対応環境向けのチャット入力オーバーレイ。canvas の
+            外(canvas-stage の兄弟要素)に position: fixed で置き、chatCompose
+            の矩形(chatComposeRegion)にスケーリングして重ねる。canvas の子
+            要素は HTML-in-Canvas 非対応環境では実 DOM として操作できないため、
+            editor-overlay と同じ手法(getBoundingClientRect + スケール)を使う。
+            draft は state.chatCompose.draft と onInput で同期し続け、canvas
+            側の drawChatCompose もそのまま描き続ける(録画にテキストが残る)。
+            オーバーレイが不透明背景で上に被さるため二重表示は起きない。 */}
+        {overlayChatActive && props.gameState && (
+          <input
+            ref={props.chatInputRef}
+            class='canvas-chat-overlay-input'
+            aria-label='チャットメッセージ'
+            maxLength={500}
+            style={chatComposeOverlayStyle(
+              props.canvasRef.current,
+              props.gameState.monitors.right.activePanelTab,
+              props.gameState.world.expandedMonitor
+            )}
+            value={props.gameState.chatCompose.draft}
+            onInput={(event) => {
+              const {value} = event.currentTarget;
+              props.patchGameStateRef((current) =>
+                setChatDraft(current, value)
+              );
+            }}
+            onFocus={() => {
+              props.patchGameStateRef((current) =>
+                activateChatCompose(current)
+              );
+            }}
+            onBlur={() => {
+              props.patchGameStateRef((current) =>
+                deactivateChatCompose(current)
+              );
+            }}
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') {
+                event.preventDefault();
+                props.patchGameStateRef((current) =>
+                  deactivateChatCompose(current)
+                );
+                return;
+              }
+              // IME変換確定のEnter(isComposing/keyCode 229)は送信しない。
+              if (event.key === 'Enter' && !event.isComposing && event.keyCode !== 229) {
+                event.preventDefault();
+                props.onChatSubmit();
+              }
+            }}
+          />
+        )}
         <PerfOverlay />
         <MonitorPipToolbar pip={props.pip} />
         {props.gameState?.warning && props.gameState.warning.flashMs > 0 && (
@@ -227,6 +303,24 @@ function editorOverlayStyle(
   if (!canvas) return {display: 'none'};
   const rect = canvas.getBoundingClientRect();
   const region = centerEditorOverlayRegion(expanded);
+  const scaleX = rect.width / 1920;
+  const scaleY = rect.height / 1080;
+  return {
+    left: `${String(rect.left + region.x * scaleX)}px`,
+    top: `${String(rect.top + region.y * scaleY)}px`,
+    width: `${String(region.width * scaleX)}px`,
+    height: `${String(region.height * scaleY)}px`,
+  };
+}
+
+function chatComposeOverlayStyle(
+  canvas: HTMLCanvasElement | null,
+  activePanelTab: RightPanelTab,
+  expandedMonitor: MonitorId | null
+) {
+  if (!canvas) return {display: 'none'};
+  const rect = canvas.getBoundingClientRect();
+  const region = chatComposeRegion(activePanelTab, expandedMonitor);
   const scaleX = rect.width / 1920;
   const scaleY = rect.height / 1080;
   return {

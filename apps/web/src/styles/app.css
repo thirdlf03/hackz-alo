@@ -676,6 +676,25 @@ button:disabled {
   border-color: var(--border-focus);
 }
 
+/* HTML-in-Canvas 非対応環境で chatCompose がアクティブな間だけ canvas 上に
+   重ねる実 <input>(日本語 IME を機能させるための実 DOM フォーカス)。位置は
+   editor-overlay と同じく getBoundingClientRect + スケールで chatCompose の
+   矩形に合わせる(PlayScreen.tsx chatComposeOverlayStyle)。canvas 側の
+   drawChatCompose 枠と揃うよう配色・フォントを合わせている。 */
+.canvas-chat-overlay-input {
+  position: fixed;
+  z-index: 20;
+  box-sizing: border-box;
+  padding: 0 12px;
+  border: 2px solid var(--border-focus);
+  border-radius: var(--radius-m);
+  background: #101c13;
+  color: var(--terminal-text);
+  font-family: var(--font-family-mono);
+  font-size: 16px;
+  outline: none;
+}
+
 /* 一時表示バナー。canvas 側の commandWarningRect 描画(state.warning)を
    DOM 側にも role='status' で複製し、スクリーンリーダーと VRT/e2e から
    読み取れるようにする。表示・消滅は state.warning のデコイ(flashMs)に
