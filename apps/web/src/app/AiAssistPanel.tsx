@@ -40,6 +40,10 @@ import {captureRectPresets} from '../pure/captureRectPresets.js';
 import {serializeScreenLines} from '../pure/serializeScreenLines.js';
 import {parseRunbookSteps, resolveStepStatuses} from '../pure/runbookSteps.js';
 import {
+  buildRunbookNextStepCard,
+  type RunbookNextStepCard,
+} from '../pure/runbookNextStepCard.js';
+import {
   buildAssistStateBlock,
   type AssistStateBlockInput,
   type AssistStateLastExchange,
@@ -67,6 +71,21 @@ function getCurrentRunbookStepInstruction(
   const steps = parseRunbookSteps(activeRunbook.body, activeRunbook.steps);
   const resolved = resolveStepStatuses(steps, state.runbookProgress);
   return resolved.find((entry) => entry.status === 'current')?.step.instruction;
+}
+
+/** Derives the deterministic "次の一手" card from the Runbook's current
+ * progress, mirroring getCurrentRunbookStepInstruction's derivation. Used by
+ * ask() to short-circuit next_step-intent questions without calling the
+ * model (see buildRunbookNextStepCard). */
+function buildRunbookCardFromState(
+  state: GameRenderState | undefined
+): RunbookNextStepCard | undefined {
+  const activeRunbook = state?.monitors.right.activeRunbook;
+  if (!activeRunbook) return undefined;
+  const steps = parseRunbookSteps(activeRunbook.body, activeRunbook.steps);
+  return buildRunbookNextStepCard(
+    resolveStepStatuses(steps, state.runbookProgress)
+  );
 }
 
 function buildCompletionCard(recovery: RecoveryState): CompletionCard {
@@ -140,6 +159,8 @@ export function AiAssistPanel(props: {
   >(undefined);
   const [answerIntent, setAnswerIntent] = useState<AssistIntent>();
   const [completionCard, setCompletionCard] = useState<CompletionCard>();
+  const [runbookNextStepCard, setRunbookNextStepCard] =
+    useState<RunbookNextStepCard>();
   const [lastExchange, setLastExchange] = useState<AssistStateLastExchange>();
   const selectionStartRef = useRef<{x: number; y: number} | null>(null);
   const preparedSessionRef = useRef<PreparedAssistSession | undefined>(
@@ -333,6 +354,8 @@ export function AiAssistPanel(props: {
     setAnswer('');
     setFinalized(undefined);
     setGroundingBadge(undefined);
+    setCompletionCard(undefined);
+    setRunbookNextStepCard(undefined);
     setAnswerIntent(detectAssistIntent(prompt));
     let session: AssistantSession | undefined;
     let accumulatedAnswer = '';
@@ -440,13 +463,36 @@ export function AiAssistPanel(props: {
   };
 
   // Entry point for the Ask button/form: routes "復旧した?"-style completion
-  // questions to the deterministic recovery-check endpoint instead of the
-  // model, since the model has no reliable way to tell "the runbook's next
-  // step is already done" from screen text alone.
+  // questions to the deterministic recovery-check endpoint, and "次何した
+  // らいい?"-style next_step questions to the Runbook progress state,
+  // instead of the model — the model has no reliable way to tell "the
+  // runbook's next step is already done" from screen text alone, nor which
+  // commands actually appear in the runbook (it has fabricated commands not
+  // present in the runbook in the past).
   const ask = async () => {
     const prompt = buildAssistPrompt(question);
     if (!prompt || busy) return;
-    if (detectAssistIntent(prompt) !== 'completion') {
+    const intent = detectAssistIntent(prompt);
+    if (intent === 'next_step') {
+      const card = buildRunbookCardFromState(props.gameStateRef.current);
+      if (card) {
+        setAssistError(undefined);
+        setAnswer('');
+        setFinalized(undefined);
+        setGroundingBadge(undefined);
+        setCompletionCard(undefined);
+        setPreviewUrl(undefined);
+        setRunbookNextStepCard(card);
+        setLastExchange({
+          question: prompt,
+          ...(card.kind === 'step' && card.command
+            ? {suggestion: card.command}
+            : {}),
+        });
+        return;
+      }
+    }
+    if (intent !== 'completion') {
       await runModelAsk(prompt);
       return;
     }
@@ -460,6 +506,7 @@ export function AiAssistPanel(props: {
     setFinalized(undefined);
     setGroundingBadge(undefined);
     setCompletionCard(undefined);
+    setRunbookNextStepCard(undefined);
     await props.checkRecovery();
     setCompletionCard(
       buildCompletionCard(props.gameStateRef.current?.recovery)
@@ -710,7 +757,56 @@ export function AiAssistPanel(props: {
             </button>
           </div>
         )}
+        {runbookNextStepCard && (
+          <div class='ai-assist-completion-card' role='status'>
+            {runbookNextStepCard.kind === 'all_done' && (
+              <p>
+                Runbookの手順はすべて完了しています。「復旧状態を確認」で成功条件を確認してください。
+              </p>
+            )}
+            {runbookNextStepCard.kind === 'step' && (
+              <>
+                <p>
+                  Runbook進行: {runbookNextStepCard.doneCount}/
+                  {runbookNextStepCard.total} 完了
+                </p>
+                <div class='ai-assist-command-row'>
+                  <p class='ai-assist-nextstep-command'>
+                    次の一手: {runbookNextStepCard.index}.{' '}
+                    {runbookNextStepCard.instruction}
+                  </p>
+                  {runbookNextStepCard.command && (
+                    <CopyCommandButton command={runbookNextStepCard.command} />
+                  )}
+                </div>
+                {runbookNextStepCard.alreadyExecuted && (
+                  <p class='ai-assist-nextstep-note'>
+                    このコマンドは実行済みの記録があります。結果を確認できたら手順を「完了」にしてください。
+                  </p>
+                )}
+                <div class='ai-assist-grounding ai-assist-grounding-ok'>
+                  <p class='ai-assist-grounding-badge'>
+                    Runbookの進行状況から算出(AI不使用)
+                  </p>
+                </div>
+              </>
+            )}
+            <button
+              type='button'
+              class='ghost'
+              disabled={busy}
+              onClick={() => {
+                const prompt = buildAssistPrompt(question);
+                setRunbookNextStepCard(undefined);
+                if (prompt) void runModelAsk(prompt);
+              }}
+            >
+              AIにも聞く
+            </button>
+          </div>
+        )}
         {!completionCard &&
+          !runbookNextStepCard &&
           busy &&
           answer &&
           (() => {
@@ -727,6 +823,7 @@ export function AiAssistPanel(props: {
             );
           })()}
         {!completionCard &&
+          !runbookNextStepCard &&
           !busy &&
           finalized &&
           (() => {
@@ -858,7 +955,10 @@ function NextStepDisplay(props: {
     >
       {showCommand && (
         <div class='ai-assist-command-row'>
-          <p class='ai-assist-nextstep-command'>次の一手: {nextStep.command}</p>
+          <p class='ai-assist-nextstep-command'>
+            {nextStep.verdict === 'unverified' ? '参考コマンド' : '次の一手'}:{' '}
+            {nextStep.command}
+          </p>
           {canCopyAssistCommand(nextStep.verdict) && (
             <CopyCommandButton command={nextStep.command} />
           )}
