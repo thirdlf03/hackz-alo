@@ -5,9 +5,7 @@ import {tsImport} from 'tsx/esm/api';
 const {
   appendRecentSay,
   buildNpcReplyPrompt,
-  buildNpcUserPrompt,
   filterNpcReply,
-  isNpcMention,
   NPC_NAME,
   NPC_RECENT_SAY_LIMIT,
   NPC_RESPONSE_SCHEMA,
@@ -49,17 +47,6 @@ test('NPC_RESPONSE_SCHEMA constrains say/suggestTask only', () => {
     'suggestTask',
   ]);
   assert.equal(NPC_RESPONSE_SCHEMA.additionalProperties, false);
-});
-
-test('buildNpcUserPrompt embeds overview json and recent says', () => {
-  const prompt = buildNpcUserPrompt(overview, ['CPUが高いですね']);
-  assert.ok(prompt.includes('API が寝落ちした夜'));
-  assert.ok(prompt.includes('CPUが高いですね'));
-});
-
-test('buildNpcUserPrompt omits repetition note without recent says', () => {
-  const prompt = buildNpcUserPrompt(overview, []);
-  assert.ok(!prompt.includes('繰り返さないで'));
 });
 
 test('parseNpcReply parses plain json', () => {
@@ -123,13 +110,6 @@ test('appendRecentSay keeps only the newest entries', () => {
 test('NPC_NAME is a stable display name', () => {
   assert.equal(typeof NPC_NAME, 'string');
   assert.ok(NPC_NAME.length > 0);
-});
-
-test('isNpcMention detects calls to name in Japanese and English casing', () => {
-  assert.ok(isNpcMention('ソラ、これ見て'));
-  assert.ok(isNpcMention('@sora どう思う?'));
-  assert.ok(isNpcMention('SORAさん助けて'));
-  assert.equal(isNpcMention('CPUが高いですね'), false);
 });
 
 test('buildNpcReplyPrompt embeds overview json and the player message', () => {

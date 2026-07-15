@@ -4,11 +4,8 @@ import type {AssistAvailability} from '../pure/aiAssist.js';
 import {
   appendRecentSay,
   buildNpcReplyPrompt,
-  buildNpcUserPrompt,
   filterNpcReply,
-  isNpcMention,
   NPC_NAME,
-  NPC_OBSERVE_INTERVAL_MS,
   NPC_RESPONSE_SCHEMA,
   parseNpcReply,
   type NpcReply,
@@ -24,8 +21,8 @@ import {
 import type {ReplayEventEmitter} from '../game/events/emitReplayEvent.js';
 import type {Screen} from './appTypes.js';
 
-/** プレイヤーの新規チャット発言に「ソラ」宛のメンションがないか確認する間隔。 */
-const NPC_MENTION_CHECK_INTERVAL_MS = 2_000;
+/** プレイヤーの新規チャット発言がないか確認する間隔。 */
+const NPC_MESSAGE_CHECK_INTERVAL_MS = 2_000;
 
 export interface NpcColleagueControls {
   availability: AssistAvailability | undefined;
@@ -39,9 +36,9 @@ export interface NpcColleagueControls {
 
 /**
  * ゲーム内チャットに常駐する AI NPC「後輩ソラ」。
- * 一定間隔で summarizeIncidentState() の状況JSONを Prompt API に渡し、
- * JSON Schema 制約付き出力 {say, suggestTask} を受け取って
- * チャット発言とタスク提案に反映する。
+ * プレイヤーの新規チャット発言を検知すると summarizeIncidentState() の状況JSONと
+ * ともに Prompt API に渡し、JSON Schema 制約付き出力 {say, suggestTask} を
+ * 受け取ってチャット発言とタスク提案に反映する。
  */
 export function useNpcColleague(options: {
   screen: Screen;
@@ -128,41 +125,6 @@ export function useNpcColleague(options: {
       return sessionRef.current;
     };
 
-    const observe = async () => {
-      if (isCancelled() || busyRef.current) return;
-      const state = options.gameStateRef.current;
-      const overview = summarizeIncidentState(state);
-      if (!state || !overview || state.session.status !== 'running') return;
-      busyRef.current = true;
-      setThinking(true);
-      try {
-        const session = await ensureSession();
-        const raw = await promptNpc(
-          session,
-          buildNpcUserPrompt(overview, recentSaysRef.current),
-          NPC_RESPONSE_SCHEMA
-        );
-        if (isCancelled()) return;
-        const parsed = parseNpcReply(raw);
-        if (!parsed) return;
-        const reply = filterNpcReply(
-          parsed,
-          recentSaysRef.current,
-          (options.gameStateRef.current?.room.tasks ?? []).map(
-            (task) => task.title
-          )
-        );
-        if (!reply) return;
-        deliverReply(reply);
-      } catch (error) {
-        console.error('npc colleague error', error);
-      } finally {
-        busyRef.current = false;
-        if (!isCancelled()) setThinking(false);
-        drainPendingMention();
-      }
-    };
-
     const respondToMention = async (mention: {
       id: string;
       body: string;
@@ -210,7 +172,7 @@ export function useNpcColleague(options: {
       }
     };
 
-    const checkMentions = () => {
+    const checkNewPlayerMessages = () => {
       if (isCancelled()) return;
       const messages = options.gameStateRef.current?.playerChatMessages ?? [];
       let latest: {id: string; body: string} | undefined;
@@ -218,7 +180,6 @@ export function useNpcColleague(options: {
         if (processedMentionIdsRef.current.has(message.id)) continue;
         processedMentionIdsRef.current.add(message.id);
         if (message.from === NPC_NAME) continue;
-        if (!isNpcMention(message.body)) continue;
         latest = {id: message.id, body: message.body};
       }
       if (!latest) return;
@@ -229,19 +190,11 @@ export function useNpcColleague(options: {
       void respondToMention(latest);
     };
 
-    const initialDelay = window.setTimeout(() => {
-      void observe();
-    }, 8_000);
-    const interval = window.setInterval(() => {
-      void observe();
-    }, NPC_OBSERVE_INTERVAL_MS);
     const mentionInterval = window.setInterval(() => {
-      checkMentions();
-    }, NPC_MENTION_CHECK_INTERVAL_MS);
+      checkNewPlayerMessages();
+    }, NPC_MESSAGE_CHECK_INTERVAL_MS);
     return () => {
       cancelled = true;
-      window.clearTimeout(initialDelay);
-      window.clearInterval(interval);
       window.clearInterval(mentionInterval);
     };
   }, [options.screen, enabled, availability, options.session?.sessionId]);

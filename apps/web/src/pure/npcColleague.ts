@@ -3,9 +3,6 @@ import type {IncidentOverview} from './webmcpTools.js';
 /** ゲーム内チャットに常駐する AI NPC「後輩ソラ」の表示名。 */
 export const NPC_NAME = '後輩ソラ';
 
-/** NPC が状況を観察して発言を検討する間隔。 */
-export const NPC_OBSERVE_INTERVAL_MS = 40_000;
-
 const NPC_SAY_MAX_LENGTH = 160;
 const NPC_TASK_MAX_LENGTH = 80;
 /** 直近の発言をこの件数だけ覚えて、同じ発言の繰り返しを避ける。 */
@@ -38,30 +35,6 @@ export const NPC_RESPONSE_SCHEMA = {
 export interface NpcReply {
   say?: string;
   suggestTask?: string;
-}
-
-export function buildNpcUserPrompt(
-  overview: IncidentOverview,
-  recentSays: string[]
-): string {
-  const lines = [
-    '現在のインシデント状況:',
-    JSON.stringify(overview),
-    '',
-    'この状況を見て、チャットへのひとこと(say)と、必要ならタスク提案(suggestTask)をJSONで返してください。',
-  ];
-  if (recentSays.length > 0) {
-    lines.push(
-      `直近の自分の発言と同じ内容は繰り返さないでください: ${JSON.stringify(recentSays)}`
-    );
-  }
-  return lines.join('\n');
-}
-
-/** 本文が後輩ソラへの呼びかけを含むか判定する(表記ゆれとして "sora" も許容)。 */
-export function isNpcMention(body: string): boolean {
-  const lower = body.toLowerCase();
-  return body.includes('ソラ') || lower.includes('sora');
 }
 
 export function buildNpcReplyPrompt(
