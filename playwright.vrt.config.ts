@@ -8,7 +8,10 @@ export default defineConfig({
     toHaveScreenshot: {maxDiffPixelRatio: 0.01, animations: 'disabled'},
   },
   workers: 1,
-  retries: 0,
+  // CI ランナーではサンドボックスコンテナ起動と重なると初回描画が数十秒白紙の
+  // ままになる環境フレークがある(白紙のままテスト失敗)。実際のスクショ差分は
+  // リトライでも落ち続けるので検出力は変わらない。
+  retries: process.env.CI ? 2 : 0,
   reporter: [['list']],
   use: {
     baseURL: 'http://127.0.0.1:5173',
