@@ -634,22 +634,18 @@ button:disabled {
 
 .game-layout {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
   padding: 0;
-  height: var(--play-viewport-height);
-  min-height: var(--play-viewport-height);
-  overflow: hidden;
 }
 
 .canvas-stage {
   position: relative;
   display: flex;
-  align-items: flex-start;
-  justify-content: center;
+  flex-direction: column;
+  align-items: center;
   width: 100%;
   min-width: 0;
-  height: 100%;
 }
 
 /* HTML-in-Canvas 有効時に canvas 内へ埋め込むチャット入力欄。位置は
@@ -768,7 +764,10 @@ canvas {
   display: block;
   width: min(100%, calc(var(--play-viewport-height) * 16 / 9));
   max-width: 100%;
-  max-height: var(--play-viewport-height);
+  /* canvas 直下の play-pip-toolbar 分を差し引き、canvas + ツールバーの
+     合計高さが --play-viewport-height に収まるようにする(不要な
+     ページスクロールを防ぐ)。 */
+  max-height: calc(var(--play-viewport-height) - var(--play-pip-toolbar-space));
   aspect-ratio: 16 / 9;
   border: 1px solid var(--canvas-border);
   background: var(--canvas-bg);
@@ -1734,7 +1733,9 @@ canvas:focus-visible {
 .team-panel {
   width: min(360px, calc(100vw - 24px));
   flex-shrink: 0;
-  max-height: calc(100vh - 116px);
+  position: sticky;
+  top: 0;
+  max-height: var(--play-viewport-height);
   overflow: auto;
   display: flex;
   flex-direction: column;
@@ -2534,6 +2535,7 @@ canvas:focus-visible {
 
   .team-panel {
     width: calc(100vw - 24px);
+    position: static;
     max-height: none;
     border-left: 0;
     border-top: 1px solid var(--border-subtle);
@@ -2596,17 +2598,18 @@ canvas:focus-visible {
   gap: 6px;
 }
 
-/* canvas-stage(position: relative)の左下に重ねる横並びのボタン列。
-   録画対象の canvas の外側余白に置くので録画には映らない。 */
+/* canvas 直下に通常フローで並ぶ横並びのボタン列。canvas-stage の高さが
+   canvas 自体にフィットするため、絶対配置ではなく通常フローに置いて
+   canvas に被らないようにする(録画対象の canvas の外側なので録画には
+   映らない)。align-self: flex-start で canvas-stage の左端基準に揃え、
+   perf-overlay / play-warning-banner と同じ左端参照を保つ。 */
 .play-pip-toolbar {
-  position: absolute;
-  bottom: 6px;
-  left: 8px;
+  align-self: flex-start;
   display: flex;
   flex-wrap: nowrap;
   align-items: center;
   gap: 8px;
-  z-index: 3;
+  margin: 6px 0 0 8px;
   color: var(--text-muted);
   font-family: var(--font-family-mono);
   font-size: 11.5px;

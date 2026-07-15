@@ -76,8 +76,17 @@
 
   /* Touch targets — WCAG 2.5.5 AAA */
   --touch-min: 44px;
-  --topbar-height: calc(var(--touch-min) + 20px);
+  /* プレイ/リプレイ画面の topbar は speed-control の内側 padding(6px×2)分
+     touch-min(44px)+上下padding(20px)より実際に高くなる(実測 79px 前後)。
+     --play-viewport-height の計算がこれより小さいと canvas 列の下端が
+     ビューポートを超えてページスクロールが出るため、実測値に余裕を足した
+     固定値にしている(calc(var(--touch-min) + 20px) だけでは不足)。 */
+  --topbar-height: 84px;
   --play-viewport-height: calc(100dvh - var(--topbar-height));
+  /* canvas 直下に通常フローで置く PiP ツールバー用に確保する高さ。
+     canvas の max-height から差し引き、canvas + ツールバーの合計が
+     --play-viewport-height を超えてページスクロールが出ないようにする。 */
+  --play-pip-toolbar-space: 40px;
 
   /* Canvas */
   --canvas-bg: #040604;
