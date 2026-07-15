@@ -39,17 +39,14 @@ export function drawRightPanel(
 
   if (activePanelTab === 'runbook') {
     drawRunbookDocumentTabs(surface, state, runbooks, layout.secondaryTop);
-    const titleTop = layout.contentTop;
-    const bodyTop = titleTop + 36;
+    const bodyTop = layout.contentTop;
     const maxRunbookLines = Math.max(
       10,
       Math.floor((monitorContentHeight - bodyTop - 16) / 24)
     );
     surface.ctx.fillStyle = palette.textPrimary;
-    surface.ctx.font = uiFont(22);
+    surface.ctx.font = uiFont(17);
     if (runbooks.length === 0) {
-      surface.ctx.fillText('Runbook', 0, titleTop);
-      surface.ctx.font = uiFont(17);
       wrapText(
         surface.ctx,
         'Runbook はまだ届いていない。',
@@ -61,12 +58,6 @@ export function drawRightPanel(
       );
       return;
     }
-    surface.ctx.fillText(
-      state.monitors.right.activeRunbook?.title ?? 'Runbook',
-      0,
-      titleTop
-    );
-    surface.ctx.font = uiFont(17);
     wrapText(
       surface.ctx,
       state.monitors.right.activeRunbook?.body ?? '',

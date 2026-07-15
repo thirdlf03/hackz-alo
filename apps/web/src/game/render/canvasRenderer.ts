@@ -228,8 +228,8 @@ export class CanvasRenderer {
       if (state.warning && state.warning.flashMs > 0) {
         drawCommandWarning(surface, state.warning);
       }
-      drawNavigationOverlay(surface, state, scenario);
       drawInputDock(surface, state);
+      drawNavigationOverlay(surface, state, scenario);
       drawNotifications(surface, state, viewModel);
       if (state.world.expandedMonitor) {
         drawExpandedMonitorOverlay(surface, state, scenario, viewModel);

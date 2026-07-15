@@ -261,7 +261,7 @@ export const retireConfirmButtonRects = {
 
 export const navigationOverlayRect = {
   x: 720,
-  y: 860,
+  y: 840,
   width: 480,
   height: 120,
 } as const;

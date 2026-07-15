@@ -645,7 +645,7 @@ button:disabled {
 .canvas-stage {
   position: relative;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
   width: 100%;
   min-width: 0;
