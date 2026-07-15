@@ -58,6 +58,32 @@ export function buildNpcUserPrompt(
   return lines.join('\n');
 }
 
+/** 本文が後輩ソラへの呼びかけを含むか判定する(表記ゆれとして "sora" も許容)。 */
+export function isNpcMention(body: string): boolean {
+  const lower = body.toLowerCase();
+  return body.includes('ソラ') || lower.includes('sora');
+}
+
+export function buildNpcReplyPrompt(
+  overview: IncidentOverview,
+  playerMessage: string,
+  recentSays: string[]
+): string {
+  const lines = [
+    '現在のインシデント状況:',
+    JSON.stringify(overview),
+    '',
+    `先輩からチャットで話しかけられました: ${JSON.stringify(playerMessage)}`,
+    'この呼びかけに答えるひとこと(say)を返してください。関連する対応タスクを思いついた場合はsuggestTaskに、なければ空文字にしてください。',
+  ];
+  if (recentSays.length > 0) {
+    lines.push(
+      `直近の自分の発言と同じ内容は繰り返さないでください: ${JSON.stringify(recentSays)}`
+    );
+  }
+  return lines.join('\n');
+}
+
 /**
  * Prompt API の出力を NpcReply に変換する。responseConstraint があっても
  * 端末側モデルが前後に余計なテキストを付けることがあるため、最初の

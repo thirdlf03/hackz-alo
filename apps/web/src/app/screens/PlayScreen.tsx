@@ -178,6 +178,11 @@ export function PlayScreen(props: {
         </canvas>
         <PerfOverlay />
         <MonitorPipToolbar pip={props.pip} />
+        {props.gameState?.warning && props.gameState.warning.flashMs > 0 && (
+          <p class='play-warning-banner' role='status'>
+            {props.gameState.warning.message}
+          </p>
+        )}
       </div>
       <TeamExercisePanel
         exercise={props.exercise}

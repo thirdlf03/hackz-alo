@@ -672,6 +672,26 @@ button:disabled {
   border-color: var(--border-focus);
 }
 
+/* 一時表示バナー。canvas 側の commandWarningRect 描画(state.warning)を
+   DOM 側にも role='status' で複製し、スクリーンリーダーと VRT/e2e から
+   読み取れるようにする。表示・消滅は state.warning のデコイ(flashMs)に
+   追従するだけで、このバナー自体は独自のタイマーを持たない。 */
+.play-warning-banner {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 10;
+  max-width: min(480px, calc(100% - 24px));
+  margin: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--border-error);
+  border-radius: var(--radius-l);
+  color: var(--text-error);
+  background: var(--surface-overlay);
+  font-family: var(--font-family-mono);
+  font-size: 13px;
+}
+
 .perf-overlay {
   position: absolute;
   top: 12px;
@@ -1587,11 +1607,48 @@ canvas:focus-visible {
   padding: 10px 12px;
 }
 
-.lobby-panel .role-permission-hint {
-  color: var(--text-muted);
+.lobby-panel .role-info-card {
+  display: grid;
+  gap: 6px;
+  max-width: 420px;
+  margin: 4px 0 0;
+  padding: 12px 14px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-l);
+  background: var(--surface-raised);
   font-size: 14px;
-  max-width: 380px;
   line-height: 1.55;
+}
+
+.lobby-panel .role-info-heading {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: baseline;
+  margin: 0;
+  font-family: var(--font-family-mono);
+}
+
+.lobby-panel .role-info-heading strong {
+  color: var(--text-accent);
+}
+
+.lobby-panel .role-info-tagline {
+  color: var(--text-secondary);
+}
+
+.lobby-panel .role-info-can,
+.lobby-panel .role-info-cannot {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.lobby-panel .role-info-can {
+  color: var(--text-accent);
+}
+
+.lobby-panel .role-info-cannot {
+  color: var(--text-warning);
 }
 
 .participant-list {

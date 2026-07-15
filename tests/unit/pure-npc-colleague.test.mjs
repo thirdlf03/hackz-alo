@@ -4,8 +4,10 @@ import {tsImport} from 'tsx/esm/api';
 
 const {
   appendRecentSay,
+  buildNpcReplyPrompt,
   buildNpcUserPrompt,
   filterNpcReply,
+  isNpcMention,
   NPC_NAME,
   NPC_RECENT_SAY_LIMIT,
   NPC_RESPONSE_SCHEMA,
@@ -121,4 +123,28 @@ test('appendRecentSay keeps only the newest entries', () => {
 test('NPC_NAME is a stable display name', () => {
   assert.equal(typeof NPC_NAME, 'string');
   assert.ok(NPC_NAME.length > 0);
+});
+
+test('isNpcMention detects calls to name in Japanese and English casing', () => {
+  assert.ok(isNpcMention('ソラ、これ見て'));
+  assert.ok(isNpcMention('@sora どう思う?'));
+  assert.ok(isNpcMention('SORAさん助けて'));
+  assert.equal(isNpcMention('CPUが高いですね'), false);
+});
+
+test('buildNpcReplyPrompt embeds overview json and the player message', () => {
+  const prompt = buildNpcReplyPrompt(overview, 'ソラ、状況どう?', []);
+  assert.ok(prompt.includes('API が寝落ちした夜'));
+  assert.ok(prompt.includes('ソラ、状況どう?'));
+});
+
+test('buildNpcReplyPrompt includes repetition note only when recent says exist', () => {
+  const withRecent = buildNpcReplyPrompt(overview, 'ソラ、状況どう?', [
+    'CPUが高いですね',
+  ]);
+  assert.ok(withRecent.includes('繰り返さないで'));
+  assert.ok(withRecent.includes('CPUが高いですね'));
+
+  const withoutRecent = buildNpcReplyPrompt(overview, 'ソラ、状況どう?', []);
+  assert.ok(!withoutRecent.includes('繰り返さないで'));
 });

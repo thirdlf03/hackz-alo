@@ -42,6 +42,30 @@ type PatchGameState = (
 
 const DANGEROUS_COMMAND = /\brm\s+-rf\b/i;
 
+/**
+ * Shown when a paste/keydown is dropped because the participant's role
+ * lacks sandbox operate permission (see canOperateSandbox in
+ * rolePermissions.ts). Reuses the existing state.warning transient-message
+ * mechanism (see canvasLayout.ts commandWarningRect / gameState.ts
+ * decayWorldOverlays), which already renders on canvas and decays on its
+ * own each tick — this is the same "command rejected" concept the dangerous
+ * rm -rf warning above uses. patchGameStateRef no-ops when the updater
+ * returns the same state reference, so re-checking the already-active
+ * message here is what keeps repeated blocked keystrokes/pastes from
+ * resetting the flash timer (no re-trigger spam while it's showing).
+ */
+const ROLE_BLOCKED_MESSAGE = 'ターミナル操作は Ops / Facilitator の担当です';
+
+function notifyRoleBlocked(patchGameStateRef: PatchGameState) {
+  patchGameStateRef((current) => {
+    if (current.warning?.message === ROLE_BLOCKED_MESSAGE) return current;
+    return {
+      ...current,
+      warning: {message: ROLE_BLOCKED_MESSAGE, flashMs: 4000},
+    };
+  });
+}
+
 export function useTerminalBridge(options: {
   api: ApiClientSurface;
   screen: Screen;
@@ -244,6 +268,7 @@ export function useTerminalBridge(options: {
     ) {
       // Every role attaches to the terminal now, so paste needs its own
       // role gate — same live check as handleTerminalKey below.
+      notifyRoleBlocked(options.patchGameStateRef);
       return;
     }
     const text = clipboard.getData('text/plain');
@@ -299,6 +324,7 @@ export function useTerminalBridge(options: {
       // Every role attaches the terminal (to see the output mirror), but
       // only ops/facilitator may send input. This also acts as the
       // safety net for the window where a role change lands mid-play.
+      notifyRoleBlocked(options.patchGameStateRef);
       return;
     }
     if (!options.gameStateRef.current?.commandInputFocused) {

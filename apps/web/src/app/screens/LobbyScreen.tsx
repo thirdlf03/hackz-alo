@@ -5,6 +5,7 @@ import type {
   ScenarioDefinition,
 } from '@incident/shared';
 import {areParticipantsReadyToStart} from '../../pure/participantsReady.js';
+import {roleInfoFor} from '../../pure/roleInfo.js';
 
 export const participantRoleLabels: Record<ParticipantRole, string> = {
   incident_commander: 'IC',
@@ -34,6 +35,7 @@ export function LobbyScreen(props: {
   onContinue: () => void;
 }) {
   const [inviteCopied, setInviteCopied] = useState(false);
+  const selectedRoleInfo = roleInfoFor(props.participantRole);
   const participants = props.exercise?.participants ?? [];
   const ready = participants.find(
     (participant) => participant.participantId === props.participantId
@@ -104,10 +106,22 @@ export function LobbyScreen(props: {
             ))}
           </select>
         </label>
-        <small class='role-permission-hint'>
-          Ops / Facilitator: ターミナル・エディタを操作できます / Observer:
-          閲覧専用
-        </small>
+        <div class='role-info-card' aria-live='polite'>
+          <p class='role-info-heading'>
+            <strong>{participantRoleLabels[props.participantRole]}</strong>
+            <span class='role-info-tagline'>{selectedRoleInfo.tagline}</span>
+          </p>
+          {selectedRoleInfo.can.length > 0 && (
+            <p class='role-info-can'>
+              できること: {selectedRoleInfo.can.join('、')}
+            </p>
+          )}
+          {selectedRoleInfo.cannot.length > 0 && (
+            <p class='role-info-cannot'>
+              できないこと: {selectedRoleInfo.cannot.join('、')}
+            </p>
+          )}
+        </div>
       </div>
       <div class='participant-list'>
         {participants.map((participant) => (

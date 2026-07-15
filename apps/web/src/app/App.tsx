@@ -32,6 +32,7 @@ import {
 import {useCanvasInteraction} from './useCanvasInteraction.js';
 import {useWebMcpTools} from './useWebMcpTools.js';
 import {useVoiceChat} from './useVoiceChat.js';
+import {useNpcColleague} from './useNpcColleague.js';
 import {useMonitorPip} from './useMonitorPip.js';
 import {detectHtmlInCanvasSupport} from '../effect/htmlInCanvas.js';
 import {useMetricsPolling} from './useMetricsPolling.js';
@@ -257,6 +258,17 @@ export function App() {
   rtcSignalHandlerRef.current = (data) => {
     voice.handleSignal(data);
   };
+
+  // 後輩ソラ(AI NPC)。表示UI(旧 NpcColleaguePanel)は未再建のため戻り値は
+  // 現状使わないが、観察ループとメンション応答はこの呼び出しだけで起動する。
+  useNpcColleague({
+    screen,
+    session,
+    gameStateRef,
+    eventEmitterRef,
+    patchGameStateRef,
+    currentGameTimeMs,
+  });
 
   const pip = useMonitorPip({screen, canvasRef, setAppError});
 
