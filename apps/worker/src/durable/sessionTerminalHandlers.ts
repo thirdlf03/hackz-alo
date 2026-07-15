@@ -32,7 +32,7 @@ export async function handleSessionTerminal(
 }
 
 /**
- * Entry point for SessionDurableObject.terminal(): decides operate access
+ * Entry point for SessionResourceHub.terminal(): decides operate access
  * and returns either the raw sandbox WS pass-through or a read-only
  * relay of it. `room` must already reflect the current session (the
  * caller loads/creates it via SessionExerciseHub before calling this, and
