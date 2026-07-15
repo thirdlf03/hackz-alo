@@ -14,7 +14,11 @@ test('buildRunbookNextStepCard returns a step card for the current step, includi
       status: 'done',
     },
     {
-      step: {id: 's2', instruction: '二番目を確認する', command: 'curl localhost:8080/health'},
+      step: {
+        id: 's2',
+        instruction: '二番目を確認する',
+        command: 'curl localhost:8080/health',
+      },
       status: 'current',
     },
     {
