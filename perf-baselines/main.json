@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-13T10:18:14.641Z",
+  "generatedAt": "2026-07-15T05:45:31.020Z",
   "spans": {
     "count": 0,
     "byName": []
@@ -14,28 +14,28 @@
     "advanceGameState": {
       "name": "advanceGameState",
       "iterations": 3000,
-      "totalMs": 8.575,
-      "meanMs": 0.003,
-      "p95Ms": 0.004
+      "totalMs": 50.329,
+      "meanMs": 0.017,
+      "p95Ms": 0.029
     },
     "buildMetricSections": {
       "name": "buildMetricSections",
       "iterations": 5000,
-      "totalMs": 20.358,
+      "totalMs": 21.483,
       "meanMs": 0.004,
-      "p95Ms": 0.005
+      "p95Ms": 0.009
     },
     "buildCanvasViewModel": {
       "name": "buildCanvasViewModel",
       "iterations": 5000,
-      "totalMs": 3.19,
+      "totalMs": 3.27,
       "meanMs": 0.001,
       "p95Ms": 0.001
     },
     "visibleRunbooks": {
       "name": "visibleRunbooks",
       "iterations": 5000,
-      "totalMs": 1.057,
+      "totalMs": 1.429,
       "meanMs": 0,
       "p95Ms": 0
     }
