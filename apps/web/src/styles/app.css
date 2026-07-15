@@ -637,6 +637,11 @@ button:disabled {
   align-items: flex-start;
   justify-content: center;
   padding: 0;
+  /* プレイ画面は常にビューポート全高を占有する。縦長ウィンドウで
+     canvas の下に body 背景がむき出しで残る「高さ計算ミス」に見える
+     問題への対処。height 固定や overflow: hidden にはしない
+     (ページスクロール抑止の副作用を再発させないため)。 */
+  min-height: var(--play-viewport-height);
 }
 
 .canvas-stage {
@@ -646,6 +651,26 @@ button:disabled {
   align-items: center;
   width: 100%;
   min-width: 0;
+  /* game-layout は align-items: flex-start(sticky な team-panel 用)
+     なので、canvas 列だけ全高に伸ばして下の余り領域まで演出を敷く。 */
+  align-self: stretch;
+  /* 縦長ウィンドウで canvas の下に残る領域を「意図した余白」に見せる
+     レトロ CRT 筐体風の控えめな演出。上段: 画面(canvas)からの光が
+     漏れるような上→下フェード、下段: ごく薄いスキャンライン。
+     色は --accent-primary (#7cfc9a = 124,252,154) のトーンに合わせ、
+     不透明度は環境光程度(0.02〜0.035)に抑える。canvas 自体は不透明
+     背景なので背後に敷いても干渉しない。 */
+  background:
+    /* 上層: body 背景色 (--surface-base #050705) への上→下フェード。
+       下に向かってスキャンラインが暗闇に溶けるように減衰させる。 */
+    linear-gradient(to bottom, rgba(5, 7, 5, 0) 40%, rgba(5, 7, 5, 0.85)),
+    repeating-linear-gradient(
+      to bottom,
+      rgba(124, 252, 154, 0.03) 0,
+      rgba(124, 252, 154, 0.03) 1px,
+      transparent 1px,
+      transparent 4px
+    );
 }
 
 /* HTML-in-Canvas 有効時に canvas 内へ埋め込むチャット入力欄。位置は
