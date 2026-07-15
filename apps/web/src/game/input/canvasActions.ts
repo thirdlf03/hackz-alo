@@ -11,7 +11,6 @@ import {
   monitorHeaderHeight,
   monitorLayout,
   monitorMagnifyAt,
-  navigationOverlayRect,
   notificationBellRegion,
   retireConfirmButtonRects,
   rightPanelPrimaryTabAt,
@@ -123,13 +122,6 @@ export function resolveCanvasAction(
 
   if (containsCanvasPoint(notificationBellRegion, point.x, point.y)) {
     return {type: 'notification_bell'};
-  }
-
-  if (
-    containsCanvasPoint(navigationOverlayRect, point.x, point.y) &&
-    state.navigation.activeStepId
-  ) {
-    return {type: 'dismiss_navigation', stepId: state.navigation.activeStepId};
   }
 
   const chatTarget = chatComposeAt(

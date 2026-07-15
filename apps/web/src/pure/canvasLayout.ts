@@ -259,13 +259,6 @@ export const retireConfirmButtonRects = {
   cancel: {x: 1000, y: 560, width: 220, height: 64},
 } as const;
 
-export const navigationOverlayRect = {
-  x: 720,
-  y: 840,
-  width: 480,
-  height: 120,
-} as const;
-
 export function centerToolTabRegions() {
   const monitor = monitorLayout('terminal');
   const headerHeight = monitorHeaderHeight('terminal');

@@ -13,7 +13,6 @@ const {
   monitorHeaderHeight,
   monitorLayout,
   monitorMagnifyRegions,
-  navigationOverlayRect,
   notificationBellRegion,
   retireConfirmButtonRects,
   runbookTabRegion,
@@ -182,21 +181,6 @@ test('resolveCanvasAction handles right panel tabs, runbook tabs, and notificati
   assert.deepEqual(
     resolveCanvasAction(pointIn(notificationBellRegion), state, scenario),
     {type: 'notification_bell'}
-  );
-});
-
-test('resolveCanvasAction dismisses navigation before monitor expansion', () => {
-  const state = {
-    ...createPlayState(),
-    navigation: {
-      dismissedStepIds: [],
-      activeStepId: 'nav-1',
-    },
-  };
-
-  assert.deepEqual(
-    resolveCanvasAction(pointIn(navigationOverlayRect), state, baseScenario()),
-    {type: 'dismiss_navigation', stepId: 'nav-1'}
   );
 });
 

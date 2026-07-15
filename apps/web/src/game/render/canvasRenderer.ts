@@ -7,7 +7,6 @@ import {
   drawCursor,
   drawHeader,
   drawInputDock,
-  drawNavigationOverlay,
   drawRetireConfirmOverlay,
 } from './canvasRenderChrome.js';
 import {
@@ -68,7 +67,6 @@ export {
   metricsPanelScrollRegion,
   monitorLayouts,
   monitorMagnifyAt,
-  navigationOverlayRect,
   notificationBellRegion,
   notificationPanelRegion,
   rightPanelPrimaryTabAt,
@@ -229,7 +227,6 @@ export class CanvasRenderer {
         drawCommandWarning(surface, state.warning);
       }
       drawInputDock(surface, state);
-      drawNavigationOverlay(surface, state, scenario);
       drawNotifications(surface, state, viewModel);
       if (state.world.expandedMonitor) {
         drawExpandedMonitorOverlay(surface, state, scenario, viewModel);

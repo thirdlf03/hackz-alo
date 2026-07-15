@@ -23,7 +23,6 @@ const {
   monitorMagnifyRegions,
   monitorLayout,
   monitorLayouts,
-  navigationOverlayRect,
   notificationBellRegion,
   notificationPanelRegion,
   PANEL_PADDING,
@@ -185,7 +184,6 @@ test('static canvas regions stay bounded and hidden regions stay offscreen', () 
     inputDockRects.input,
     inputDockRects.retire,
     inputDockRects.button,
-    navigationOverlayRect,
     runbookTabRegion(),
   ];
 

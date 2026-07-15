@@ -54,6 +54,11 @@ export function TeamExercisePanel(props: {
   const participants = props.exercise?.participants ?? [];
   const tasks = props.exercise?.tasks ?? [];
   const incidentLog = props.exercise?.incidentLog ?? [];
+  const injects = props.exercise?.injects ?? [];
+  // マルチプレイ専用UI(音声チャット・INJECTS)はソロプレイでは表示しない。
+  // 参加者が途中で増えたら自動的に再表示される。
+  const isSolo = participants.length <= 1;
+  const hasInjects = injects.length > 0;
   return (
     <aside class='team-panel' aria-label='訓練ルーム'>
       <section aria-label='オンコール名簿'>
@@ -75,7 +80,7 @@ export function TeamExercisePanel(props: {
             </span>
           ))}
         </div>
-        <WarRoomVoicePanel voice={props.voice} />
+        {!isSolo && <WarRoomVoicePanel voice={props.voice} />}
       </section>
       {!props.canContribute && (
         <p class='team-readonly-note' role='status'>
@@ -123,43 +128,45 @@ export function TeamExercisePanel(props: {
           onCreateTask={props.onCreateTask}
         />
       </section>
-      <section>
-        <h2>INJECTS</h2>
-        <ol class='team-list'>
-          {(props.exercise?.injects ?? []).map((inject) => (
-            <li key={inject.id} class='team-inject'>
-              <span class='team-inject-title'>
-                {inject.title}
-                {inject.roleHint && (
-                  <span class='inject-role-badge'>
-                    {participantRoleLabels[inject.roleHint]}
-                  </span>
-                )}
-              </span>
-              <span class='team-inject-body'>
-                {inject.fired ? '発火済み' : inject.body}
-              </span>
-              {!inject.fired && (
-                <span class='team-inject-actions'>
-                  {inject.atMs !== undefined && (
-                    <span class='team-inject-time'>
-                      {formatTime(inject.atMs)} 自動発火
+      {!isSolo && hasInjects && (
+        <section>
+          <h2>INJECTS</h2>
+          <ol class='team-list'>
+            {injects.map((inject) => (
+              <li key={inject.id} class='team-inject'>
+                <span class='team-inject-title'>
+                  {inject.title}
+                  {inject.roleHint && (
+                    <span class='inject-role-badge'>
+                      {participantRoleLabels[inject.roleHint]}
                     </span>
                   )}
-                  <button
-                    type='button'
-                    onClick={() => {
-                      props.onFireInject(inject.id);
-                    }}
-                  >
-                    今すぐ発火
-                  </button>
                 </span>
-              )}
-            </li>
-          ))}
-        </ol>
-      </section>
+                <span class='team-inject-body'>
+                  {inject.fired ? '発火済み' : inject.body}
+                </span>
+                {!inject.fired && (
+                  <span class='team-inject-actions'>
+                    {inject.atMs !== undefined && (
+                      <span class='team-inject-time'>
+                        {formatTime(inject.atMs)} 自動発火
+                      </span>
+                    )}
+                    <button
+                      type='button'
+                      onClick={() => {
+                        props.onFireInject(inject.id);
+                      }}
+                    >
+                      今すぐ発火
+                    </button>
+                  </span>
+                )}
+              </li>
+            ))}
+          </ol>
+        </section>
+      )}
       <section>
         <h2>NOTES / INCIDENT LOG</h2>
         <ol class='team-list'>

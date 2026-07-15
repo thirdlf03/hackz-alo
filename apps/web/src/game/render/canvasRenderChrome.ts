@@ -1,4 +1,4 @@
-import type {GameRenderState, ScenarioDefinition} from '@incident/shared';
+import type {GameRenderState} from '@incident/shared';
 import type {CanvasRenderSurface} from './canvasRenderSurface.js';
 import {
   centeredText,
@@ -25,7 +25,6 @@ import {
   inputDockRects,
   logicalHeight,
   logicalWidth,
-  navigationOverlayRect,
   retireConfirmButtonRects,
   retireConfirmOverlayRect,
 } from './canvasLayout.js';
@@ -387,48 +386,6 @@ export function drawRetireConfirmOverlay(surface: CanvasRenderSurface) {
     cancel.width,
     cancel.height
   );
-}
-
-export function drawNavigationOverlay(
-  surface: CanvasRenderSurface,
-  state: GameRenderState,
-  scenario?: ScenarioDefinition
-) {
-  const step = scenario?.navigationSteps?.find(
-    (item) => item.id === state.navigation.activeStepId
-  );
-  if (!step || state.session.difficulty !== 'beginner') return;
-
-  const box = navigationOverlayRect;
-  surface.ctx.fillStyle = palette.bgOverlay;
-  roundRect(surface.ctx, box.x, box.y, box.width, box.height, 10);
-  surface.ctx.fill();
-  surface.ctx.strokeStyle = palette.borderFocus;
-  surface.ctx.lineWidth = 2;
-  surface.ctx.stroke();
-  surface.ctx.fillStyle = palette.borderFocus;
-  surface.ctx.font = uiFont(14);
-  surface.ctx.fillText('NAV', box.x + 16, box.y + 28);
-  surface.ctx.fillStyle = palette.textPrimary;
-  surface.ctx.font = uiFont(18);
-  wrapText(
-    surface.ctx,
-    step.hint,
-    box.x + 16,
-    box.y + 52,
-    box.width - 32,
-    24,
-    3
-  );
-  if (step.suggestedCommand) {
-    surface.ctx.fillStyle = palette.textSecondary;
-    surface.ctx.font = monoFont(14);
-    surface.ctx.fillText(
-      `例: ${step.suggestedCommand}`,
-      box.x + 16,
-      box.y + box.height - 24
-    );
-  }
 }
 
 const remoteCursorDisplay = new Map<string, {x: number; y: number}>();

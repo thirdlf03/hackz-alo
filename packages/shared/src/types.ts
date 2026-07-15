@@ -325,6 +325,9 @@ export interface EditorPanelState {
   cursor: {line: number; column: number};
 }
 
+/** NAVカード(初級ナビ)の描画は撤去済み(2026-07)。手順書パネル・サイドバー
+ * RUNBOOK・AI Assistで誘導が足りているため。ステートとシナリオ定義の
+ * navigationSteps は今後の再利用のため残置している。 */
 export interface GameNavigationState {
   dismissedStepIds: string[];
   activeStepId?: string;
