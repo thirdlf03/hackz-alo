@@ -2111,6 +2111,43 @@ canvas:focus-visible {
   pointer-events: none;
 }
 
+.ai-assist-unavailable {
+  display: grid;
+  gap: 6px;
+}
+
+.ai-assist-unavailable-hint {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.ai-assist-command-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.ai-assist-command-row p {
+  flex: 1;
+  min-width: 0;
+}
+
+.ai-assist-copy-button {
+  flex-shrink: 0;
+}
+
+.ai-assist-preset-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ai-assist-preset-button.active {
+  color: var(--text-accent);
+  border-color: var(--border-active-tab);
+}
+
 .speech-log {
   margin-top: 2px;
 }

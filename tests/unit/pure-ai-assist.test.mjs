@@ -10,6 +10,7 @@ const {
   clampDownloadRatio,
   computeSnapshotSize,
   describeAssistAvailability,
+  describeAssistUnavailableNotice,
   describeModelDownloadStatus,
   formatDownloadProgress,
   normalizeCanvasCaptureRect,
@@ -161,6 +162,26 @@ test('describeAssistAvailability covers every state', () => {
     assert.equal(typeof describeAssistAvailability(state), 'string');
     assert.ok(describeAssistAvailability(state).length > 0);
   }
+});
+
+test('describeAssistUnavailableNotice explains the availability-check-pending state', () => {
+  const notice = describeAssistUnavailableNotice(undefined);
+  assert.equal(notice.message, 'AIの利用可否を確認中…');
+  assert.equal(notice.hint, undefined);
+});
+
+test('describeAssistUnavailableNotice explains unsupported browsers and mentions a supported environment', () => {
+  const notice = describeAssistUnavailableNotice('unsupported');
+  assert.match(notice.message, /オンデバイスAIに対応していません/);
+  assert.match(notice.message, /AIアシストなしでも.*プレイできます/);
+  assert.equal(typeof notice.hint, 'string');
+  assert.match(notice.hint, /Chrome/);
+});
+
+test('describeAssistUnavailableNotice explains an unavailable on-device model', () => {
+  const notice = describeAssistUnavailableNotice('unavailable');
+  assert.match(notice.message, /AIモデルを利用できません/);
+  assert.match(notice.message, /AIアシストなしでもプレイできます/);
 });
 
 test('formatDownloadProgress renders clamped percentages', () => {

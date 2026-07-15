@@ -4,6 +4,7 @@ import type {GameRenderState, ScenarioDefinition} from '@incident/shared';
 import {
   buildAssistPrompt,
   describeAssistAvailability,
+  describeAssistUnavailableNotice,
   formatDownloadProgress,
   normalizeCanvasCaptureRect,
   type AssistAvailability,
@@ -24,7 +25,10 @@ import {
   finalizeAssistAnswer,
   type FinalizedAssistNextStep,
 } from '../pure/assistAnswerPipeline.js';
-import {resolveAnswerPresentation} from '../pure/assistAnswerPresentation.js';
+import {
+  canCopyAssistCommand,
+  resolveAnswerPresentation,
+} from '../pure/assistAnswerPresentation.js';
 import {splitAnswerForMasking} from '../pure/assistAnswerMask.js';
 import {groundAssistNextStep} from '../pure/assistGrounding.js';
 import {
@@ -32,6 +36,7 @@ import {
   type GroundingBadgeInfo,
 } from '../pure/assistGroundingBadge.js';
 import {buildCanvasViewModel} from '../pure/canvasViewModel.js';
+import {captureRectPresets} from '../pure/captureRectPresets.js';
 import {serializeScreenLines} from '../pure/serializeScreenLines.js';
 import {parseRunbookSteps, resolveStepStatuses} from '../pure/runbookSteps.js';
 import {
@@ -302,7 +307,18 @@ export function AiAssistPanel(props: {
     availability === 'unsupported' ||
     availability === 'unavailable'
   ) {
-    return null;
+    const notice = describeAssistUnavailableNotice(availability);
+    return (
+      <section
+        class='ai-assist ai-assist-unavailable'
+        aria-label='オンデバイスAIアシスタント'
+      >
+        <p class='ai-assist-status' role='status'>
+          {notice.message}
+        </p>
+        {notice.hint && <p class='ai-assist-unavailable-hint'>{notice.hint}</p>}
+      </section>
+    );
   }
 
   // Runs the actual on-device model call (screenshot/text streaming +
@@ -451,6 +467,30 @@ export function AiAssistPanel(props: {
     setBusy(false);
   };
 
+  const applyCaptureRectPreset = (rect: CanvasCaptureRect | undefined) => {
+    discardPreparedSession();
+    setCaptureRect(rect);
+    if (rect === undefined) {
+      setPreviewUrl(undefined);
+      return;
+    }
+    const canvas = props.canvasRef.current;
+    if (canvas) {
+      setPreviewUrl(captureCanvasSnapshot(canvas, rect).previewUrl);
+    }
+  };
+
+  const isActiveCaptureRectPreset = (rect: CanvasCaptureRect | undefined) => {
+    if (rect === undefined) return captureRect === undefined;
+    return (
+      captureRect !== undefined &&
+      captureRect.x === rect.x &&
+      captureRect.y === rect.y &&
+      captureRect.width === rect.width &&
+      captureRect.height === rect.height
+    );
+  };
+
   const beginRegionSelection = () => {
     const canvas = props.canvasRef.current;
     if (!canvas) return;
@@ -576,6 +616,24 @@ export function AiAssistPanel(props: {
             </span>
           </div>
         )}
+        {attachScreenshot && (
+          <div class='ai-assist-preset-controls'>
+            {captureRectPresets().map((preset) => (
+              <button
+                key={preset.id}
+                type='button'
+                class={`ai-assist-preset-button${isActiveCaptureRectPreset(preset.rect) ? ' active' : ''}`}
+                aria-pressed={isActiveCaptureRectPreset(preset.rect)}
+                disabled={busy}
+                onClick={() => {
+                  applyCaptureRectPreset(preset.rect);
+                }}
+              >
+                {preset.label}
+              </button>
+            ))}
+          </div>
+        )}
         <p class='ai-assist-status' role='status'>
           {availability === 'downloading' && downloadProgress !== undefined
             ? `${describeAssistAvailability(availability)} ${formatDownloadProgress(downloadProgress)}`
@@ -684,9 +742,16 @@ export function AiAssistPanel(props: {
                 {finalized.nextStep &&
                   presentation.showCommandAs === 'reference' &&
                   finalized.nextStep.verdict === 'ok' && (
-                    <p class='ai-assist-nextstep-reference'>
-                      参考コマンド: {finalized.nextStep.command}
-                    </p>
+                    <div class='ai-assist-command-row'>
+                      <p class='ai-assist-nextstep-reference'>
+                        参考コマンド: {finalized.nextStep.command}
+                      </p>
+                      {canCopyAssistCommand(finalized.nextStep.verdict) && (
+                        <CopyCommandButton
+                          command={finalized.nextStep.command}
+                        />
+                      )}
+                    </div>
                   )}
                 {finalized.nextStep &&
                   presentation.showCommandAs !== 'reference' && (
@@ -792,7 +857,12 @@ function NextStepDisplay(props: {
       role={NEXT_STEP_ALERT_VERDICTS.has(nextStep.verdict) ? 'alert' : 'status'}
     >
       {showCommand && (
-        <p class='ai-assist-nextstep-command'>次の一手: {nextStep.command}</p>
+        <div class='ai-assist-command-row'>
+          <p class='ai-assist-nextstep-command'>次の一手: {nextStep.command}</p>
+          {canCopyAssistCommand(nextStep.verdict) && (
+            <CopyCommandButton command={nextStep.command} />
+          )}
+        </div>
       )}
       {(nextStep.verdict === 'ok' || nextStep.verdict === 'repair_candidate') &&
         props.groundingBadge && (
@@ -843,5 +913,72 @@ function NextStepDisplay(props: {
         </>
       )}
     </div>
+  );
+}
+
+const COPY_CONFIRMATION_MS = 2000;
+
+/** Feature-detects the Clipboard API via an optional-field cast (mirrors
+ * promptApiEntry() in effect/promptAssistant.ts) rather than trusting
+ * lib.dom's non-optional `navigator.clipboard` typing, since some
+ * environments still omit it (e.g. non-secure contexts). */
+function clipboardWriteApi():
+  | {writeText: (text: string) => Promise<void>}
+  | undefined {
+  if (typeof navigator === 'undefined') return undefined;
+  return (
+    navigator as {
+      clipboard?: {writeText: (text: string) => Promise<void>};
+    }
+  ).clipboard;
+}
+
+/** "コピー" button placed next to a copyable "次の一手"/参考コマンド command
+ * (see canCopyAssistCommand). Hidden outright when the Clipboard API isn't
+ * available (feature-detected), rather than showing a button that would
+ * always fail. */
+function CopyCommandButton(props: {command: string}) {
+  const [copied, setCopied] = useState(false);
+  const timeoutRef = useRef<number | undefined>(undefined);
+
+  useEffect(() => {
+    return () => {
+      if (timeoutRef.current !== undefined) {
+        window.clearTimeout(timeoutRef.current);
+      }
+    };
+  }, []);
+
+  const clipboard = clipboardWriteApi();
+  if (!clipboard) {
+    return null;
+  }
+
+  const handleClick = () => {
+    void clipboard
+      .writeText(props.command)
+      .then(() => {
+        setCopied(true);
+        if (timeoutRef.current !== undefined) {
+          window.clearTimeout(timeoutRef.current);
+        }
+        timeoutRef.current = window.setTimeout(() => {
+          setCopied(false);
+        }, COPY_CONFIRMATION_MS);
+      })
+      .catch((error: unknown) => {
+        console.warn('[on-device-ai] copy command failed', error);
+      });
+  };
+
+  return (
+    <button
+      type='button'
+      class='ai-assist-copy-button ghost'
+      disabled={copied}
+      onClick={handleClick}
+    >
+      {copied ? 'コピーしました' : 'コピー'}
+    </button>
   );
 }

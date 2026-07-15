@@ -17,7 +17,10 @@
  */
 
 import type {AssistIntent} from './assistIntent.js';
-import type {FinalizedAssistAnswer} from './assistAnswerPipeline.js';
+import type {
+  AssistNextStepVerdict,
+  FinalizedAssistAnswer,
+} from './assistAnswerPipeline.js';
 
 /** "why_explanation": the prose is the primary content, and any grounded
  * command is at most a subordinate reference. "next_step": the existing
@@ -55,4 +58,19 @@ export function resolveAnswerPresentation(
   // repair_candidate/request_context: keep the existing alert/note display,
   // unaffected by intent.
   return {mode: 'next_step', showCommandAs: 'primary'};
+}
+
+/** Verdicts whose displayed command may be offered a "コピー" (copy to
+ * clipboard) affordance: a safely-grounded command ('ok') or one merely
+ * flagged for manual confirmation ('danger_confirm'). Every other verdict
+ * that still shows a command (repair_candidate/unverified) — and every
+ * verdict that hides its command outright (danger_blocked/rejected/
+ * redundant) — must not be copyable, since those are either not vetted or
+ * deliberately suppressed. */
+const COPYABLE_NEXT_STEP_VERDICTS: ReadonlySet<AssistNextStepVerdict> = new Set(
+  ['ok', 'danger_confirm']
+);
+
+export function canCopyAssistCommand(verdict: AssistNextStepVerdict): boolean {
+  return COPYABLE_NEXT_STEP_VERDICTS.has(verdict);
 }

@@ -159,6 +159,48 @@ export function describeAssistAvailability(
   }
 }
 
+/** Explanatory copy shown in place of the ASSIST panel's null-state when the
+ * on-device model isn't (yet) usable — see
+ * describeAssistUnavailableNotice(). `hint` is an optional supplementary line
+ * (e.g. which browser/version does support the feature). */
+export interface AssistUnavailableNotice {
+  message: string;
+  hint?: string;
+}
+
+/**
+ * Describes the ASSIST panel's undefined/unsupported/unavailable states for
+ * display, replacing the silent empty space AiAssistPanel previously left
+ * under the "ASSIST — ソラ (AI)" heading (it returned null in all three
+ * cases). Distinct from describeAssistAvailability() above, which renders the
+ * short one-line status text used once the panel is otherwise interactive
+ * (downloadable/downloading/available) — this covers the states where no
+ * interactive panel is shown at all.
+ */
+export function describeAssistUnavailableNotice(
+  availability: AssistAvailability | undefined
+): AssistUnavailableNotice {
+  switch (availability) {
+    case undefined:
+      return {message: 'AIの利用可否を確認中…'};
+    case 'unsupported':
+      return {
+        message:
+          'このブラウザはオンデバイスAIに対応していません。AIアシストなしでもすべてのシナリオをプレイできます。',
+        hint: 'Chrome の内蔵AI(Gemini Nano / Prompt API)に対応したバージョンでは利用できる場合があります。',
+      };
+    case 'unavailable':
+      return {
+        message:
+          'AIモデルを利用できません(端末の空き容量やフラグ設定をご確認ください)。AIアシストなしでもプレイできます。',
+      };
+    default:
+      // Not expected to be called for downloadable/downloading/available —
+      // AiAssistPanel only reaches this path for the three states above.
+      return {message: ''};
+  }
+}
+
 export function clampDownloadRatio(loaded: number): number {
   return Number.isFinite(loaded) ? Math.min(Math.max(loaded, 0), 1) : 0;
 }

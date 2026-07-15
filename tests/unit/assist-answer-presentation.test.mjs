@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {tsImport} from 'tsx/esm/api';
 
-const {resolveAnswerPresentation} = await tsImport(
+const {canCopyAssistCommand, resolveAnswerPresentation} = await tsImport(
   '../../apps/web/src/pure/assistAnswerPresentation.ts',
   import.meta.url
 );
@@ -95,4 +95,24 @@ test('resolveAnswerPresentation is hidden for a non-why question with no next st
 
   assert.equal(result.mode, 'next_step');
   assert.equal(result.showCommandAs, 'hidden');
+});
+
+test('canCopyAssistCommand allows copying a safely-grounded command', () => {
+  assert.equal(canCopyAssistCommand('ok'), true);
+});
+
+test('canCopyAssistCommand allows copying a command that only needs manual confirmation', () => {
+  assert.equal(canCopyAssistCommand('danger_confirm'), true);
+});
+
+test('canCopyAssistCommand refuses to copy blocked, rejected, or downgraded commands', () => {
+  assert.equal(canCopyAssistCommand('danger_blocked'), false);
+  assert.equal(canCopyAssistCommand('rejected'), false);
+  assert.equal(canCopyAssistCommand('redundant'), false);
+});
+
+test('canCopyAssistCommand refuses to copy commands that are not fully vetted', () => {
+  assert.equal(canCopyAssistCommand('unverified'), false);
+  assert.equal(canCopyAssistCommand('repair_candidate'), false);
+  assert.equal(canCopyAssistCommand('request_context'), false);
 });
