@@ -138,13 +138,9 @@ export function drawInputDock(
   const allOk = recovery?.lastCheck?.allOk === true;
 
   surface.ctx.fillStyle = palette.bgPanelDark;
-  surface.ctx.fillRect(0, 810, logicalWidth, 210);
+  surface.ctx.fillRect(0, 906, logicalWidth, 174);
 
   drawRecoveryStatus(surface, recovery);
-
-  surface.ctx.fillStyle = palette.textMuted;
-  surface.ctx.font = monoFont(14);
-  surface.ctx.fillText('INPUT', input.x, input.y - 10);
 
   surface.ctx.fillStyle = palette.bgTerminal;
   roundRect(surface.ctx, input.x, input.y, input.width, input.height, 8);
@@ -269,8 +265,8 @@ function drawRecoveryStatus(
   const x = inputDockRects.input.x;
   const maxWidth =
     inputDockRects.trainComplete.x + inputDockRects.trainComplete.width - x;
-  const topY = 822;
-  const lineHeight = 20;
+  const topY = 918;
+  const lineHeight = 18;
 
   if (recovery.checking) {
     ctx.fillStyle = palette.textMuted;
@@ -304,25 +300,24 @@ function drawRecoveryStatus(
   }
 
   const failing = lastCheck.checks.filter((check) => !check.ok);
+  const visible = failing.slice(0, 2);
   ctx.fillStyle = palette.textWarning;
   ctx.font = uiFont(16, 'bold');
-  ctx.fillText(`未達条件 ${String(failing.length)} 件`, x, topY);
+  ctx.fillText(
+    failing.length > visible.length
+      ? `未達条件 ${String(failing.length)} 件(先頭${String(visible.length)}件を表示)`
+      : `未達条件 ${String(failing.length)} 件`,
+    x,
+    topY
+  );
 
   ctx.font = monoFont(15);
   ctx.fillStyle = palette.textSecondary;
-  const visible = failing.slice(0, 3);
   for (const [index, check] of visible.entries()) {
     ctx.fillText(
       `・${truncateToWidth(ctx, check.label, maxWidth - 20)}`,
       x,
       topY + lineHeight * (index + 1)
-    );
-  }
-  if (failing.length > visible.length) {
-    ctx.fillText(
-      `他 ${String(failing.length - visible.length)} 件`,
-      x,
-      topY + lineHeight * (visible.length + 1)
     );
   }
 }
