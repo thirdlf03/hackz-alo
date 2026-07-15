@@ -256,6 +256,10 @@ button:disabled {
   color: var(--accent-primary-bright);
 }
 
+.briefing-panel h1 {
+  font-size: 40px;
+}
+
 .lobby-lead {
   margin: 6px 0 0;
   color: var(--text-secondary);
@@ -527,11 +531,11 @@ button:disabled {
 
 .briefing-panel {
   display: grid;
-  gap: 16px;
-  margin-top: 50px;
+  gap: 12px;
+  margin-top: 16px;
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-l);
-  padding: 28px;
+  padding: 22px 28px;
   background: var(--surface-overlay);
 }
 
@@ -548,19 +552,19 @@ button:disabled {
 
 .briefing-panel ul {
   display: grid;
-  gap: 10px;
+  gap: 8px;
   margin: 0;
   padding: 4px 0 4px 18px;
   border-left: 2px solid var(--border-default);
   list-style: none;
   color: #b7d3bd;
-  line-height: 1.7;
+  line-height: 1.6;
 }
 
 .briefing-panel fieldset {
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-l);
-  padding: 16px;
+  padding: 12px 16px;
   margin: 0;
 }
 
