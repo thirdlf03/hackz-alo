@@ -32,6 +32,11 @@ test('select screen', async ({page}) => {
 
 test('scenario-list screen', async ({page}) => {
   await page.goto('/');
+  // CI の vite dev サーバーは初回描画が遅く、白紙のまま click が走って
+  // タイムアウトすることがあるため、描画完了を待ってからクリックする。
+  await expect(page.getByRole('button', {name: /初級/})).toBeVisible({
+    timeout: 30_000,
+  });
   await page.getByRole('button', {name: /初級/}).click();
   await expect(page.getByRole('heading', {name: /初級シナリオ/})).toBeVisible();
   await waitForFontsReady(page);
@@ -52,6 +57,11 @@ test('briefing screen', async ({page}) => {
 
 test('lobby screen', async ({page}) => {
   await page.goto('/');
+  // CI の vite dev サーバーは初回描画が遅く、白紙のまま click が走って
+  // タイムアウトすることがあるため、描画完了を待ってからクリックする。
+  await expect(page.getByRole('button', {name: /初級/})).toBeVisible({
+    timeout: 30_000,
+  });
   await page.getByRole('button', {name: /初級/}).click();
   const sessionResponse = page.waitForResponse(
     (response) =>
@@ -119,6 +129,9 @@ test('result screen (success)', async ({page}) => {
       page.locator('.result-stats dd'),
       page.locator('.result-highlights'),
       page.locator('.result-session-meta'),
+      // AIポストモーテムパネルは on-device AI availability の非同期判定後に
+      // 描画されるため、撮影タイミングによって出たり出なかったりする。
+      page.locator('.postmortem-panel'),
     ],
   });
 });
@@ -139,6 +152,9 @@ test('result screen (fired)', async ({page}) => {
       page.locator('.result-stats dd'),
       page.locator('.result-highlights'),
       page.locator('.result-session-meta'),
+      // AIポストモーテムパネルは on-device AI availability の非同期判定後に
+      // 描画されるため、撮影タイミングによって出たり出なかったりする。
+      page.locator('.postmortem-panel'),
     ],
   });
 });

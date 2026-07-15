@@ -50,6 +50,11 @@ export async function openScenarioBriefing(
   const scenarioName = options.scenarioName ?? DEFAULT_SCENARIO;
   const difficulty = options.difficulty ?? /初級/;
   await page.goto(options.perf ? '/?perf=1' : '/');
+  // CI の vite dev サーバーは初回描画が遅く、白紙のまま click が走って
+  // タイムアウトすることがあるため、描画完了を待ってからクリックする。
+  await expect(page.getByRole('button', {name: difficulty})).toBeVisible({
+    timeout: 30_000,
+  });
   await page.getByRole('button', {name: difficulty}).click();
   const scenarioButton = page.getByRole('button', {name: scenarioName});
   const sessionResponse = page.waitForResponse(
