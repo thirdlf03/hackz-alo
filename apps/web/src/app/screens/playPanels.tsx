@@ -83,13 +83,17 @@ export function TeamExercisePanel(props: {
         </p>
       )}
       <section aria-label='Runbook 進捗'>
-        <h2>RUNBOOK</h2>
-        <RunbookProgressPanel
-          activeRunbook={props.activeRunbook}
-          runbookProgress={props.runbookProgress}
-          disabled={!props.canContribute}
-          onMarkStep={props.onMarkRunbookStep}
-        />
+        <details class='runbook-panel-details' open>
+          <summary>
+            <h2>RUNBOOK</h2>
+          </summary>
+          <RunbookProgressPanel
+            activeRunbook={props.activeRunbook}
+            runbookProgress={props.runbookProgress}
+            disabled={!props.canContribute}
+            onMarkStep={props.onMarkRunbookStep}
+          />
+        </details>
       </section>
       <section class='npc-panel' aria-label='AIアシスタント'>
         <h2>ASSIST — ソラ (AI)</h2>
@@ -215,7 +219,6 @@ export function MonitorPipToolbar(props: {pip: MonitorPipControls}) {
           </button>
         );
       })}
-      <span class='play-pip-toolbar-hint'>— 常時最前面の小窓にミラー表示</span>
     </div>
   );
 }

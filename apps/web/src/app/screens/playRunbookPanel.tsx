@@ -21,12 +21,6 @@ const runbookStepMarkers: Record<RunbookStepStatus, string> = {
 
 type RunbookManualStatus = 'done' | 'failed' | 'skipped';
 
-const runbookManualStatusLabels: Record<RunbookManualStatus, string> = {
-  done: '完了',
-  failed: '失敗',
-  skipped: 'スキップ',
-};
-
 export function RunbookProgressPanel(props: {
   activeRunbook: RunbookDefinition | undefined;
   runbookProgress: GameRenderState['runbookProgress'];
@@ -87,46 +81,30 @@ function RunbookStepRow(props: {
   disabled: boolean;
   onUpdate: (status: RunbookManualStatus | null) => void;
 }) {
-  const manualValue =
-    props.status === 'done' ||
-    props.status === 'failed' ||
-    props.status === 'skipped'
-      ? props.status
-      : '';
+  const done = props.status === 'done';
   return (
     <li class={`team-task runbook-step-${props.status}`}>
       <span class='team-task-marker' aria-hidden='true'>
         {runbookStepMarkers[props.status]}
       </span>
-      <span class='team-task-title'>
-        {props.instruction}
-        {props.evidence && (
-          <span class='runbook-step-evidence'>
-            ⌨ 実行済み {formatWallClockTime(props.evidence.at)}
-          </span>
-        )}
-      </span>
-      {!props.disabled && (
-        <div class='team-item-actions'>
-          <select
-            value={manualValue}
-            aria-label={`${props.instruction}の状態`}
-            onChange={(event) => {
-              const value = event.currentTarget.value;
-              props.onUpdate(
-                value === '' ? null : (value as RunbookManualStatus)
-              );
-            }}
-          >
-            <option value=''>解除</option>
-            {Object.entries(runbookManualStatusLabels).map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
+      <button
+        type='button'
+        class='runbook-step-toggle'
+        aria-pressed={done}
+        disabled={props.disabled}
+        onClick={() => {
+          props.onUpdate(done ? null : 'done');
+        }}
+      >
+        <span class='team-task-title'>
+          {props.instruction}
+          {props.evidence && (
+            <span class='runbook-step-evidence'>
+              ⌨ 実行済み {formatWallClockTime(props.evidence.at)}
+            </span>
+          )}
+        </span>
+      </button>
     </li>
   );
 }
