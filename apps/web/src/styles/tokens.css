@@ -83,10 +83,6 @@
      固定値にしている(calc(var(--touch-min) + 20px) だけでは不足)。 */
   --topbar-height: 84px;
   --play-viewport-height: calc(100dvh - var(--topbar-height));
-  /* canvas 直下に通常フローで置く PiP ツールバー用に確保する高さ。
-     canvas の max-height から差し引き、canvas + ツールバーの合計が
-     --play-viewport-height を超えてページスクロールが出ないようにする。 */
-  --play-pip-toolbar-space: 40px;
 
   /* Canvas */
   --canvas-bg: #040604;

@@ -27,6 +27,11 @@ interface InitialGameStateOptions {
   recordingSaveEnabled?: boolean;
   speed?: number;
   localParticipantId?: string;
+  /** Server-confirmed recovery time carried over from a session snapshot
+   * (e.g. resuming from an invite link), so the incident banner already
+   * reads "復旧確認済み" before the SSE connection delivers its own
+   * snapshot. See GameRenderState.recoveryConfirmedAtMs. */
+  recoveryConfirmedAtMs?: number;
 }
 
 const DEFAULT_EDITOR_FILES: EditorPanelState['files'] = [
@@ -123,6 +128,9 @@ export function createInitialGameState(
       injects: [],
     },
     clickEffects: [],
+    ...(options.recoveryConfirmedAtMs !== undefined
+      ? {recoveryConfirmedAtMs: options.recoveryConfirmedAtMs}
+      : {}),
     recording: {
       status: options.recordingStatus ?? 'idle',
       chunkCount: 0,
@@ -515,6 +523,13 @@ export function setRetireConfirming(
   confirming: boolean
 ): GameRenderState {
   return reduceGameState(state, {type: 'set_retire_confirming', confirming});
+}
+
+export function setRecoveryConfirmedAt(
+  state: GameRenderState,
+  atMs: number
+): GameRenderState {
+  return reduceGameState(state, {type: 'set_recovery_confirmed_at', atMs});
 }
 
 function emptyMetrics(): MetricsSnapshot {

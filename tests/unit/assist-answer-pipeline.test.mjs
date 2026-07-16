@@ -50,7 +50,8 @@ test('finalizeAssistAnswer keeps a repaired command as a non-auto-replaced candi
   const result = finalizeAssistAnswer(answer, grounding);
 
   assert.equal(result.nextStep?.verdict, 'repair_candidate');
-  assert.equal(result.nextStep?.command, grounding.nextStep);
+  assert.equal(result.nextStep?.command, 'ss -lt で確認する');
+  assert.ok(!result.nextStep?.command.includes('次の一手'));
   assert.equal(result.nextStep?.repairSuggestion, 'ss -ltnp');
 });
 

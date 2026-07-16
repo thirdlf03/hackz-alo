@@ -93,7 +93,12 @@ export function finalizeAssistAnswer(
     return {prose};
   }
 
-  const command = grounding.nextStep;
+  // grounding.nextStep still carries the leading "次の一手" marker (see
+  // extractNextStepText in assistGrounding.ts); strip it here so every
+  // FinalizedAssistNextStepCommand.command is a bare, display-ready command
+  // with no marker to duplicate the UI's own "次の一手:" / "参考コマンド:"
+  // labels (see AiAssistPanel.tsx) or leak into the copy-to-clipboard text.
+  const command = stripNextStepMarker(grounding.nextStep);
 
   // "不足: ..." is not a command: skip danger/redundant/grounding checks
   // entirely and surface the requested info instead. This must run before
@@ -176,18 +181,18 @@ export function finalizeAssistAnswer(
 /**
  * True when the next-step command (normalized: NFKC, backticks stripped,
  * whitespace collapsed, lowercased — via normalizeForGrounding) exactly
- * matches one of the recently executed terminal commands. `command` is the
- * raw grounding.nextStep text, which still carries the leading "次の一手"
- * marker (see extractNextStepText in assistGrounding.ts); that marker is
- * stripped first so it can be compared against a bare shell command from
- * commandHistory.
+ * matches one of the recently executed terminal commands. `command` is
+ * already marker-free by the time it reaches here (finalizeAssistAnswer
+ * strips the leading "次の一手" marker up front via stripNextStepMarker), so
+ * this only needs to normalize before comparing against a bare shell command
+ * from commandHistory.
  */
 function isRecentlyExecuted(
   command: string,
   recentCommands: RecentAssistCommand[] | undefined
 ): boolean {
   if (!recentCommands || recentCommands.length === 0) return false;
-  const normalizedCommand = normalizeForGrounding(stripNextStepMarker(command));
+  const normalizedCommand = normalizeForGrounding(command);
   if (!normalizedCommand) return false;
   return recentCommands.some(
     (entry) => normalizeForGrounding(entry.command) === normalizedCommand

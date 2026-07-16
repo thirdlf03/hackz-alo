@@ -68,7 +68,16 @@ export function drawHeader(
 }
 
 /** The single, unmissable incident banner at the top of the play area,
- * matching the 6a-5 mock's solid-red "!! 障害発生" bar exactly. */
+ * matching the 6a-5 mock's solid-red "!! 障害発生" bar exactly. Once recovery
+ * is confirmed, the bar switches to the game's existing green tone (same as
+ * drawRecoveryStatus()'s "全条件達成" line) to read as "復旧確認済み" instead
+ * of a still-active incident, while keeping the original alert message
+ * visible for context. Two sources feed "recovered", ORed together:
+ * state.recoveryConfirmedAtMs (the server-confirmed value, shared across
+ * participants and restored on reconnect/mid-join via invite-link join or
+ * SSE resubscribe — see StoredSession.recoveryConfirmedAtMs) and
+ * state.recovery.lastCheck.allOk (this tab's own client-local dry-run
+ * check, for instant feedback before the SSE round-trip lands). */
 export function drawAlerts(
   surface: CanvasRenderSurface,
   state: GameRenderState
@@ -79,39 +88,31 @@ export function drawAlerts(
   const ctx = surface.ctx;
   const box = alertBandRect;
   const midY = box.y + box.height / 2 + 7;
+  const recovered =
+    state.recoveryConfirmedAtMs !== undefined ||
+    state.recovery?.lastCheck?.allOk === true;
 
-  ctx.fillStyle = palette.borderDanger;
+  ctx.fillStyle = recovered ? palette.accentGreen : palette.borderDanger;
   roundRect(ctx, box.x, box.y, box.width, box.height, 3);
   ctx.fill();
 
-  ctx.fillStyle = palette.textOnDangerStrong;
+  ctx.fillStyle = recovered
+    ? palette.textOnAccent
+    : palette.textOnDangerStrong;
   ctx.font = displayFont(19);
-  const label = '!! 障害発生';
+  const label = recovered ? '復旧確認済み' : '!! 障害発生';
   ctx.fillText(label, box.x + 18, midY);
   const labelWidth = ctx.measureText(label).width;
 
-  const remainingMs = Math.max(
-    0,
-    state.clock.timeLimitMs - state.clock.elapsedMs
-  );
-  const countdown = `復旧まで ${formatTime(remainingMs)}`;
-  ctx.font = monoFont(15, 'bold');
-  const countdownWidth = ctx.measureText(countdown).width;
-
   const messageX = box.x + 18 + labelWidth + 16;
-  const messageMaxWidth =
-    box.x + box.width - 18 - countdownWidth - 16 - messageX;
-  ctx.fillStyle = palette.textOnDangerBody;
+  const messageMaxWidth = box.x + box.width - 18 - messageX;
+  ctx.fillStyle = recovered ? palette.textOnAccent : palette.textOnDangerBody;
   ctx.font = monoFont(16, 'bold');
   ctx.fillText(
     truncateToWidth(ctx, alert.message, Math.max(40, messageMaxWidth)),
     messageX,
     midY
   );
-
-  ctx.fillStyle = palette.textOnDangerStrong;
-  ctx.font = monoFont(15, 'bold');
-  ctx.fillText(countdown, box.x + box.width - 18 - countdownWidth, midY);
 }
 
 export function drawInputDock(

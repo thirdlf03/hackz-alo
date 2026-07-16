@@ -14,10 +14,12 @@ import {
   notificationBellRegion,
   retireConfirmButtonRects,
   rightPanelPrimaryTabAt,
+  runbookStepRowAt,
   runbookTabAt,
   chatComposeAt,
   type MonitorId,
   type RightPanelTab,
+  type RunbookStepHitRow,
 } from '../render/canvasLayout.js';
 
 export interface CanvasPoint {
@@ -36,6 +38,7 @@ export type CanvasAction =
   | {type: 'open_editor_file'; path: string}
   | {type: 'right_panel_tab'; tab: RightPanelTab}
   | {type: 'runbook_tab'; index: number; runbookId: string}
+  | {type: 'runbook_step_toggle'; stepId: string}
   | {type: 'notification_bell'}
   | {type: 'dismiss_navigation'; stepId: string}
   | {type: 'close_expanded_monitor'}
@@ -48,7 +51,8 @@ export type CanvasAction =
 export function resolveCanvasAction(
   point: CanvasPoint,
   state: GameRenderState,
-  scenario?: ScenarioDefinition
+  scenario?: ScenarioDefinition,
+  runbookStepRows: RunbookStepHitRow[] = []
 ): CanvasAction {
   // The retire confirmation modal is topmost while open: it absorbs every
   // click except its own two buttons, so nothing behind it (input dock,
@@ -118,6 +122,15 @@ export function resolveCanvasAction(
         };
       }
     }
+
+    const stepId = runbookStepRowAt(
+      point.x,
+      point.y,
+      runbookStepRows,
+      activePanelTab,
+      expandedMonitor
+    );
+    if (stepId) return {type: 'runbook_step_toggle', stepId};
   }
 
   if (containsCanvasPoint(notificationBellRegion, point.x, point.y)) {

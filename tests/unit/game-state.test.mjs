@@ -6,6 +6,7 @@ import {
   activateChatCompose,
   blurCommandInput,
   computeNarrativeHour,
+  createInitialGameState,
   createPlayState,
   baseScenario,
   decayWorldOverlays,
@@ -15,6 +16,7 @@ import {
   setActiveRunbook,
   setCenterTool,
   setRecoveryChecking,
+  setRecoveryConfirmedAt,
   setRecoveryLastCheck,
   setRetireConfirming,
   setRightPanelTab,
@@ -27,6 +29,7 @@ import {
   updateEditorPanel,
   visibleRunbooks,
 } from '../helpers/game-fixtures.mjs';
+import {createEmptyTerminalMirror} from '../../apps/web/src/game/terminal/mirror.ts';
 
 test('visibleRunbooks filters by availableAtMs and pulses on arrival', () => {
   const scenario = {
@@ -364,6 +367,47 @@ test('setRecoveryLastCheck preserves an in-progress retireConfirming flag', () =
     lastCheck,
     retireConfirming: true,
   });
+});
+
+test('setRecoveryConfirmedAt records the server-confirmed recovery time', () => {
+  const initial = createPlayState();
+  assert.equal(initial.recoveryConfirmedAtMs, undefined);
+
+  const confirmed = setRecoveryConfirmedAt(initial, 12_345);
+  assert.equal(confirmed.recoveryConfirmedAtMs, 12_345);
+});
+
+test('setRecoveryConfirmedAt keeps the first confirmation time (idempotent)', () => {
+  const confirmed = setRecoveryConfirmedAt(createPlayState(), 111);
+  const again = setRecoveryConfirmedAt(confirmed, 222);
+  assert.equal(again, confirmed, 'no-op once already confirmed');
+  assert.equal(again.recoveryConfirmedAtMs, 111);
+});
+
+test('createInitialGameState carries recoveryConfirmedAtMs through when passed', () => {
+  const scenario = baseScenario();
+  const withRecovery = createInitialGameState(
+    scenario,
+    'sess_test',
+    'repl_test',
+    createEmptyTerminalMirror(),
+    {recoveryConfirmedAtMs: 12_345}
+  );
+  assert.equal(withRecovery.recoveryConfirmedAtMs, 12_345);
+
+  // Guards the mid-join rebuild in useExercisePhaseSync.ts, which passes
+  // through gameStateRef.current?.recoveryConfirmedAtMs (possibly
+  // undefined) via the same conditional-spread pattern: omitting the
+  // option must leave the field entirely absent, not `undefined`-valued
+  // (exactOptionalPropertyTypes), so a guest who hasn't received a
+  // confirmation yet doesn't get a stray key.
+  const withoutRecovery = createInitialGameState(
+    scenario,
+    'sess_test',
+    'repl_test',
+    createEmptyTerminalMirror()
+  );
+  assert.equal('recoveryConfirmedAtMs' in withoutRecovery, false);
 });
 
 test('setRetireConfirming toggles the confirmation overlay flag', () => {

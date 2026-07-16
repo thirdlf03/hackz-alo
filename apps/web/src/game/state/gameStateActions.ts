@@ -54,4 +54,5 @@ export type GameStateAction =
     }
   | {type: 'set_recovery_checking'; checking: boolean}
   | {type: 'set_recovery_last_check'; lastCheck: RecoveryLastCheck}
-  | {type: 'set_retire_confirming'; confirming: boolean};
+  | {type: 'set_retire_confirming'; confirming: boolean}
+  | {type: 'set_recovery_confirmed_at'; atMs: number};

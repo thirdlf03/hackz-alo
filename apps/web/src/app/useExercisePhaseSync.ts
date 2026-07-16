@@ -38,6 +38,13 @@ export function useExercisePhaseSync(bindings: SessionRuntimeBindings) {
     if (screen !== 'lobby' && screen !== 'briefing') return;
     if (isStarting || !session || !scenario) return;
     terminalBridgeRef.current?.destroyTerminal();
+    // Carry over recoveryConfirmedAtMs from whatever state this client
+    // already has: the initial SSE 'snapshot' (handled by
+    // joinSessionFromInvite / applyClockSnapshot) arrives before this
+    // 'exercise_state'-driven rebuild, so dropping it here would flip a
+    // mid-join guest's incident banner back to "still active" even though
+    // the server already confirmed recovery.
+    const recoveryConfirmedAtMs = refs.gameStateRef.current?.recoveryConfirmedAtMs;
     refs.elapsedMsRef.current = 0;
     refs.lastTickAtRef.current = performance.now();
     recordingRef.current?.resetRecordingClock();
@@ -52,6 +59,7 @@ export function useExercisePhaseSync(bindings: SessionRuntimeBindings) {
           sessionStatus: 'running',
           speed: gameSpeed,
           localParticipantId: participantId,
+          ...(recoveryConfirmedAtMs !== undefined ? {recoveryConfirmedAtMs} : {}),
         }
       )
     );

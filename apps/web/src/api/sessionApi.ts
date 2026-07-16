@@ -65,6 +65,9 @@ export type SessionSnapshotResponse = SessionClockResponse & {
   elapsedMs: number;
   scenario: ScenarioDefinition;
   serviceHealth?: Record<string, ServiceHealth>;
+  /** Server-confirmed recovery time (ms), set once the first recovery-check
+   * reports allOk. See StoredSession.recoveryConfirmedAtMs. */
+  recoveryConfirmedAtMs?: number;
 };
 
 export class SessionApi {

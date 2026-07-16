@@ -36,7 +36,6 @@ import {
   type GroundingBadgeInfo,
 } from '../pure/assistGroundingBadge.js';
 import {buildCanvasViewModel} from '../pure/canvasViewModel.js';
-import {captureRectPresets} from '../pure/captureRectPresets.js';
 import {serializeScreenLines} from '../pure/serializeScreenLines.js';
 import {parseRunbookSteps, resolveStepStatuses} from '../pure/runbookSteps.js';
 import {
@@ -59,8 +58,8 @@ type CompletionCard =
   | {kind: 'error'};
 
 /** The current (not yet done/skipped) Runbook step's instruction, if any —
- * mirrors the "current" step derivation used by RunbookProgressPanel's
- * runbook-step-current-banner (playRunbookPanel.tsx) and by
+ * mirrors the "current" step derivation used by this file's own
+ * runbook-step-current-banner (see below) and by
  * buildAssistStateInput's currentStep. Used as the deterministic fallback
  * shown in place of a redundant "次の一手" suggestion. */
 function getCurrentRunbookStepInstruction(
@@ -193,7 +192,7 @@ export function AiAssistPanel(props: {
   // Assembles the state block input from cached game state only: the
   // recovery-check result is whatever useSessionRuntime last cached (no new
   // request is fired here), and the current Runbook step is re-derived the
-  // same way playRunbookPanel.tsx does.
+  // same way getCurrentRunbookStepInstruction above does.
   const buildAssistStateInput = (): AssistStateBlockInput => {
     const state = props.gameStateRef.current;
     const activeRunbook = state?.monitors.right.activeRunbook;
@@ -514,28 +513,10 @@ export function AiAssistPanel(props: {
     setBusy(false);
   };
 
-  const applyCaptureRectPreset = (rect: CanvasCaptureRect | undefined) => {
+  const resetToFullScreenCapture = () => {
     discardPreparedSession();
-    setCaptureRect(rect);
-    if (rect === undefined) {
-      setPreviewUrl(undefined);
-      return;
-    }
-    const canvas = props.canvasRef.current;
-    if (canvas) {
-      setPreviewUrl(captureCanvasSnapshot(canvas, rect).previewUrl);
-    }
-  };
-
-  const isActiveCaptureRectPreset = (rect: CanvasCaptureRect | undefined) => {
-    if (rect === undefined) return captureRect === undefined;
-    return (
-      captureRect !== undefined &&
-      captureRect.x === rect.x &&
-      captureRect.y === rect.y &&
-      captureRect.width === rect.width &&
-      captureRect.height === rect.height
-    );
+    setCaptureRect(undefined);
+    setPreviewUrl(undefined);
   };
 
   const beginRegionSelection = () => {
@@ -634,58 +615,41 @@ export function AiAssistPanel(props: {
           スクショを添付する
         </label>
         {attachScreenshot && (
-          <div class='ai-assist-capture-controls'>
+          <div class='ai-assist-preset-controls'>
             <button
               type='button'
+              class={`ai-assist-preset-button${captureRect === undefined ? ' active' : ''}`}
+              aria-pressed={captureRect === undefined}
+              disabled={busy}
+              onClick={resetToFullScreenCapture}
+            >
+              全画面
+            </button>
+            <button
+              type='button'
+              class={`ai-assist-preset-button${captureRect !== undefined ? ' active' : ''}`}
+              aria-pressed={captureRect !== undefined}
               disabled={busy}
               onClick={beginRegionSelection}
             >
-              {captureRect ? '範囲を選び直す' : '範囲を選択'}
+              範囲を選択
             </button>
-            {captureRect && (
-              <button
-                type='button'
-                class='ghost'
-                disabled={busy}
-                onClick={() => {
-                  discardPreparedSession();
-                  setCaptureRect(undefined);
-                  setPreviewUrl(undefined);
-                }}
-              >
-                全画面に戻す
-              </button>
-            )}
+          </div>
+        )}
+        {attachScreenshot && captureRect && (
+          <div class='ai-assist-capture-controls'>
             <span>
-              {captureRect
-                ? `${String(captureRect.width)}×${String(captureRect.height)} を添付`
-                : '未選択の場合はゲーム画面全体'}
+              {`${String(captureRect.width)}×${String(captureRect.height)} を添付`}
             </span>
           </div>
         )}
-        {attachScreenshot && (
-          <div class='ai-assist-preset-controls'>
-            {captureRectPresets().map((preset) => (
-              <button
-                key={preset.id}
-                type='button'
-                class={`ai-assist-preset-button${isActiveCaptureRectPreset(preset.rect) ? ' active' : ''}`}
-                aria-pressed={isActiveCaptureRectPreset(preset.rect)}
-                disabled={busy}
-                onClick={() => {
-                  applyCaptureRectPreset(preset.rect);
-                }}
-              >
-                {preset.label}
-              </button>
-            ))}
-          </div>
+        {availability !== 'available' && (
+          <p class='ai-assist-status' role='status'>
+            {availability === 'downloading' && downloadProgress !== undefined
+              ? `${describeAssistAvailability(availability)} ${formatDownloadProgress(downloadProgress)}`
+              : describeAssistAvailability(availability)}
+          </p>
         )}
-        <p class='ai-assist-status' role='status'>
-          {availability === 'downloading' && downloadProgress !== undefined
-            ? `${describeAssistAvailability(availability)} ${formatDownloadProgress(downloadProgress)}`
-            : describeAssistAvailability(availability)}
-        </p>
         {availability === 'downloading' && (
           <ModelDownloadProgress progress={downloadProgress} />
         )}

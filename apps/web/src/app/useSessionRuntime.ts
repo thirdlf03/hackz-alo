@@ -14,6 +14,7 @@ import {
   advanceGameState,
   createInitialGameState,
   setRecoveryChecking,
+  setRecoveryConfirmedAt,
   setRecoveryLastCheck,
   submitPlayerChatMessage,
 } from '../game/state/gameState.js';
@@ -339,7 +340,8 @@ export function useSessionRuntime(options: {
   }
 
   const applyClockSnapshot = (
-    clock: SessionClockResponse & Pick<SessionSnapshotResponse, 'serviceHealth'>
+    clock: SessionClockResponse &
+      Pick<SessionSnapshotResponse, 'serviceHealth' | 'recoveryConfirmedAtMs'>
   ) => {
     elapsedMsRef.current = clock.gameTimeMs;
     lastTickAtRef.current = performance.now();
@@ -373,7 +375,15 @@ export function useSessionRuntime(options: {
         replayId
       );
     }
-    const versioned = withStateVersion(previous, next);
+    // Absent from the POST /clock response (see buildClockPayload), so this
+    // is a no-op there; the SSE 'snapshot' payload (buildSessionSnapshot)
+    // does carry it. setRecoveryConfirmedAt() is itself idempotent (first
+    // write wins), so re-delivery across snapshots is safe.
+    const withRecovery =
+      clock.recoveryConfirmedAtMs !== undefined
+        ? setRecoveryConfirmedAt(next, clock.recoveryConfirmedAtMs)
+        : next;
+    const versioned = withStateVersion(previous, withRecovery);
     gameStateWriteGuard.tag(versioned);
     gameStateRef.current = versioned;
     setGameState(versioned);
@@ -634,6 +644,9 @@ export function useSessionRuntime(options: {
             sessionStatus: snapshot.status,
             speed: gameSpeed,
             localParticipantId: participantId,
+            ...(snapshot.recoveryConfirmedAtMs !== undefined
+              ? {recoveryConfirmedAtMs: snapshot.recoveryConfirmedAtMs}
+              : {}),
           }
         )
       );

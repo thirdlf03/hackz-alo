@@ -23,6 +23,13 @@ export interface StoredSession {
   firedChatIds: string[];
   eventSeq: number;
   bufferedEvents: ReplayEvent[];
+  /** Wall-clock time (ms) the first recovery-check reported allOk, set once
+   * and never cleared — the server-side source of truth for the client's
+   * "復旧確認済み" incident-banner state (canvasRenderChrome.ts drawAlerts()),
+   * consistent across participants and restored on reconnect/mid-join (e.g.
+   * invite-link join, SSE resubscribe). See confirmRecoveryIfNeeded() in
+   * sessionRecoveryCheck.ts. Undefined means not yet confirmed. */
+  recoveryConfirmedAtMs?: number;
 }
 
 export type SessionBootstrap = Pick<

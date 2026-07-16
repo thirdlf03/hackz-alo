@@ -34,6 +34,7 @@ import {handleSessionRtcSignal} from './sessionRtc.js';
 import {handleSessionPagerEvent} from './sessionPagerEvents.js';
 import {
   checkRecoveryAction,
+  confirmRecoveryIfNeeded,
   type EvaluateConditionFn,
   type RecoveryCheckResult,
 } from './sessionRecoveryCheck.js';
@@ -381,7 +382,20 @@ export class SessionDurableObject implements DurableObject {
     const session = await this.requireRunningSession(
       'recovery check requires a running session'
     );
-    return jsonOk(await this.getRecoveryCheckResult(session));
+    const result = await this.getRecoveryCheckResult(session);
+    // Persist + broadcast the first allOk result so every participant's
+    // incident banner switches to "復旧確認済み" and it's restored on
+    // reconnect/mid-join, instead of staying a client-local, per-tab
+    // dry-run artifact.
+    await confirmRecoveryIfNeeded(session, result, {
+      persistSession: async (updated) => {
+        await this.state.storage.put('session', updated);
+      },
+      broadcastSnapshot: (updated) => {
+        this.sseHub.broadcast('snapshot', this.snapshotFor(updated));
+      },
+    });
+    return jsonOk(result);
   }
 
   private getRecoveryCheckResult(

@@ -83,9 +83,12 @@ export interface SessionRuntimeBindings {
   currentGameTimeMs: () => number;
   endSession: (mode: FinishMode) => Promise<void>;
   // Accepts both the full SSE snapshot payload and the narrower POST /clock
-  // response; only the optional serviceHealth field needs to be readable.
+  // response; only the optional serviceHealth/recoveryConfirmedAtMs fields
+  // need to be readable (recoveryConfirmedAtMs is absent from the POST
+  // /clock response, so it simply no-ops there).
   applyClockSnapshot: (
-    clock: SessionClockResponse & Pick<SessionSnapshotResponse, 'serviceHealth'>
+    clock: SessionClockResponse &
+      Pick<SessionSnapshotResponse, 'serviceHealth' | 'recoveryConfirmedAtMs'>
   ) => void;
   applyExerciseSnapshot: (snapshot: ExerciseSnapshot) => void;
   applyParticipantCursor: (event: ParticipantCursorEvent) => void;

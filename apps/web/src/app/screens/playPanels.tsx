@@ -3,20 +3,16 @@ import type {
   ExerciseTaskStatus,
   GameRenderState,
   IncidentLogEntryKind,
-  RunbookDefinition,
   ScenarioDefinition,
 } from '@incident/shared';
 import {formatTime} from '../../pure/canvasFormat.js';
 import {describeVoiceStatus} from '../../pure/voiceChat.js';
-import {PIP_MONITOR_LABELS, type PipMonitorId} from '../../pure/pipMonitor.js';
 import {AiAssistPanel} from '../AiAssistPanel.js';
 import {SpeechIncidentLogPanel} from '../SpeechIncidentLogPanel.js';
 import type {VoiceChatControls} from '../useVoiceChat.js';
-import type {MonitorPipControls} from '../useMonitorPip.js';
 import {participantRoleLabels} from './LobbyScreen.js';
 import {TaskRow, TaskComposer} from './playTaskPanel.js';
 import {IncidentLogRow, LogComposer} from './playIncidentLogPanel.js';
-import {RunbookProgressPanel} from './playRunbookPanel.js';
 
 export function TeamExercisePanel(props: {
   exercise: ExerciseSnapshot | undefined;
@@ -25,8 +21,6 @@ export function TeamExercisePanel(props: {
   gameStateRef: {current: GameRenderState | undefined};
   scenarioRef: {current: ScenarioDefinition | undefined};
   scenario: ScenarioDefinition | undefined;
-  activeRunbook: RunbookDefinition | undefined;
-  runbookProgress: GameRenderState['runbookProgress'];
   commandInputFocused: boolean;
   checkRecovery: () => Promise<void>;
   recoveryState: GameRenderState['recovery'];
@@ -43,12 +37,6 @@ export function TeamExercisePanel(props: {
   ) => void;
   onDeleteIncidentLog: (entryId: string) => void;
   onFireInject: (injectId: string) => void;
-  onMarkRunbookStep: (
-    runbookId: string,
-    bodyHash: string,
-    stepId: string,
-    status: 'done' | 'failed' | 'skipped' | null
-  ) => void;
   voice: VoiceChatControls;
 }) {
   const participants = props.exercise?.participants ?? [];
@@ -87,19 +75,6 @@ export function TeamExercisePanel(props: {
           Observer は閲覧専用です
         </p>
       )}
-      <section aria-label='Runbook 進捗'>
-        <details class='runbook-panel-details' open>
-          <summary>
-            <h2>RUNBOOK</h2>
-          </summary>
-          <RunbookProgressPanel
-            activeRunbook={props.activeRunbook}
-            runbookProgress={props.runbookProgress}
-            disabled={!props.canContribute}
-            onMarkStep={props.onMarkRunbookStep}
-          />
-        </details>
-      </section>
       <section class='npc-panel' aria-label='AIアシスタント'>
         <h2>ASSIST — ソラ (AI)</h2>
         <AiAssistPanel
@@ -110,24 +85,26 @@ export function TeamExercisePanel(props: {
           recoveryState={props.recoveryState}
         />
       </section>
-      <section>
-        <h2>TASKS</h2>
-        <ol class='team-list'>
-          {tasks.map((task) => (
-            <TaskRow
-              key={task.id}
-              task={task}
-              disabled={!props.canContribute}
-              onUpdate={props.onUpdateTask}
-              onDelete={props.onDeleteTask}
-            />
-          ))}
-        </ol>
-        <TaskComposer
-          disabled={!props.canContribute}
-          onCreateTask={props.onCreateTask}
-        />
-      </section>
+      {!isSolo && (
+        <section>
+          <h2>TASKS</h2>
+          <ol class='team-list'>
+            {tasks.map((task) => (
+              <TaskRow
+                key={task.id}
+                task={task}
+                disabled={!props.canContribute}
+                onUpdate={props.onUpdateTask}
+                onDelete={props.onDeleteTask}
+              />
+            ))}
+          </ol>
+          <TaskComposer
+            disabled={!props.canContribute}
+            onCreateTask={props.onCreateTask}
+          />
+        </section>
+      )}
       {!isSolo && hasInjects && (
         <section>
           <h2>INJECTS</h2>
@@ -194,39 +171,6 @@ export function TeamExercisePanel(props: {
         />
       </section>
     </aside>
-  );
-}
-
-/** gameCanvas のモニターを Document PiP へ「取り外す」ボタン列。 */
-export function MonitorPipToolbar(props: {pip: MonitorPipControls}) {
-  const monitors: PipMonitorId[] = ['metrics', 'chat'];
-  return (
-    <div class='play-pip-toolbar' role='group' aria-label='モニターの取り外し'>
-      <span class='play-pip-toolbar-label'>PiP:</span>
-      {monitors.map((monitorId) => {
-        const detached = props.pip.detached.includes(monitorId);
-        return (
-          <button
-            key={monitorId}
-            type='button'
-            class={detached ? 'active' : ''}
-            aria-pressed={detached}
-            disabled={!props.pip.supported}
-            title={
-              props.pip.supported
-                ? '常時最前面の PiP ウィンドウにミラー表示します'
-                : 'このブラウザは Document Picture-in-Picture に対応していません'
-            }
-            onClick={() => {
-              props.pip.toggle(monitorId);
-            }}
-          >
-            {detached ? '📌 戻す: ' : '📌 取り外す: '}
-            {PIP_MONITOR_LABELS[monitorId]}
-          </button>
-        );
-      })}
-    </div>
   );
 }
 

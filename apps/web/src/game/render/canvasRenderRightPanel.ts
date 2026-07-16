@@ -1,4 +1,8 @@
-import type {GameRenderState, RunbookDefinition} from '@incident/shared';
+import type {
+  GameRenderState,
+  RunbookDefinition,
+  RunbookStepStatus,
+} from '@incident/shared';
 import type {CanvasRenderSurface} from './canvasRenderSurface.js';
 import type {CanvasViewModel} from './canvasViewModel.js';
 import {roundRect, wrapText} from './canvasDrawUtils.js';
@@ -13,6 +17,12 @@ import {
   monitorContentHeight,
   rightPanelLayout,
 } from './canvasLayout.js';
+import {
+  layoutRunbookBody,
+  RUNBOOK_BODY_LINE_HEIGHT,
+  RUNBOOK_STEP_TEXT_INDENT,
+  type RunbookBodyLayout,
+} from './canvasRunbookStepLayout.js';
 
 export function drawRightPanel(
   surface: CanvasRenderSurface,
@@ -42,11 +52,14 @@ export function drawRightPanel(
     const bodyTop = layout.contentTop;
     const maxRunbookLines = Math.max(
       10,
-      Math.floor((monitorContentHeight - bodyTop - 16) / 24)
+      Math.floor(
+        (monitorContentHeight - bodyTop - 16) / RUNBOOK_BODY_LINE_HEIGHT
+      )
     );
     surface.ctx.fillStyle = palette.textPrimary;
     surface.ctx.font = uiFont(17);
-    if (runbooks.length === 0) {
+    const runbook = state.monitors.right.activeRunbook;
+    if (runbooks.length === 0 || !runbook) {
       wrapText(
         surface.ctx,
         'Runbook はまだ届いていない。',
@@ -58,15 +71,14 @@ export function drawRightPanel(
       );
       return;
     }
-    wrapText(
+    const bodyLayout = layoutRunbookBody(
       surface.ctx,
-      state.monitors.right.activeRunbook?.body ?? '',
-      0,
+      runbook,
+      state.runbookProgress,
       bodyTop,
-      470,
-      24,
       maxRunbookLines
     );
+    paintRunbookBody(surface, bodyLayout);
     return;
   }
 
@@ -201,5 +213,87 @@ export function drawChatCompose(
     surface.ctx.fillStyle = palette.accentGreenBg;
     surface.ctx.font = uiFont(14, 'bold');
     surface.ctx.fillText('送信', 416, boxY + 27);
+  }
+}
+
+/** Runbook 手順の状態ごとの表示記号。 */
+const runbookStepMarkers: Record<RunbookStepStatus, string> = {
+  pending: '·',
+  current: '▸',
+  done: '✓',
+  failed: '!',
+  skipped: '−',
+};
+
+function runbookStepMarkerColor(status: RunbookStepStatus): string {
+  switch (status) {
+    case 'current':
+      return palette.textWarning;
+    case 'done':
+      return palette.statusHealthy;
+    case 'failed':
+      return palette.statusCritical;
+    case 'pending':
+    case 'skipped':
+      return palette.textMuted;
+  }
+}
+
+function runbookStepTextColor(status: RunbookStepStatus): string {
+  switch (status) {
+    case 'current':
+      return palette.textWarning;
+    case 'failed':
+      return palette.statusCritical;
+    case 'pending':
+    case 'done':
+    case 'skipped':
+      return palette.textPrimary;
+  }
+}
+
+/** layoutRunbookBody() が計算した前置きテキスト・手順一覧を描画する。
+ * done/skipped は打ち消し線 + 減光、current はマーカー/文字色を強調し
+ * 背景を軽くハイライトする。 */
+function paintRunbookBody(surface: CanvasRenderSurface, body: RunbookBodyLayout) {
+  const ctx = surface.ctx;
+  ctx.font = uiFont(17);
+  ctx.fillStyle = palette.textPrimary;
+  for (const line of body.preambleLines) {
+    if (line.text) ctx.fillText(line.text, 0, line.y);
+  }
+
+  for (const row of body.rows) {
+    if (row.status === 'current') {
+      ctx.fillStyle = palette.bgCardActive;
+      roundRect(ctx, -6, row.y, RUNBOOK_STEP_TEXT_INDENT + 452, row.height, 4);
+      ctx.fill();
+    }
+
+    const dim = row.status === 'done' || row.status === 'skipped';
+    ctx.save();
+    ctx.globalAlpha = dim ? 0.55 : 1;
+    ctx.font = row.status === 'current' ? uiFont(17, 'bold') : uiFont(17);
+
+    ctx.fillStyle = runbookStepMarkerColor(row.status);
+    ctx.fillText(runbookStepMarkers[row.status], 0, row.textY);
+
+    const textColor = runbookStepTextColor(row.status);
+    ctx.fillStyle = textColor;
+    let lineY = row.textY;
+    for (const line of row.lines) {
+      ctx.fillText(line, RUNBOOK_STEP_TEXT_INDENT, lineY);
+      if (dim) {
+        const width = ctx.measureText(line).width;
+        ctx.strokeStyle = textColor;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(RUNBOOK_STEP_TEXT_INDENT, lineY - 6);
+        ctx.lineTo(RUNBOOK_STEP_TEXT_INDENT + width, lineY - 6);
+        ctx.stroke();
+      }
+      lineY += RUNBOOK_BODY_LINE_HEIGHT;
+    }
+    ctx.restore();
   }
 }

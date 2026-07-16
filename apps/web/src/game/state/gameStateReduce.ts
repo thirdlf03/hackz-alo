@@ -274,5 +274,11 @@ export function reduceGameState(
         },
       };
     }
+    case 'set_recovery_confirmed_at': {
+      // Server-confirmed once, never cleared: first write wins, later
+      // (re-)deliveries of the same server state are no-ops.
+      if (state.recoveryConfirmedAtMs !== undefined) return state;
+      return {...state, recoveryConfirmedAtMs: action.atMs};
+    }
   }
 }

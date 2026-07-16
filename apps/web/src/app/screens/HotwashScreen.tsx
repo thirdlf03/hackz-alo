@@ -12,6 +12,7 @@ export function HotwashScreen(props: {
   }) => void;
   onGenerateAar: () => void;
   onOpenReplay: () => void;
+  canOpenReplay: boolean;
 }) {
   const canContribute = canContributeRecords(
     props.exercise?.participants ?? [],
@@ -103,8 +104,12 @@ export function HotwashScreen(props: {
           </dl>
         )}
       </section>
-      <button type='button' onClick={props.onOpenReplay}>
-        リプレイを見る
+      <button
+        type='button'
+        onClick={props.onOpenReplay}
+        disabled={!props.canOpenReplay}
+      >
+        {props.canOpenReplay ? 'リプレイを見る' : 'リプレイ準備中…'}
       </button>
     </section>
   );

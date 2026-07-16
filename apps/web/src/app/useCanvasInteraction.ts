@@ -5,6 +5,7 @@ import {
   deactivateChatCompose,
   dismissNavigationStep,
   focusCommandInput,
+  markRunbookStep,
   mergedChatMessages,
   setActiveRunbook,
   setCenterTool,
@@ -13,12 +14,63 @@ import {
   toggleExpandedMonitor,
   toggleNotificationPanel,
 } from '../game/state/gameState.js';
-import {metricsPanelScrollRegion} from '../game/render/canvasLayout.js';
+import {visibleRunbooks} from '../game/state/gameSelectors.js';
+import {
+  metricsPanelScrollRegion,
+  monitorContentHeight,
+  rightPanelLayout,
+  type RunbookStepHitRow,
+} from '../game/render/canvasLayout.js';
+import {
+  layoutRunbookBody,
+  RUNBOOK_BODY_LINE_HEIGHT,
+} from '../game/render/canvasRunbookStepLayout.js';
 import {resolveCanvasAction} from '../game/input/canvasActions.js';
-import {canOperateSandbox} from '../pure/rolePermissions.js';
+import {canContributeRecords, canOperateSandbox} from '../pure/rolePermissions.js';
+import {
+  hashRunbookBody,
+  parseRunbookSteps,
+  resolveStepStatuses,
+} from '../pure/runbookSteps.js';
 import type {ReplayEventEmitter} from '../game/events/emitReplayEvent.js';
 import type {FinishMode, Screen} from './appTypes.js';
 import {containsPoint, toLogicalCanvasPoint} from './appUtils.js';
+
+/**
+ * 手順書タブのクリック当たり判定用に、直近の描画と同じ折り返し・Y座標で
+ * ステップ行の矩形一覧を求める(canvasRenderRightPanel.ts の描画パスと
+ * canvasRunbookStepLayout.ts の layoutRunbookBody を共有し、同じ canvas の
+ * 2D context で measureText するため、折り返し位置がずれない)。
+ */
+function computeRunbookStepHitRows(
+  canvas: HTMLCanvasElement | null,
+  state: GameRenderState,
+  scenario: ScenarioDefinition | undefined
+): RunbookStepHitRow[] {
+  if (!canvas || state.monitors.right.activePanelTab !== 'runbook') return [];
+  const runbook = state.monitors.right.activeRunbook;
+  if (!runbook) return [];
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return [];
+
+  const hasRunbooks = scenario
+    ? visibleRunbooks(scenario, state.clock.elapsedMs).length > 0
+    : true;
+  const bodyTop = rightPanelLayout('runbook', hasRunbooks).contentTop;
+  const maxRunbookLines = Math.max(
+    10,
+    Math.floor(
+      (monitorContentHeight - bodyTop - 16) / RUNBOOK_BODY_LINE_HEIGHT
+    )
+  );
+  return layoutRunbookBody(
+    ctx,
+    runbook,
+    state.runbookProgress,
+    bodyTop,
+    maxRunbookLines
+  ).rows.map((row) => ({id: row.id, y: row.y, height: row.height}));
+}
 
 export function useCanvasInteraction(options: {
   screen: Screen;
@@ -77,7 +129,12 @@ export function useCanvasInteraction(options: {
         payload: {x: point.x, y: point.y},
       });
 
-      const action = resolveCanvasAction(point, state, scenarioRef.current);
+      const action = resolveCanvasAction(
+        point,
+        state,
+        scenarioRef.current,
+        computeRunbookStepHitRows(canvasRef.current, state, scenarioRef.current)
+      );
       if (action.type === 'end_session') {
         return void endSession(action.mode);
       }
@@ -190,6 +247,29 @@ export function useCanvasInteraction(options: {
             },
           });
         }
+        return;
+      }
+
+      if (action.type === 'runbook_step_toggle') {
+        // Observer 読み取り専用ゲート。RUNBOOK 進捗の手動更新は
+        // task/incident-log と同じ canContributeRecords の対象。
+        if (
+          !canContributeRecords(state.room.participants, state.localParticipantId)
+        ) {
+          return;
+        }
+        const runbook = state.monitors.right.activeRunbook;
+        if (!runbook) return;
+        const steps = parseRunbookSteps(runbook.body, runbook.steps);
+        const resolved = resolveStepStatuses(steps, state.runbookProgress);
+        const entry = resolved.find((item) => item.step.id === action.stepId);
+        if (!entry) return;
+        const bodyHash = hashRunbookBody(runbook.body);
+        // 「done ⇄ null」トグル。
+        const nextStatus = entry.status === 'done' ? null : 'done';
+        patchGameStateRef((current) =>
+          markRunbookStep(current, runbook.id, bodyHash, action.stepId, nextStatus)
+        );
         return;
       }
 

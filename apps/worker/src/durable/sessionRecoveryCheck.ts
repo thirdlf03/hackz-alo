@@ -48,10 +48,15 @@ export interface SessionRecoveryCheckDeps {
 
 /**
  * Player-facing "confirm recovery" dry-run: evaluates the scenario success
- * conditions against the sandbox without finishing the session or touching
- * its stored state. Never calls finishSession and never destroys the
+ * conditions against the sandbox. This function itself never finishes the
+ * session, never touches stored session state, and never broadcasts —
+ * it stays a pure, side-effect-free dry-run so it's safe to call
+ * speculatively/repeatedly. Never calls finishSession and never destroys the
  * sandbox — callers that want the real (session-ending) resolve flow must
- * use resolveSessionAction instead.
+ * use resolveSessionAction instead. The DO handler separately calls
+ * confirmRecoveryIfNeeded() to persist + broadcast the first allOk result
+ * (see SessionDurableObject.recoveryCheck), keeping that side effect out of
+ * this function.
  */
 export async function checkRecoveryAction(
   session: StoredSession,
@@ -75,4 +80,39 @@ export async function checkRecoveryAction(
     checks,
     evaluatedAt: Date.now(),
   };
+}
+
+export interface RecoveryConfirmDeps {
+  /** Persists the session with recoveryConfirmedAtMs set (DO storage put). */
+  persistSession: (session: StoredSession) => Promise<void>;
+  /** Broadcasts the updated session snapshot to connected SSE clients. */
+  broadcastSnapshot: (session: StoredSession) => void;
+}
+
+/**
+ * Records the first time a recovery-check reports allOk, so the client's
+ * incident banner can show "復旧確認済み" for every participant (not just
+ * the one who ran the check) and be restored on reconnect/mid-join — see
+ * apps/web/src/game/render/canvasRenderChrome.ts drawAlerts(). Idempotent:
+ * once session.recoveryConfirmedAtMs is set, subsequent allOk checks are
+ * no-ops. Kept separate from checkRecoveryAction (which stays a pure
+ * dry-run) so callers of the dry-run evaluation alone (e.g. tests) aren't
+ * forced to also thread persistence/broadcast deps.
+ */
+export async function confirmRecoveryIfNeeded(
+  session: StoredSession,
+  result: RecoveryCheckResult,
+  deps: RecoveryConfirmDeps,
+  nowMs = Date.now()
+): Promise<StoredSession> {
+  if (!result.allOk || session.recoveryConfirmedAtMs !== undefined) {
+    return session;
+  }
+  const confirmed: StoredSession = {
+    ...session,
+    recoveryConfirmedAtMs: nowMs,
+  };
+  await deps.persistSession(confirmed);
+  deps.broadcastSnapshot(confirmed);
+  return confirmed;
 }

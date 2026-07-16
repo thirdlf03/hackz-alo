@@ -33,7 +33,6 @@ import {useCanvasInteraction} from './useCanvasInteraction.js';
 import {useWebMcpTools} from './useWebMcpTools.js';
 import {useVoiceChat} from './useVoiceChat.js';
 import {useNpcColleague} from './useNpcColleague.js';
-import {useMonitorPip} from './useMonitorPip.js';
 import {detectHtmlInCanvasSupport} from '../effect/htmlInCanvas.js';
 import {useMetricsPolling} from './useMetricsPolling.js';
 import {
@@ -270,8 +269,6 @@ export function App() {
     currentGameTimeMs,
   });
 
-  const pip = useMonitorPip({screen, canvasRef, setAppError});
-
   const registerPager = async () => {
     if (!pagerPublicKey || !session) return;
     if (
@@ -431,7 +428,8 @@ export function App() {
   const hasReplayContent = Boolean(
     session && (canPlayVideo || timeline.length > 0)
   );
-  const canNavigateToReplay = hasReplayContent && screen === 'result';
+  const canNavigateToReplay =
+    hasReplayContent && (screen === 'result' || screen === 'hotwash');
   const activeReplayId = session?.replayId ?? deepLinkReplayId;
   const sessionAccessToken = api.sessionAccessToken();
   const inviteUrl =
@@ -567,7 +565,6 @@ export function App() {
           participantId={participantId}
           exercise={exerciseSnapshot}
           voice={voice}
-          pip={pip}
           checkRecovery={checkRecovery}
           onCreateTask={(title) => {
             if (!session) return;
@@ -695,6 +692,7 @@ export function App() {
               });
           }}
           onOpenReplay={openReplay}
+          canOpenReplay={canNavigateToReplay}
         />
       )}
 

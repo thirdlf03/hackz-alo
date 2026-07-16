@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {tsImport} from 'tsx/esm/api';
 
-const {checkRecoveryAction} = await tsImport(
+const {checkRecoveryAction, confirmRecoveryIfNeeded} = await tsImport(
   '../../apps/worker/src/durable/sessionRecoveryCheck.ts',
   import.meta.url
 );
@@ -84,4 +84,92 @@ test('checkRecoveryAction reports allOk:false when any successCondition fails', 
       {type: 'process_running', ok: false},
     ]
   );
+});
+
+function allOkResult(overrides = {}) {
+  return {
+    declarable: true,
+    allOk: true,
+    checks: [],
+    evaluatedAt: Date.now(),
+    ...overrides,
+  };
+}
+
+test('confirmRecoveryIfNeeded persists and broadcasts the first allOk result', async () => {
+  const session = baseSession({triggeredIds: ['stop-api']});
+  const persisted = [];
+  const broadcast = [];
+
+  const confirmed = await confirmRecoveryIfNeeded(
+    session,
+    allOkResult(),
+    {
+      persistSession: async (updated) => {
+        persisted.push(updated);
+      },
+      broadcastSnapshot: (updated) => {
+        broadcast.push(updated);
+      },
+    },
+    12_345
+  );
+
+  assert.equal(confirmed.recoveryConfirmedAtMs, 12_345);
+  assert.equal(persisted.length, 1);
+  assert.equal(persisted[0].recoveryConfirmedAtMs, 12_345);
+  assert.equal(broadcast.length, 1);
+  assert.equal(broadcast[0].recoveryConfirmedAtMs, 12_345);
+});
+
+test('confirmRecoveryIfNeeded is a no-op once recoveryConfirmedAtMs is already set', async () => {
+  const session = baseSession({
+    triggeredIds: ['stop-api'],
+    recoveryConfirmedAtMs: 111,
+  });
+  const persisted = [];
+  const broadcast = [];
+
+  const confirmed = await confirmRecoveryIfNeeded(
+    session,
+    allOkResult(),
+    {
+      persistSession: async (updated) => {
+        persisted.push(updated);
+      },
+      broadcastSnapshot: (updated) => {
+        broadcast.push(updated);
+      },
+    },
+    222
+  );
+
+  assert.equal(confirmed.recoveryConfirmedAtMs, 111, 'first confirmation wins');
+  assert.equal(persisted.length, 0);
+  assert.equal(broadcast.length, 0);
+});
+
+test('confirmRecoveryIfNeeded does nothing when the result is not allOk', async () => {
+  const session = baseSession({triggeredIds: ['stop-api']});
+  const persisted = [];
+  const broadcast = [];
+
+  const confirmed = await confirmRecoveryIfNeeded(
+    session,
+    allOkResult({allOk: false}),
+    {
+      persistSession: async (updated) => {
+        persisted.push(updated);
+      },
+      broadcastSnapshot: (updated) => {
+        broadcast.push(updated);
+      },
+    },
+    999
+  );
+
+  assert.equal(confirmed, session);
+  assert.equal(confirmed.recoveryConfirmedAtMs, undefined);
+  assert.equal(persisted.length, 0);
+  assert.equal(broadcast.length, 0);
 });

@@ -560,6 +560,16 @@ export interface GameRenderState {
     injects: ExerciseInject[];
   };
   clickEffects: Array<{id: string; x: number; y: number; ageMs: number}>;
+  /** Server-confirmed recovery time (ms, wall clock), set once the first
+   * time any participant's recovery-check reports allOk. Distinct from
+   * `recovery` below (this is the durable, server-side source of truth
+   * shared across participants, restored on reconnect/mid-join — the app
+   * has no bare-F5 session-restore mechanism, but joining via an invite URL
+   * or resubscribing to SSE re-fetches it from the server; `recovery` is a
+   * client-local, per-tab dry-run artifact) — deliberately not merged into
+   * it. Drives the incident banner's "復旧確認済み" state; see
+   * canvasRenderChrome.ts drawAlerts(). */
+  recoveryConfirmedAtMs?: number;
   /** Client-side dry-run recovery-check state (GET .../recovery-check), used
    * to gate the "訓練を完了" button so it never finishes the session on an
    * unmet success condition. See useSessionRuntime.ts checkRecovery(). */

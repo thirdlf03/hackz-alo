@@ -16,6 +16,7 @@ export const {
   setActiveRunbook,
   setCenterTool,
   setRecoveryChecking,
+  setRecoveryConfirmedAt,
   setRecoveryLastCheck,
   setRetireConfirming,
   setRightPanelTab,

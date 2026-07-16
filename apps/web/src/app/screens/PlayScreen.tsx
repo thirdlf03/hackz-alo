@@ -9,7 +9,6 @@ import type {
 import {
   activateChatCompose,
   deactivateChatCompose,
-  markRunbookStep,
   setCenterTool,
   setChatDraft,
   updateEditorPanel,
@@ -24,8 +23,7 @@ import {canContributeRecords} from '../../pure/rolePermissions.js';
 import {shouldShowEditorOverlay} from '../../pure/editorOverlayVisibility.js';
 import {PerfOverlay} from '../PerfOverlay.js';
 import type {VoiceChatControls} from '../useVoiceChat.js';
-import type {MonitorPipControls} from '../useMonitorPip.js';
-import {TeamExercisePanel, MonitorPipToolbar} from './playPanels.js';
+import {TeamExercisePanel} from './playPanels.js';
 
 type PatchGameState = (
   updater: (state: GameRenderState) => GameRenderState,
@@ -67,7 +65,6 @@ export function PlayScreen(props: {
   onDeleteIncidentLog: (entryId: string) => void;
   onFireInject: (injectId: string) => void;
   voice: VoiceChatControls;
-  pip: MonitorPipControls;
   checkRecovery: () => Promise<void>;
 }) {
   // HTML-in-Canvas 非対応環境で chatCompose がアクティブな間だけ、canvas 上に
@@ -253,7 +250,6 @@ export function PlayScreen(props: {
           />
         )}
         <PerfOverlay />
-        <MonitorPipToolbar pip={props.pip} />
         {props.gameState?.warning && props.gameState.warning.flashMs > 0 && (
           <p class='play-warning-banner' role='status'>
             {props.gameState.warning.message}
@@ -270,8 +266,6 @@ export function PlayScreen(props: {
         gameStateRef={props.gameStateRef}
         scenarioRef={props.scenarioRef}
         scenario={props.scenario}
-        activeRunbook={props.gameState?.monitors.right.activeRunbook}
-        runbookProgress={props.gameState?.runbookProgress}
         commandInputFocused={props.gameState?.commandInputFocused ?? false}
         onCreateTask={props.onCreateTask}
         onUpdateTask={props.onUpdateTask}
@@ -280,11 +274,6 @@ export function PlayScreen(props: {
         onUpdateIncidentLog={props.onUpdateIncidentLog}
         onDeleteIncidentLog={props.onDeleteIncidentLog}
         onFireInject={props.onFireInject}
-        onMarkRunbookStep={(runbookId, bodyHash, stepId, status) => {
-          props.patchGameStateRef((current) =>
-            markRunbookStep(current, runbookId, bodyHash, stepId, status)
-          );
-        }}
         voice={props.voice}
         checkRecovery={props.checkRecovery}
         recoveryState={props.gameState?.recovery}

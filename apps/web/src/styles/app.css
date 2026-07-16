@@ -789,10 +789,7 @@ canvas {
   display: block;
   width: min(100%, calc(var(--play-viewport-height) * 16 / 9));
   max-width: 100%;
-  /* canvas 直下の play-pip-toolbar 分を差し引き、canvas + ツールバーの
-     合計高さが --play-viewport-height に収まるようにする(不要な
-     ページスクロールを防ぐ)。 */
-  max-height: calc(var(--play-viewport-height) - var(--play-pip-toolbar-space));
+  max-height: var(--play-viewport-height);
   aspect-ratio: 16 / 9;
   border: 1px solid var(--canvas-border);
   background: var(--canvas-bg);
@@ -1951,57 +1948,6 @@ canvas:focus-visible {
   color: var(--tone-red);
 }
 
-.runbook-panel-details summary {
-  cursor: pointer;
-  list-style: none;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.runbook-panel-details summary::-webkit-details-marker {
-  display: none;
-}
-
-.runbook-panel-details summary::before {
-  content: '▸';
-  color: var(--text-muted);
-  font-family: var(--font-family-mono);
-  font-size: 10px;
-}
-
-.runbook-panel-details[open] summary::before {
-  content: '▾';
-}
-
-.runbook-panel-details summary h2 {
-  margin: 0;
-}
-
-.runbook-panel-details[open] {
-  display: grid;
-  gap: 7px;
-}
-
-.runbook-step-toggle {
-  display: block;
-  flex: 1;
-  min-width: 0;
-  border: none;
-  background: none;
-  padding: 0;
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-
-.runbook-step-empty {
-  margin: 0;
-  color: var(--text-muted);
-  font-size: 12.5px;
-}
-
 .runbook-step-current-banner {
   position: sticky;
   top: 0;
@@ -2017,43 +1963,6 @@ canvas:focus-visible {
 
 .runbook-step-marker {
   font-family: var(--font-family-mono);
-}
-
-.runbook-step-evidence {
-  display: block;
-  margin-top: 2px;
-  color: var(--text-muted);
-  font-family: var(--font-family-mono);
-  font-size: 11px;
-}
-
-.runbook-step-current .team-task-marker,
-.runbook-step-current .team-task-title {
-  color: var(--tone-amber);
-}
-
-.runbook-step-done .team-task-marker {
-  color: var(--tone-green);
-}
-
-.runbook-step-done .team-task-title {
-  text-decoration: line-through;
-  opacity: 0.6;
-}
-
-.runbook-step-failed .team-task-marker,
-.runbook-step-failed .team-task-title {
-  color: var(--tone-red);
-}
-
-.runbook-step-pending .team-task-marker,
-.runbook-step-skipped .team-task-marker {
-  color: var(--text-muted);
-}
-
-.runbook-step-skipped .team-task-title {
-  text-decoration: line-through;
-  opacity: 0.6;
 }
 
 .team-inject {
@@ -2621,48 +2530,6 @@ canvas:focus-visible {
 .npc-suggestion-actions {
   display: flex;
   gap: 6px;
-}
-
-/* canvas 直下に通常フローで並ぶ横並びのボタン列。canvas-stage の高さが
-   canvas 自体にフィットするため、絶対配置ではなく通常フローに置いて
-   canvas に被らないようにする(録画対象の canvas の外側なので録画には
-   映らない)。align-self: flex-start で canvas-stage の左端基準に揃え、
-   perf-overlay / play-warning-banner と同じ左端参照を保つ。 */
-.play-pip-toolbar {
-  align-self: flex-start;
-  display: flex;
-  flex-wrap: nowrap;
-  align-items: center;
-  gap: 8px;
-  margin: 6px 0 0 8px;
-  color: var(--text-muted);
-  font-family: var(--font-family-mono);
-  font-size: 11.5px;
-}
-
-.play-pip-toolbar-label {
-  white-space: nowrap;
-}
-
-.play-pip-toolbar button {
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-s);
-  color: var(--text-muted);
-  background: transparent;
-  font-family: inherit;
-  font-size: 11.5px;
-  white-space: nowrap;
-  padding: 3px 10px;
-}
-
-.play-pip-toolbar button:hover:not(:disabled) {
-  color: var(--text-secondary);
-  border-color: var(--border-default);
-}
-
-.play-pip-toolbar button.active {
-  color: var(--text-secondary);
-  border-color: var(--border-focus);
 }
 
 /* --- AI postmortem panel --- */

@@ -127,6 +127,38 @@ function trimOuterPunctuation(run: string) {
   return run.replace(LEADING_PUNCTUATION, '').replace(TRAILING_PUNCTUATION, '');
 }
 
+/**
+ * body 内で最初の番号付き行より前にある行(= parseRunbookSteps がステップ化
+ * せず読み捨てる前置きテキスト)を返す。canvas 手順書パネルで、ステップ化
+ * されない説明文(例: kodama-batch-001 の前置きや、番号行を持たない
+ * Runbook 全文)を消さずに表示するために使う。overrideSteps が渡された
+ * 場合は本文をパースしないため、parseRunbookSteps と同様に常に空文字を
+ * 返す。
+ */
+export function extractRunbookPreamble(
+  body: string,
+  overrideSteps?: RunbookStepDefinition[]
+): string {
+  if (overrideSteps && overrideSteps.length > 0) return '';
+
+  const lines = normalizeMultilineText(body).split('\n');
+  const preambleLines: string[] = [];
+  for (const rawLine of lines) {
+    if (NUMBERED_LINE.test(rawLine)) break;
+    preambleLines.push(rawLine);
+  }
+  while (
+    preambleLines.length > 0 &&
+    !(preambleLines[preambleLines.length - 1] ?? '').trim()
+  ) {
+    preambleLines.pop();
+  }
+  while (preambleLines.length > 0 && !(preambleLines[0] ?? '').trim()) {
+    preambleLines.shift();
+  }
+  return preambleLines.join('\n');
+}
+
 /** 暗号強度不要の軽量ハッシュ(FNV-1a 風)。8桁16進文字列を返す。 */
 export function hashRunbookBody(body: string): string {
   let hash = 0x811c9dc5;

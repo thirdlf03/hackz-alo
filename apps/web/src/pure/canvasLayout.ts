@@ -467,6 +467,44 @@ export function runbookTabAt(
   return -1;
 }
 
+/** クリック当たり判定用の、手順書ステップ1行分の矩形(内容座標系)。実際の
+ * 折り返し・Y座標は canvasRunbookStepLayout.ts の layoutRunbookBody が
+ * ctx.measureText を使って計算し、描画時・クリック判定時の双方で同じ結果
+ * になるようにする(このファイルは純粋な座標変換のみを担う)。 */
+export interface RunbookStepHitRow {
+  id: string;
+  y: number;
+  height: number;
+}
+
+export function runbookStepRowAt(
+  x: number,
+  y: number,
+  rows: RunbookStepHitRow[],
+  activePanelTab: RightPanelTab = 'runbook',
+  expandedMonitor?: MonitorId | null
+): string | null {
+  if (activePanelTab !== 'runbook' || rows.length === 0) return null;
+  if (expandedMonitor && expandedMonitor !== 'runbook') return null;
+
+  const content = runbookContentTransform(expandedMonitor === 'runbook');
+  const localX = (x - content.x) / content.scale;
+  const localY = (y - content.y) / content.scale;
+  if (
+    localX < 0 ||
+    localX > monitorContentWidth ||
+    localY < 0 ||
+    localY > monitorContentHeight
+  ) {
+    return null;
+  }
+
+  for (const row of rows) {
+    if (localY >= row.y && localY <= row.y + row.height) return row.id;
+  }
+  return null;
+}
+
 export function containsCanvasPoint(
   rect: {x: number; y: number; width: number; height: number},
   x: number,

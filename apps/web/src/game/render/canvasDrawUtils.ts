@@ -265,6 +265,38 @@ export function wrapText(
   return y;
 }
 
+/**
+ * wrapText の通常段落分岐と同じ単語折り返しロジックを、fillText を呼ばず
+ * 行配列として返す版。行ごとに個別の描画(取り消し線・強調色など)をしたい
+ * 場合や、実際には描画せず折り返し位置だけを求めたい場合(クリック当たり
+ * 判定の事前計算。measureText のみ呼ぶので描画中の canvas を汚さない)に使う。
+ */
+export function wrapWords(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  maxWidth: number
+): string[] {
+  const trimmed = text.trim();
+  if (!trimmed) return [''];
+  const words = trimmed.includes(' ')
+    ? trimmed.split(/\s+/)
+    : Array.from(trimmed);
+  const separator = trimmed.includes(' ') ? ' ' : '';
+  const lines: string[] = [];
+  let line = '';
+  for (const word of words) {
+    const candidate = line ? `${line}${separator}${word}` : word;
+    if (ctx.measureText(candidate).width > maxWidth && line) {
+      lines.push(line);
+      line = word;
+    } else {
+      line = candidate;
+    }
+  }
+  if (line) lines.push(line);
+  return lines.length > 0 ? lines : [''];
+}
+
 export function drawMagnifyIcon(
   ctx: CanvasRenderingContext2D,
   x: number,
