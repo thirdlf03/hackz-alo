@@ -726,7 +726,7 @@ export function useSessionRuntime(options: {
 
   useSessionClockSync(bindings);
   useSessionLifecycleGuards(bindings);
-  useSessionSse(bindings);
+  const {status: sseStatus, reconnect: reconnectSse} = useSessionSse(bindings);
   useSessionGameLoop(bindings);
   useExercisePhaseSync(bindings);
 
@@ -744,6 +744,8 @@ export function useSessionRuntime(options: {
     endSession,
     checkRecovery,
     submitChatMessage,
+    sseStatus,
+    reconnectSse,
   };
 }
 
