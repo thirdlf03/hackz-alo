@@ -139,6 +139,7 @@ export interface ApiClientSurface
     handlers: SessionHandlers
   ): EventSource;
   notifySessionTimeout(sessionId: string): void;
+  markParticipantOffline(sessionId: string, participantId: string): void;
   resetEventSequence(replayId?: string): void;
   sessionAccessToken(): string | undefined;
   setSessionAccessToken(token: string | undefined): void;
@@ -363,6 +364,10 @@ export class ApiClient {
 
   notifySessionTimeout(sessionId: string) {
     this.sessions.notifySessionTimeout(sessionId);
+  }
+
+  markParticipantOffline(sessionId: string, participantId: string) {
+    this.sessions.markParticipantOffline(sessionId, participantId);
   }
 
   resetEventSequence(replayId?: string) {

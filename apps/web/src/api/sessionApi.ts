@@ -492,7 +492,9 @@ export class SessionApi {
     );
   }
 
-  /** Best-effort cleanup when the tab is closing during play. */
+  /** Best-effort cleanup when the tab is closing during play. Solo play
+   * only — see markParticipantOffline for the multiplayer equivalent that
+   * doesn't end the session for everyone else. */
   notifySessionTimeout(sessionId: string) {
     const url = `/api/sessions/${encodeURIComponent(sessionId)}/timeout`;
     const body = new Blob(['{}'], {type: 'application/json'});
@@ -507,6 +509,26 @@ export class SessionApi {
       method: 'POST',
       body: '{}',
       headers: {'content-type': 'application/json'},
+      keepalive: true,
+    });
+  }
+
+  /** Best-effort presence signal for a multiplayer tab going hidden/
+   * closing during play: marks this participant offline without ending
+   * the session for the others (see /participants/offline on the
+   * server). Uses fetch keepalive rather than sendBeacon so the
+   * write-token Authorization header can still be attached — sendBeacon
+   * cannot carry custom headers. */
+  markParticipantOffline(sessionId: string, participantId: string) {
+    const url = `/api/sessions/${encodeURIComponent(sessionId)}/participants/offline`;
+    const token = this.http.getWriteToken();
+    void fetch(url, {
+      method: 'POST',
+      body: JSON.stringify({participantId}),
+      headers: {
+        'content-type': 'application/json',
+        ...(token ? {authorization: `Bearer ${token}`} : {}),
+      },
       keepalive: true,
     });
   }

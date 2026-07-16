@@ -207,17 +207,32 @@ export function App() {
         .catch(console.error);
     };
     join();
-    const interval = window.setInterval(() => {
+    const sendHeartbeat = () => {
       void api
         .heartbeatParticipant(session.sessionId, {participantId})
         .then(({exercise}) => {
           if (!cancelled) setExerciseSnapshot(exercise);
         })
         .catch(console.error);
+    };
+    // A hidden/backgrounded tab shouldn't keep reporting this participant
+    // online for the full 30s presence window — skip ticks while hidden so
+    // host-failover/offline detection reacts promptly instead of a stale
+    // heartbeat masking a departure.
+    const interval = window.setInterval(() => {
+      if (document.visibilityState !== 'visible') return;
+      sendHeartbeat();
     }, 15_000);
+    // Send one heartbeat immediately on resume so presence flips back to
+    // online without waiting up to 15s for the next tick.
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') sendHeartbeat();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
     return () => {
       cancelled = true;
       window.clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisibility);
     };
   }, [
     screen,
