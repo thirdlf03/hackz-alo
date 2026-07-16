@@ -151,7 +151,10 @@ test('SessionApi covers session lifecycle, editor routes, and SSE handlers', asy
   assert.ok(timeoutFetchCall);
   assert.equal(timeoutFetchCall.init?.method, 'POST');
   assert.equal(timeoutFetchCall.init?.keepalive, true);
-  assert.equal(timeoutFetchCall.init?.headers?.authorization, 'Bearer writer-token');
+  assert.equal(
+    timeoutFetchCall.init?.headers?.authorization,
+    'Bearer writer-token'
+  );
   assert.equal(
     JSON.parse(timeoutFetchCall.init?.body ?? '{}').participantId,
     'participant-1'

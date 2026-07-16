@@ -255,7 +255,10 @@ function runbookStepTextColor(status: RunbookStepStatus): string {
 /** layoutRunbookBody() が計算した前置きテキスト・手順一覧を描画する。
  * done/skipped は打ち消し線 + 減光、current はマーカー/文字色を強調し
  * 背景を軽くハイライトする。 */
-function paintRunbookBody(surface: CanvasRenderSurface, body: RunbookBodyLayout) {
+function paintRunbookBody(
+  surface: CanvasRenderSurface,
+  body: RunbookBodyLayout
+) {
   const ctx = surface.ctx;
   ctx.font = uiFont(17);
   ctx.fillStyle = palette.textPrimary;

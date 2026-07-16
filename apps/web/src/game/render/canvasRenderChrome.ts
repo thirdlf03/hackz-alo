@@ -97,9 +97,7 @@ export function drawAlerts(
   roundRect(ctx, box.x, box.y, box.width, box.height, 3);
   ctx.fill();
 
-  ctx.fillStyle = recovered
-    ? palette.textOnAccent
-    : palette.textOnDangerStrong;
+  ctx.fillStyle = recovered ? palette.textOnAccent : palette.textOnDangerStrong;
   ctx.font = displayFont(19);
   const label = recovered ? '復旧確認済み' : '!! 障害発生';
   ctx.fillText(label, box.x + 18, midY);

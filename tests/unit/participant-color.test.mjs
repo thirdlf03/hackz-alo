@@ -11,7 +11,10 @@ test('participantColorIndex is stable for the same participantId', () => {
 test('participantColorIndex stays within the palette bounds', () => {
   for (const id of ['a', 'part_1', 'part_2', 'a-very-long-participant-id']) {
     const index = participantColorIndex(id, 5);
-    assert.ok(index >= 0 && index < 5, `index ${index} out of bounds for ${id}`);
+    assert.ok(
+      index >= 0 && index < 5,
+      `index ${index} out of bounds for ${id}`
+    );
   }
 });
 

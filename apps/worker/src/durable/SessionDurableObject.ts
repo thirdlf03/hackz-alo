@@ -64,6 +64,7 @@ import {
 } from './sessionState.js';
 import {SessionSseHub} from './sessionSseHub.js';
 import {SessionTimeline} from './sessionTimeline.js';
+import {timeoutSessionAction} from './sessionTimeout.js';
 import {
   destroySessionSandbox,
   evaluateSuccessCondition,
@@ -483,55 +484,24 @@ export class SessionDurableObject implements DurableObject {
     return jsonOk({session: this.snapshotFor(result)});
   }
 
-  /**
-   * `/timeout` doubles as both the real end-of-session call (explicit
-   * "give up"/time-limit finish, or the sweep/alarm cleanup path — none of
-   * which pass a participantId) and, historically, the client's
-   * best-effort pagehide/hidden-tab departure beacon. The latter now goes
-   * through the participantId-aware branch below: with a participantId in
-   * the body, a lone departing participant no longer ends the session for
-   * everyone else — they're just marked offline — unless nobody else is
-   * online, in which case it falls through to the original full-session
-   * finish. Callers without a participantId (or before any exercise room
-   * exists) keep the original unconditional-finish behavior.
-   */
   private async timeout(request?: Request) {
     const session = await this.requireSession();
-    if (isTerminalStatus(session.status)) {
-      await destroySessionSandbox(this.env, session.sessionId);
-      return jsonOk({session: this.snapshotFor(session)});
-    }
-
-    const participantId = await this.timeoutNotifierParticipantId(request);
-    if (participantId) {
-      const snapshot = await this.exercise.markOfflineIfOthersOnline(
-        session,
-        participantId
-      );
-      if (snapshot) {
+    return timeoutSessionAction(session, request, {
+      destroySandbox: (sessionId) => destroySessionSandbox(this.env, sessionId),
+      markOfflineIfOthersOnline: (target, participantId) =>
+        this.exercise.markOfflineIfOthersOnline(target, participantId),
+      broadcastPresence: (snapshot) => {
         this.sseHub.broadcast('presence', snapshot);
+      },
+      broadcastExerciseState: (snapshot) => {
         this.sseHub.broadcast('exercise_state', snapshot);
-        return jsonOk({session: this.snapshotFor(session)});
-      }
-    }
-
-    const finished = await this.finishSession(session, 'failed', 'timeout');
-    const result = await this.emit(
-      finished,
-      'session_end',
-      getGameTimeMs(finished),
-      'system',
-      {result: 'timeout'}
-    );
-    return jsonOk({session: this.snapshotFor(result)});
-  }
-
-  private async timeoutNotifierParticipantId(request: Request | undefined) {
-    if (!request) return undefined;
-    const body = (await readBootstrap(request)) as {participantId?: unknown};
-    return typeof body.participantId === 'string'
-      ? body.participantId
-      : undefined;
+      },
+      finishSession: (target, status, result) =>
+        this.finishSession(target, status, result),
+      emit: (target, type, at, actor, payload) =>
+        this.emit(target, type, at, actor, payload),
+      snapshotFor: (target) => this.snapshotFor(target),
+    });
   }
 
   private async deleteSession() {

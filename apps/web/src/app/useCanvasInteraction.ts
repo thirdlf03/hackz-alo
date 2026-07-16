@@ -26,7 +26,10 @@ import {
   RUNBOOK_BODY_LINE_HEIGHT,
 } from '../game/render/canvasRunbookStepLayout.js';
 import {resolveCanvasAction} from '../game/input/canvasActions.js';
-import {canContributeRecords, canOperateSandbox} from '../pure/rolePermissions.js';
+import {
+  canContributeRecords,
+  canOperateSandbox,
+} from '../pure/rolePermissions.js';
 import {
   hashRunbookBody,
   parseRunbookSteps,
@@ -59,9 +62,7 @@ function computeRunbookStepHitRows(
   const bodyTop = rightPanelLayout('runbook', hasRunbooks).contentTop;
   const maxRunbookLines = Math.max(
     10,
-    Math.floor(
-      (monitorContentHeight - bodyTop - 16) / RUNBOOK_BODY_LINE_HEIGHT
-    )
+    Math.floor((monitorContentHeight - bodyTop - 16) / RUNBOOK_BODY_LINE_HEIGHT)
   );
   return layoutRunbookBody(
     ctx,
@@ -254,7 +255,10 @@ export function useCanvasInteraction(options: {
         // Observer 読み取り専用ゲート。RUNBOOK 進捗の手動更新は
         // task/incident-log と同じ canContributeRecords の対象。
         if (
-          !canContributeRecords(state.room.participants, state.localParticipantId)
+          !canContributeRecords(
+            state.room.participants,
+            state.localParticipantId
+          )
         ) {
           return;
         }
@@ -268,7 +272,13 @@ export function useCanvasInteraction(options: {
         // 「done ⇄ null」トグル。
         const nextStatus = entry.status === 'done' ? null : 'done';
         patchGameStateRef((current) =>
-          markRunbookStep(current, runbook.id, bodyHash, action.stepId, nextStatus)
+          markRunbookStep(
+            current,
+            runbook.id,
+            bodyHash,
+            action.stepId,
+            nextStatus
+          )
         );
         return;
       }

@@ -260,7 +260,10 @@ export class SessionExerciseHub {
    * the participant was marked offline, or `null` when nobody else is
    * online (caller should finish the session instead).
    */
-  async markOfflineIfOthersOnline(session: StoredSession, participantId: string) {
+  async markOfflineIfOthersOnline(
+    session: StoredSession,
+    participantId: string
+  ) {
     return this.runExclusive(async () => {
       const room = await this.loadOrCreate(session);
       if (!hasOtherOnlineParticipants(room, participantId)) return null;
