@@ -68,11 +68,15 @@ export function useSessionSse(bindings: SessionRuntimeBindings) {
       if (cancelled) return;
       setStatus(hasOpenedBefore ? 'reconnecting' : 'connecting');
       source = api.subscribeSessionEvents(sessionId, {
-        onSnapshot: (snapshot) =>
-          handlersRef.current.applyClockSnapshot(snapshot),
-        onExercise: (snapshot) =>
-          handlersRef.current.applyExerciseSnapshot(snapshot),
-        onCursor: (event) => handlersRef.current.applyParticipantCursor(event),
+        onSnapshot: (snapshot) => {
+          handlersRef.current.applyClockSnapshot(snapshot);
+        },
+        onExercise: (snapshot) => {
+          handlersRef.current.applyExerciseSnapshot(snapshot);
+        },
+        onCursor: (event) => {
+          handlersRef.current.applyParticipantCursor(event);
+        },
         onReplay: (event) => {
           if (
             refs.liveReplayEventIdsRef.current.has(event.id) ||
@@ -136,6 +140,8 @@ export function useSessionSse(bindings: SessionRuntimeBindings) {
 
   return {
     status,
-    reconnect: () => reconnectRef.current(),
+    reconnect: () => {
+      reconnectRef.current();
+    },
   };
 }

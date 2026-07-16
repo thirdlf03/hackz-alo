@@ -509,7 +509,12 @@ export function App() {
         (sseStatus === 'reconnecting' || sseStatus === 'closed') && (
           <div class='connection-banner' role='status'>
             <span>サーバーとの接続が切れました。再接続中…</span>
-            <button type='button' onClick={() => reconnectSse()}>
+            <button
+              type='button'
+              onClick={() => {
+                reconnectSse();
+              }}
+            >
               再接続
             </button>
           </div>
@@ -522,7 +527,9 @@ export function App() {
             type='button'
             class='app-error-close'
             aria-label='閉じる'
-            onClick={() => setAppError(undefined)}
+            onClick={() => {
+              setAppError(undefined);
+            }}
           >
             ×
           </button>
