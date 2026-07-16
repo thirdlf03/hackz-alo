@@ -460,6 +460,7 @@ export function useSessionRuntime(options: {
     setGameState,
     setScreen,
     setTimeline,
+    setAppError,
     patchGameStateRef,
     currentGameTimeMs,
     endSession,
@@ -604,6 +605,7 @@ export function useSessionRuntime(options: {
         phase: 'briefing',
       })
       .catch((error: unknown) => {
+        setScreen('lobby');
         setAppError(describeSessionActionError(error, 'phase'));
       });
   }
@@ -726,7 +728,7 @@ export function useSessionRuntime(options: {
 
   useSessionClockSync(bindings);
   useSessionLifecycleGuards(bindings);
-  useSessionSse(bindings);
+  const {status: sseStatus, reconnect: reconnectSse} = useSessionSse(bindings);
   useSessionGameLoop(bindings);
   useExercisePhaseSync(bindings);
 
@@ -744,6 +746,8 @@ export function useSessionRuntime(options: {
     endSession,
     checkRecovery,
     submitChatMessage,
+    sseStatus,
+    reconnectSse,
   };
 }
 
