@@ -1,4 +1,6 @@
 import type {
+  ExerciseSnapshot,
+  ParticipantCursor,
   ParticipantCursorEvent,
   ScenarioDefinition,
 } from '@incident/shared';
@@ -18,6 +20,7 @@ import {
   buildExerciseSnapshot,
   canContributeRecords,
   canPerformRoleGatedAction,
+  clampNumber,
   createExerciseRoom,
   createTask,
   deleteIncidentLog,
@@ -26,9 +29,10 @@ import {
   generateAfterActionReport,
   heartbeatParticipant,
   joinParticipant,
+  leaveParticipant,
+  markParticipantOffline,
   setExercisePhase,
   submitHotwash,
-  updateParticipantCursor,
   updateParticipantRole,
   updateIncidentLog,
   updateTask,
@@ -47,12 +51,45 @@ export interface SessionExerciseDeps {
 }
 
 export class SessionExerciseHub {
+  // Serializes every exercise-room read-modify-write mutation (join,
+  // heartbeat, task/inject/log edits, phase advance, ...) through a single
+  // promise chain so two concurrent requests can never interleave their
+  // storage.get('exercise') / storage.put('exercise') pair and silently
+  // drop one write. Cursor updates are excluded: they no longer touch
+  // room storage at all (see `cursors`).
+  private mutationQueue: Promise<unknown> = Promise.resolve();
+  // Cursor position is now kept purely in DO memory instead of round-
+  // tripping through storage.put('exercise', ...) on every mouse move: it
+  // was the highest-frequency mutation on this key and the main source of
+  // read-modify-write interleaving. Lost on DO eviction/restart, which is
+  // acceptable for an ephemeral pointer position.
+  private readonly cursors = new Map<string, ParticipantCursor>();
+
   constructor(private readonly deps: SessionExerciseDeps) {}
 
+  private runExclusive<T>(task: () => Promise<T>): Promise<T> {
+    const result = this.mutationQueue.then(task, task);
+    this.mutationQueue = result.then(
+      () => undefined,
+      () => undefined
+    );
+    return result;
+  }
+
+  private withCursors(snapshot: ExerciseSnapshot): ExerciseSnapshot {
+    if (this.cursors.size === 0) return snapshot;
+    return {
+      ...snapshot,
+      participants: snapshot.participants.map((participant) => {
+        const cursor = this.cursors.get(participant.participantId);
+        return cursor ? {...participant, cursor} : participant;
+      }),
+    };
+  }
+
   async snapshot(session: StoredSession) {
-    return buildExerciseSnapshot(
-      session.sessionId,
-      await this.loadOrCreate(session)
+    return this.withCursors(
+      buildExerciseSnapshot(session.sessionId, await this.loadOrCreate(session))
     );
   }
 
@@ -81,7 +118,7 @@ export class SessionExerciseHub {
         message: messageFrom(error),
       });
     });
-    return buildExerciseSnapshot(session.sessionId, room);
+    return this.withCursors(buildExerciseSnapshot(session.sessionId, room));
   }
 
   async saveResponse(
@@ -103,44 +140,59 @@ export class SessionExerciseHub {
   async participantJoin(request: Request) {
     const session = await this.deps.requireSession();
     const body = await readControlBody(request);
-    const room = joinParticipant(await this.loadOrCreate(session), body);
-    return this.saveResponse(session, room, 'presence');
+    return this.runExclusive(async () => {
+      const room = joinParticipant(await this.loadOrCreate(session), body);
+      return this.saveResponse(session, room, 'presence');
+    });
   }
 
   async participantHeartbeat(request: Request) {
     const session = await this.deps.requireSession();
     const body = await readControlBody(request);
-    const room = heartbeatParticipant(await this.loadOrCreate(session), body);
-    return this.saveResponse(session, room, 'presence');
+    return this.runExclusive(async () => {
+      const room = heartbeatParticipant(await this.loadOrCreate(session), body);
+      return this.saveResponse(session, room, 'presence');
+    });
   }
 
+  /**
+   * Cursor position no longer round-trips through the `exercise` storage
+   * key at all — it's the highest-frequency mutation on that key (every
+   * mouse move), so it's kept purely in DO memory (`this.cursors`) and
+   * merged back onto the snapshot on read (see `withCursors`). This both
+   * removes it from the read-modify-write contention the mutex above
+   * guards against and keeps the round-trip fast (no storage write to
+   * wait on). Lost on DO eviction/restart, which is acceptable for an
+   * ephemeral pointer position.
+   */
   async participantCursor(request: Request) {
     const session = await this.deps.requireSession();
     const body = await readControlBody(request);
-    const room = updateParticipantCursor(
-      await this.loadOrCreate(session),
-      body
-    );
-    // Cursor position is ephemeral; skip waiting for the write to be
-    // confirmed durable to keep the round-trip fast.
-    await this.deps.storage.put('exercise', room, {allowUnconfirmed: true});
-
-    const requestedId =
+    const participantId =
       typeof body.participantId === 'string' ? body.participantId.trim() : '';
+    const room = await this.loadOrCreate(session);
     const participant = room.participants.find(
-      (entry) => entry.participantId === requestedId
+      (entry) => entry.participantId === participantId
     );
-    if (!participant?.cursor) {
+    if (!participant) {
       throw new HttpError(404, 'not_found', 'participant not found');
     }
+    const previous = this.cursors.get(participantId);
+    const cursor: ParticipantCursor = {
+      x: clampNumber(body.x, 0, 1920, previous?.x ?? 960),
+      y: clampNumber(body.y, 0, 1080, previous?.y ?? 540),
+      visible: body.visible !== false,
+      updatedAt: new Date().toISOString(),
+    };
+    this.cursors.set(participantId, cursor);
 
     const event: ParticipantCursorEvent = {
       sessionId: session.sessionId,
-      participantId: participant.participantId,
-      x: participant.cursor.x,
-      y: participant.cursor.y,
-      visible: participant.cursor.visible,
-      updatedAt: participant.cursor.updatedAt,
+      participantId,
+      x: cursor.x,
+      y: cursor.y,
+      visible: cursor.visible,
+      updatedAt: cursor.updatedAt,
     };
     this.deps.sseHub.broadcast('cursor', event);
     return jsonOk({ok: true});
@@ -149,8 +201,13 @@ export class SessionExerciseHub {
   async participantRole(request: Request) {
     const session = await this.deps.requireSession();
     const body = await readControlBody(request);
-    const room = updateParticipantRole(await this.loadOrCreate(session), body);
-    return this.saveResponse(session, room, 'presence');
+    return this.runExclusive(async () => {
+      const room = updateParticipantRole(
+        await this.loadOrCreate(session),
+        body
+      );
+      return this.saveResponse(session, room, 'presence');
+    });
   }
 
   async participantLeave(request: Request) {
@@ -158,39 +215,60 @@ export class SessionExerciseHub {
     const body = (await readControlBody(request)) as {participantId?: unknown};
     const participantId =
       typeof body.participantId === 'string' ? body.participantId : undefined;
-    const current = await this.loadOrCreate(session);
-    const room: StoredExerciseRoom = {
-      ...current,
-      participants: current.participants.map((participant) =>
-        participant.participantId === participantId
-          ? {
-              ...participant,
-              online: false,
-              lastSeenAt: new Date().toISOString(),
-            }
-          : participant
-      ),
-    };
-    return this.saveResponse(session, room, 'presence');
+    return this.runExclusive(async () => {
+      const room = leaveParticipant(
+        await this.loadOrCreate(session),
+        participantId
+      );
+      return this.saveResponse(session, room, 'presence');
+    });
+  }
+
+  /**
+   * Marks a participant offline immediately without reassigning the host
+   * or ending the session — used for the multiplayer tab-hidden/pagehide
+   * presence signal (see useSessionLifecycleGuards.ts) as an alternative
+   * to notifySessionTimeout, so one player's disconnect no longer ends
+   * the exercise for everyone else.
+   */
+  async participantOffline(request: Request) {
+    const session = await this.deps.requireSession();
+    const body = (await readControlBody(request)) as {participantId?: unknown};
+    const participantId =
+      typeof body.participantId === 'string' ? body.participantId : undefined;
+    if (!participantId) {
+      throw new HttpError(400, 'bad_request', 'participantId is required');
+    }
+    return this.runExclusive(async () => {
+      const room = markParticipantOffline(
+        await this.loadOrCreate(session),
+        participantId
+      );
+      return this.saveResponse(session, room, 'presence');
+    });
   }
 
   async ready(request: Request) {
     const session = await this.deps.requireSession();
     const body = await readControlBody(request);
-    const room = heartbeatParticipant(await this.loadOrCreate(session), {
-      ...body,
-      ready: true,
+    return this.runExclusive(async () => {
+      const room = heartbeatParticipant(await this.loadOrCreate(session), {
+        ...body,
+        ready: true,
+      });
+      return this.saveResponse(session, room, 'presence');
     });
-    return this.saveResponse(session, room, 'presence');
   }
 
   async taskCreate(request: Request) {
     const session = await this.deps.requireSession();
     const body = await readControlBody(request);
-    const room = await this.loadOrCreate(session);
-    const decision = canContributeRecords(room, actorIdFrom(body));
-    if (!decision.allowed) return observerReadOnlyResponse();
-    return this.saveResponse(session, createTask(room, body), 'task');
+    return this.runExclusive(async () => {
+      const room = await this.loadOrCreate(session);
+      const decision = canContributeRecords(room, actorIdFrom(body));
+      if (!decision.allowed) return observerReadOnlyResponse();
+      return this.saveResponse(session, createTask(room, body), 'task');
+    });
   }
 
   async taskUpdate(request: Request) {
@@ -199,14 +277,16 @@ export class SessionExerciseHub {
     if (typeof body.taskId !== 'string') {
       throw new HttpError(400, 'bad_request', 'taskId is required');
     }
-    const room = await this.loadOrCreate(session);
-    const decision = canContributeRecords(room, actorIdFrom(body));
-    if (!decision.allowed) return observerReadOnlyResponse();
-    return this.saveResponse(
-      session,
-      updateTask(room, body.taskId, body),
-      'task'
-    );
+    return this.runExclusive(async () => {
+      const room = await this.loadOrCreate(session);
+      const decision = canContributeRecords(room, actorIdFrom(body));
+      if (!decision.allowed) return observerReadOnlyResponse();
+      return this.saveResponse(
+        session,
+        updateTask(room, body.taskId as string, body),
+        'task'
+      );
+    });
   }
 
   async taskDelete(request: Request) {
@@ -215,10 +295,16 @@ export class SessionExerciseHub {
     if (typeof body.taskId !== 'string') {
       throw new HttpError(400, 'bad_request', 'taskId is required');
     }
-    const room = await this.loadOrCreate(session);
-    const decision = canContributeRecords(room, actorIdFrom(body));
-    if (!decision.allowed) return observerReadOnlyResponse();
-    return this.saveResponse(session, deleteTask(room, body.taskId), 'task');
+    return this.runExclusive(async () => {
+      const room = await this.loadOrCreate(session);
+      const decision = canContributeRecords(room, actorIdFrom(body));
+      if (!decision.allowed) return observerReadOnlyResponse();
+      return this.saveResponse(
+        session,
+        deleteTask(room, body.taskId as string),
+        'task'
+      );
+    });
   }
 
   async injectFire(request: Request) {
@@ -230,15 +316,17 @@ export class SessionExerciseHub {
     if (typeof body.injectId !== 'string') {
       throw new HttpError(400, 'bad_request', 'injectId is required');
     }
-    const room = await this.loadOrCreate(session);
-    const participantId =
-      typeof body.participantId === 'string' ? body.participantId : undefined;
-    const decision = canPerformRoleGatedAction(room, participantId);
-    if (!decision.allowed) {
-      return hostRequiredResponse();
-    }
-    const fired = fireInject(room, body.injectId, body);
-    return this.saveResponse(session, fired, 'inject');
+    return this.runExclusive(async () => {
+      const room = await this.loadOrCreate(session);
+      const participantId =
+        typeof body.participantId === 'string' ? body.participantId : undefined;
+      const decision = canPerformRoleGatedAction(room, participantId);
+      if (!decision.allowed) {
+        return hostRequiredResponse();
+      }
+      const fired = fireInject(room, body.injectId as string, body);
+      return this.saveResponse(session, fired, 'inject');
+    });
   }
 
   async phaseAdvance(request: Request) {
@@ -247,44 +335,54 @@ export class SessionExerciseHub {
       participantId?: unknown;
       phase?: unknown;
     };
-    const room = await this.loadOrCreate(session);
-    const participantId =
-      typeof body.participantId === 'string' ? body.participantId : undefined;
-    const decision = canPerformRoleGatedAction(room, participantId);
-    if (!decision.allowed) {
-      return hostRequiredResponse();
-    }
-    if (body.phase !== 'briefing') {
-      throw new HttpError(400, 'bad_request', 'unsupported phase transition');
-    }
-    if (room.phase !== 'lobby') {
-      return this.saveResponse(session, room, 'phase');
-    }
-    return this.saveResponse(
-      session,
-      setExercisePhase(room, 'briefing'),
-      'phase'
-    );
+    return this.runExclusive(async () => {
+      const room = await this.loadOrCreate(session);
+      const participantId =
+        typeof body.participantId === 'string' ? body.participantId : undefined;
+      const decision = canPerformRoleGatedAction(room, participantId);
+      if (!decision.allowed) {
+        return hostRequiredResponse();
+      }
+      if (body.phase !== 'briefing') {
+        throw new HttpError(400, 'bad_request', 'unsupported phase transition');
+      }
+      if (room.phase !== 'lobby') {
+        return this.saveResponse(session, room, 'phase');
+      }
+      return this.saveResponse(
+        session,
+        setExercisePhase(room, 'briefing'),
+        'phase'
+      );
+    });
   }
 
   async fireScheduledInject(session: StoredSession, injectId: string) {
-    const room = await this.loadOrCreate(session);
-    const inject = room.injects.find((item) => item.id === injectId);
-    if (!inject || inject.fired) return;
-    await this.saveResponse(session, fireInject(room, injectId, {}), 'inject');
+    return this.runExclusive(async () => {
+      const room = await this.loadOrCreate(session);
+      const inject = room.injects.find((item) => item.id === injectId);
+      if (!inject || inject.fired) return;
+      await this.saveResponse(
+        session,
+        fireInject(room, injectId, {}),
+        'inject'
+      );
+    });
   }
 
   async incidentLog(request: Request) {
     const session = await this.deps.requireSession();
     const body = await readControlBody(request);
-    const room = await this.loadOrCreate(session);
-    const decision = canContributeRecords(room, actorIdFrom(body));
-    if (!decision.allowed) return observerReadOnlyResponse();
-    return this.saveResponse(
-      session,
-      appendIncidentLog(room, body),
-      'incident_log'
-    );
+    return this.runExclusive(async () => {
+      const room = await this.loadOrCreate(session);
+      const decision = canContributeRecords(room, actorIdFrom(body));
+      if (!decision.allowed) return observerReadOnlyResponse();
+      return this.saveResponse(
+        session,
+        appendIncidentLog(room, body),
+        'incident_log'
+      );
+    });
   }
 
   async incidentLogUpdate(request: Request) {
@@ -293,14 +391,16 @@ export class SessionExerciseHub {
     if (typeof body.entryId !== 'string') {
       throw new HttpError(400, 'bad_request', 'entryId is required');
     }
-    const room = await this.loadOrCreate(session);
-    const decision = canContributeRecords(room, actorIdFrom(body));
-    if (!decision.allowed) return observerReadOnlyResponse();
-    return this.saveResponse(
-      session,
-      updateIncidentLog(room, body.entryId, body),
-      'incident_log'
-    );
+    return this.runExclusive(async () => {
+      const room = await this.loadOrCreate(session);
+      const decision = canContributeRecords(room, actorIdFrom(body));
+      if (!decision.allowed) return observerReadOnlyResponse();
+      return this.saveResponse(
+        session,
+        updateIncidentLog(room, body.entryId as string, body),
+        'incident_log'
+      );
+    });
   }
 
   async incidentLogDelete(request: Request) {
@@ -309,23 +409,27 @@ export class SessionExerciseHub {
     if (typeof body.entryId !== 'string') {
       throw new HttpError(400, 'bad_request', 'entryId is required');
     }
-    const room = await this.loadOrCreate(session);
-    const decision = canContributeRecords(room, actorIdFrom(body));
-    if (!decision.allowed) return observerReadOnlyResponse();
-    return this.saveResponse(
-      session,
-      deleteIncidentLog(room, body.entryId),
-      'incident_log'
-    );
+    return this.runExclusive(async () => {
+      const room = await this.loadOrCreate(session);
+      const decision = canContributeRecords(room, actorIdFrom(body));
+      if (!decision.allowed) return observerReadOnlyResponse();
+      return this.saveResponse(
+        session,
+        deleteIncidentLog(room, body.entryId as string),
+        'incident_log'
+      );
+    });
   }
 
   async hotwash(request: Request) {
     const session = await this.deps.requireSession();
     const body = await readControlBody(request);
-    const room = await this.loadOrCreate(session);
-    const decision = canContributeRecords(room, actorIdFrom(body));
-    if (!decision.allowed) return observerReadOnlyResponse();
-    return this.saveResponse(session, submitHotwash(room, body), 'hotwash');
+    return this.runExclusive(async () => {
+      const room = await this.loadOrCreate(session);
+      const decision = canContributeRecords(room, actorIdFrom(body));
+      if (!decision.allowed) return observerReadOnlyResponse();
+      return this.saveResponse(session, submitHotwash(room, body), 'hotwash');
+    });
   }
 
   async aar() {

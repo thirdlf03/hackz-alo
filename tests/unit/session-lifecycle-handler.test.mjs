@@ -151,3 +151,110 @@ test('handleSessionAlarm reschedules when session is still active', async () => 
   });
   assert.deepEqual(calls, ['schedule']);
 });
+
+test('handleSessionAlarm times out once all participants have been offline for the idle window, even with SSE clients still connected', async () => {
+  const calls = [];
+  const offlineSince = Date.now() - 10 * 60 * 1000;
+  await handleSessionAlarm({
+    storage: createStorage({
+      lastClientActivityAt: Date.now(),
+      allParticipantsOfflineSince: offlineSince,
+    }),
+    // A hidden/backgrounded tab keeps its SSE connection open even once
+    // its participant heartbeat goes stale, so this path must fire
+    // regardless of sseHubSize.
+    sseHubSize: 1,
+    getSession: async () => ({
+      ...runningSession,
+      gameTimeMs: 0,
+      gameClockWallMs: Date.now(),
+    }),
+    requireScenario: () => ({
+      id: 'process-stop',
+      timeLimitMinutes: 60,
+    }),
+    hasOnlineParticipants: async () => false,
+    handlers: {
+      deleteSession: async () => {
+        calls.push('delete');
+      },
+      timeout: async () => {
+        calls.push('timeout');
+      },
+      scheduleLifecycleAlarms: async () => {
+        calls.push('schedule');
+      },
+    },
+  });
+  assert.deepEqual(calls, ['timeout']);
+});
+
+test('handleSessionAlarm reschedules (not times out) the first time all participants go offline, and records when it started', async () => {
+  const calls = [];
+  const storage = createStorage({lastClientActivityAt: Date.now()});
+  await handleSessionAlarm({
+    storage,
+    sseHubSize: 1,
+    getSession: async () => ({
+      ...runningSession,
+      gameTimeMs: 0,
+      gameClockWallMs: Date.now(),
+    }),
+    requireScenario: () => ({
+      id: 'process-stop',
+      timeLimitMinutes: 60,
+    }),
+    hasOnlineParticipants: async () => false,
+    handlers: {
+      deleteSession: async () => {
+        calls.push('delete');
+      },
+      timeout: async () => {
+        calls.push('timeout');
+      },
+      scheduleLifecycleAlarms: async () => {
+        calls.push('schedule');
+      },
+    },
+  });
+  assert.deepEqual(calls, ['schedule']);
+  assert.equal(
+    typeof (await storage.get('allParticipantsOfflineSince')),
+    'number'
+  );
+});
+
+test('handleSessionAlarm clears the offline-since marker once a participant comes back online', async () => {
+  const calls = [];
+  const storage = createStorage({
+    lastClientActivityAt: Date.now(),
+    allParticipantsOfflineSince: Date.now() - 60_000,
+  });
+  await handleSessionAlarm({
+    storage,
+    sseHubSize: 1,
+    getSession: async () => ({
+      ...runningSession,
+      gameTimeMs: 0,
+      gameClockWallMs: Date.now(),
+    }),
+    requireScenario: () => ({
+      id: 'process-stop',
+      timeLimitMinutes: 60,
+    }),
+    hasOnlineParticipants: async () => true,
+    handlers: {
+      deleteSession: async () => {
+        calls.push('delete');
+      },
+      timeout: async () => {
+        calls.push('timeout');
+      },
+      scheduleLifecycleAlarms: async () => {
+        calls.push('schedule');
+      },
+    },
+  });
+  assert.deepEqual(calls, ['schedule']);
+  assert.equal(await storage.get('allParticipantsOfflineSince'), undefined);
+});

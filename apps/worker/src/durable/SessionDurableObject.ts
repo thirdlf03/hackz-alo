@@ -43,6 +43,9 @@ import {SessionResourceHub} from './sessionResourceRoutes.js';
 import {
   areParticipantsReadyToStart,
   canPerformRoleGatedAction,
+  hasOtherOnlineParticipants,
+  isParticipantOnline,
+  markParticipantOffline,
   setExercisePhase,
 } from '../pure/exerciseRoom.js';
 import {
@@ -95,6 +98,12 @@ export class SessionDurableObject implements DurableObject {
     result: SandboxPrepareResult;
     expiresAt: number;
   };
+  // Guards start() against concurrent invocations (e.g. a double-click or
+  // two participants racing to start the same lobby): a second call while
+  // one is already in flight is rejected with 409 instead of re-reading
+  // storage.status and possibly re-running startStoredSession/schedule()
+  // for the same session.
+  private startInFlight = false;
   private recoveryCheckFn?: (
     session: StoredSession
   ) => Promise<RecoveryCheckResult>;
@@ -168,6 +177,14 @@ export class SessionDurableObject implements DurableObject {
       getSession: async () =>
         await this.state.storage.get<StoredSession>('session'),
       requireScenario,
+      hasOnlineParticipants: async () => {
+        const session = await this.state.storage.get<StoredSession>('session');
+        if (!session) return false;
+        const room = await this.exercise.loadOrCreate(session);
+        return room.participants.some((participant) =>
+          isParticipantOnline(participant)
+        );
+      },
       handlers: {
         deleteSession: async () => {
           await this.deleteSession();
@@ -199,7 +216,7 @@ export class SessionDurableObject implements DurableObject {
             resolve: () => this.resolve(),
             recoveryCheck: () => this.recoveryCheck(),
             retire: () => this.retire(),
-            timeout: () => this.timeout(),
+            timeout: (req) => this.timeout(req),
             delete: () => this.deleteSession(),
             updateClock: (req) => this.updateClock(req),
             terminalResize: (req) => this.resources.terminalResize(req),
@@ -220,6 +237,7 @@ export class SessionDurableObject implements DurableObject {
             participantCursor: (req) => this.exercise.participantCursor(req),
             participantRole: (req) => this.exercise.participantRole(req),
             participantLeave: (req) => this.exercise.participantLeave(req),
+            participantOffline: (req) => this.exercise.participantOffline(req),
             exerciseState: () => this.exercise.state(),
             exerciseReady: (req) => this.exercise.ready(req),
             taskCreate: (req) => this.exercise.taskCreate(req),
@@ -286,7 +304,33 @@ export class SessionDurableObject implements DurableObject {
     return jsonOk(result);
   }
 
+  /**
+   * A second start() call arriving while one is already running the async
+   * sandbox-startup sequence below is rejected outright rather than
+   * re-entering it: without this, two concurrent calls could both read
+   * status !== 'running' before either had persisted the transition,
+   * both call startStoredSession + schedule the scenario timeline, and
+   * double-fire every trigger/alert/inject (sessionTimeline.ts's
+   * schedule() is separately made idempotent too — see its comment — but
+   * this guard avoids the double run in the first place).
+   */
   private async start(request: Request) {
+    if (this.startInFlight) {
+      throw new HttpError(
+        409,
+        'start_in_progress',
+        'session start is already in progress'
+      );
+    }
+    this.startInFlight = true;
+    try {
+      return await this.startExclusive(request);
+    } finally {
+      this.startInFlight = false;
+    }
+  }
+
+  private async startExclusive(request: Request) {
     const body = (await readBootstrap(request)) as Partial<SessionBootstrap> & {
       originUrl?: string;
       participantId?: string;
@@ -344,6 +388,22 @@ export class SessionDurableObject implements DurableObject {
         }
       );
       throw new HttpError(502, 'sandbox_start_failed', messageFrom(error));
+    }
+
+    // The sandbox prepare/start awaits above can take long enough for a
+    // concurrently dispatched retire/timeout/delete request to finish the
+    // session out from under us (the startInFlight guard only serializes
+    // start() against itself, not against other action routes). Re-check
+    // before persisting session_start/scheduling the timeline so we don't
+    // resurrect a session another request just finished.
+    const latestStatus = await this.requireSession();
+    if (isTerminalStatus(latestStatus.status)) {
+      await destroySessionSandbox(this.env, running.sessionId);
+      throw new HttpError(
+        409,
+        'invalid_state',
+        `session is already ${latestStatus.status}`
+      );
     }
 
     running = await this.emit(running, 'session_start', 0, 'system', {
@@ -425,12 +485,37 @@ export class SessionDurableObject implements DurableObject {
     return jsonOk({session: this.snapshotFor(result)});
   }
 
-  private async timeout() {
+  /**
+   * `/timeout` doubles as both the real end-of-session call (explicit
+   * "give up"/time-limit finish, or the sweep/alarm cleanup path — none of
+   * which pass a participantId) and, historically, the client's
+   * best-effort pagehide/hidden-tab departure beacon. The latter now goes
+   * through the participantId-aware branch below: with a participantId in
+   * the body, a lone departing participant no longer ends the session for
+   * everyone else — they're just marked offline — unless nobody else is
+   * online, in which case it falls through to the original full-session
+   * finish. Callers without a participantId (or before any exercise room
+   * exists) keep the original unconditional-finish behavior.
+   */
+  private async timeout(request?: Request) {
     const session = await this.requireSession();
     if (isTerminalStatus(session.status)) {
       await destroySessionSandbox(this.env, session.sessionId);
       return jsonOk({session: this.snapshotFor(session)});
     }
+
+    const participantId = await this.timeoutNotifierParticipantId(request);
+    if (participantId) {
+      const room = await this.exercise.loadOrCreate(session);
+      if (hasOtherOnlineParticipants(room, participantId)) {
+        const offlineRoom = markParticipantOffline(room, participantId);
+        const snapshot = await this.exercise.save(session, offlineRoom);
+        this.sseHub.broadcast('presence', snapshot);
+        this.sseHub.broadcast('exercise_state', snapshot);
+        return jsonOk({session: this.snapshotFor(session)});
+      }
+    }
+
     const finished = await this.finishSession(session, 'failed', 'timeout');
     const result = await this.emit(
       finished,
@@ -440,6 +525,14 @@ export class SessionDurableObject implements DurableObject {
       {result: 'timeout'}
     );
     return jsonOk({session: this.snapshotFor(result)});
+  }
+
+  private async timeoutNotifierParticipantId(request: Request | undefined) {
+    if (!request) return undefined;
+    const body = (await readBootstrap(request)) as {participantId?: unknown};
+    return typeof body.participantId === 'string'
+      ? body.participantId
+      : undefined;
   }
 
   private async deleteSession() {

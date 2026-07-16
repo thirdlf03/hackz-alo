@@ -66,6 +66,13 @@ export class SessionTimeline {
     scenario: ScenarioDefinition,
     firedInjectIds: readonly string[] = []
   ) {
+    // Idempotent by construction: clearing any previously pending timers
+    // before scheduling new ones means a repeated schedule() call (e.g.
+    // from a start() race that slipped past the DO's in-flight guard)
+    // can never register duplicate timers for the same trigger/alert/
+    // chat/inject, which would otherwise double-fire them. reschedule()
+    // already relies on this same clear-then-schedule sequence.
+    this.clear();
     for (const trigger of scenario.triggers) {
       if (session.triggeredIds.includes(trigger.id)) continue;
       this.scheduleAtGameTime(

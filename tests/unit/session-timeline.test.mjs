@@ -161,6 +161,32 @@ test('SessionTimeline does not reschedule an already-fired inject', async () => 
   assert.deepEqual(harness.calls.firedInjects, []);
 });
 
+test('SessionTimeline schedule() is idempotent: calling it twice never double-fires a trigger', async () => {
+  const harness = createTimelineHarness(testSession({gameTimeMs: 100}));
+  const scenario = testScenario({
+    triggers: [
+      {
+        id: 'trigger_1',
+        atMs: 0,
+        type: 'process_stop',
+        params: {processId: 'api'},
+      },
+    ],
+  });
+
+  // Simulates a start() race that slipped past the DO's in-flight guard
+  // and called schedule() twice for the same session: schedule() clears
+  // any previously pending timers before re-registering, so this must
+  // still only fire the trigger once.
+  harness.timeline.schedule(harness.session, scenario);
+  harness.timeline.schedule(harness.session, scenario);
+  await waitForTimers();
+
+  assert.deepEqual(harness.calls.injected, [
+    ['sess_1', 'process_stop', {processId: 'api'}],
+  ]);
+});
+
 function createTimelineHarness(initialSession, options = {}) {
   let session = initialSession;
   const calls = {

@@ -82,6 +82,15 @@ test('matchSessionRoute maps durable object HTTP actions', () => {
     'participantJoin'
   );
   assert.equal(
+    matchSessionRoute(
+      new Request('https://do/participant-offline', {
+        method: 'POST',
+        body: '{}',
+      })
+    ),
+    'participantOffline'
+  );
+  assert.equal(
     matchSessionRoute(new Request('https://do/exercise', {method: 'GET'})),
     'exerciseState'
   );

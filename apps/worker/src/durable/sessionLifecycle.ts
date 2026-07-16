@@ -41,6 +41,7 @@ export async function clearSessionLifecycleAlarms(
 ) {
   await storage.deleteAlarm();
   await storage.delete('lastClientActivityAt');
+  await storage.delete('allParticipantsOfflineSince');
 }
 
 export async function touchSessionClientActivity(
@@ -75,6 +76,18 @@ export async function handleSessionAlarm(input: {
   getSession: () => Promise<StoredSession | undefined>;
   requireScenario: (scenarioId: string) => ScenarioDefinition;
   handlers: SessionAlarmHandlers;
+  /**
+   * Whether any exercise-room participant is currently online (lastSeenAt
+   * within the presence window — see exerciseRoom.ts isParticipantOnline).
+   * Optional so callers/tests that don't care about the all-offline
+   * cleanup below can omit it; when omitted, that check is skipped
+   * (treated as if participants are online), preserving prior behavior.
+   * A backgrounded/hidden tab keeps its SSE connection open even once its
+   * participant heartbeat goes stale, so this is a separate signal from
+   * `sseHubSize` — see the idleDeadline comment in sessionLifecycleClock.ts
+   * for why the alarm now reliably re-fires often enough to observe it.
+   */
+  hasOnlineParticipants?: () => Promise<boolean>;
 }) {
   try {
     const session = await input.getSession();
@@ -102,6 +115,22 @@ export async function handleSessionAlarm(input: {
     ) {
       await input.handlers.timeout();
       return;
+    }
+
+    const hasOnlineParticipants = input.hasOnlineParticipants
+      ? await input.hasOnlineParticipants()
+      : true;
+    if (!hasOnlineParticipants) {
+      const offlineSince =
+        (await input.storage.get<number>('allParticipantsOfflineSince')) ??
+        Date.now();
+      await input.storage.put('allParticipantsOfflineSince', offlineSince);
+      if (Date.now() - offlineSince >= SESSION_IDLE_TIMEOUT_MS) {
+        await input.handlers.timeout();
+        return;
+      }
+    } else {
+      await input.storage.delete('allParticipantsOfflineSince');
     }
 
     await input.handlers.scheduleLifecycleAlarms(session, scenario);

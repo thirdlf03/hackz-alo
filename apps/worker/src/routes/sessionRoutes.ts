@@ -302,7 +302,15 @@ export function registerSessionRoutes(app: WorkerApp) {
   app.post('/api/sessions/:sessionId/timeout', async (c) => {
     const denied = await requireSessionWriteAccess(c, c.req.param('sessionId'));
     if (denied) return denied;
-    return proxySession(c, 'timeout');
+    // Forward the body so an optional participantId reaches
+    // SessionDurableObject.timeout(): with it, a lone participant's
+    // departure beacon marks them offline instead of ending the session
+    // for everyone else (see timeout()'s doc comment).
+    const body = await readRouteJsonObject(c, SESSION_CONTROL_BODY_MAX_BYTES, {
+      emptyValue: {},
+    });
+    if (body instanceof Response) return body;
+    return proxySession(c, 'timeout', body);
   });
   app.delete('/api/sessions/:sessionId', async (c) => {
     const denied = await requireSessionWriteAccess(c, c.req.param('sessionId'));
@@ -413,6 +421,20 @@ export function registerSessionRoutes(app: WorkerApp) {
     });
     if (body instanceof Response) return body;
     return proxySession(c, 'participant-leave', body);
+  });
+  // Best-effort presence signal for a multiplayer tab going hidden/closing:
+  // marks the participant offline without ending the session for everyone
+  // else. See useSessionLifecycleGuards.ts / sessionApi.ts
+  // markParticipantOffline (fetch keepalive, not sendBeacon, so it can
+  // still carry the write-token Authorization header this route requires).
+  app.post('/api/sessions/:sessionId/participants/offline', async (c) => {
+    const denied = await requireSessionWriteAccess(c, c.req.param('sessionId'));
+    if (denied) return denied;
+    const body = await readRouteJsonObject(c, SESSION_CONTROL_BODY_MAX_BYTES, {
+      emptyValue: {},
+    });
+    if (body instanceof Response) return body;
+    return proxySession(c, 'participant-offline', body);
   });
   app.post('/api/sessions/:sessionId/exercise/ready', async (c) => {
     const denied = await requireSessionWriteAccess(c, c.req.param('sessionId'));

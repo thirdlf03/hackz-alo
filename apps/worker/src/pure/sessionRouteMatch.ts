@@ -24,6 +24,7 @@ export type SessionRouteName =
   | 'participantCursor'
   | 'participantRole'
   | 'participantLeave'
+  | 'participantOffline'
   | 'exerciseState'
   | 'exerciseReady'
   | 'taskCreate'
@@ -55,6 +56,7 @@ const routeTable: Record<string, Partial<Record<string, SessionRouteName>>> = {
     'participant-cursor': 'participantCursor',
     'participant-role': 'participantRole',
     'participant-leave': 'participantLeave',
+    'participant-offline': 'participantOffline',
     'exercise-ready': 'exerciseReady',
     'task-create': 'taskCreate',
     'task-update': 'taskUpdate',
