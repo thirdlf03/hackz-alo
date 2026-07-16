@@ -47,6 +47,7 @@ import {
   readInviteFromSearch,
 } from './appUtils.js';
 import {isHostParticipant} from '../pure/isHostParticipant.js';
+import {useParticipantIdentityGuard} from './useParticipantIdentityGuard.js';
 import '@xterm/xterm/css/xterm.css';
 
 const CONSENT_KEY = 'incident-recording-consent';
@@ -54,6 +55,10 @@ const SAVE_RECORDING_KEY = 'incident-recording-save';
 const PARTICIPANT_ID_KEY = 'incident-participant-id';
 const PARTICIPANT_NAME_KEY = 'incident-participant-name';
 const PARTICIPANT_ROLE_KEY = 'incident-participant-role';
+/** Mirrors useSessionRuntime's SESSION_ID_KEY; kept as a separate local
+ * constant per this file's existing storage-key convention (see
+ * CONSENT_KEY / SAVE_RECORDING_KEY, also duplicated across files). */
+const SESSION_ID_KEY = 'incident-session-id';
 
 export function App() {
   const initialReplayId = readReplayIdFromSearch();
@@ -90,7 +95,9 @@ export function App() {
     sessionId: string;
     replayId: string;
   }>();
-  const [participantId] = useState(() => readOrCreateParticipantId());
+  const [participantId, setParticipantId] = useState(() =>
+    readOrCreateParticipantId()
+  );
   const [htmlInCanvasChat] = useState(() => detectHtmlInCanvasSupport());
   const [participantName, setParticipantName] = useState(
     () => sessionStorage.getItem(PARTICIPANT_NAME_KEY) ?? 'Player'
@@ -161,6 +168,29 @@ export function App() {
   useEffect(() => {
     sessionStorage.setItem(PARTICIPANT_ROLE_KEY, participantRole);
   }, [participantRole]);
+
+  useEffect(() => {
+    // Persisted so a reload (F5) can resume this session — see
+    // useSessionRuntime's resumeSessionFromStorage. Cleared explicitly by
+    // leaveSession / a failed resume, not here.
+    if (!session) return;
+    sessionStorage.setItem(SESSION_ID_KEY, session.sessionId);
+  }, [session?.sessionId]);
+
+  useParticipantIdentityGuard({
+    participantId,
+    onCollision: () => {
+      // Another tab already answers on this participantId's guard channel
+      // (see readOrCreateParticipantId — this happens when the browser's
+      // "duplicate tab" feature copies sessionStorage verbatim). Mint a
+      // fresh id and persist it; the participant-join effect below picks
+      // up the change via its participantId dependency and rejoins the
+      // current session under the new id.
+      const nextParticipantId = createParticipantId();
+      sessionStorage.setItem(PARTICIPANT_ID_KEY, nextParticipantId);
+      setParticipantId(nextParticipantId);
+    },
+  });
 
   useEffect(() => {
     void fetchPushPublicKey().then(setPagerPublicKey);
@@ -235,6 +265,7 @@ export function App() {
     patchGameStateRef,
     currentGameTimeMs,
     createSessionForScenario,
+    leaveSession,
     startPlay,
     advanceToBriefing,
     endSession,
@@ -539,6 +570,9 @@ export function App() {
           onContinue={() => {
             advanceToBriefing();
           }}
+          onLeave={() => {
+            void leaveSession();
+          }}
         />
       )}
 
@@ -727,10 +761,14 @@ export function App() {
   );
 }
 
+function createParticipantId() {
+  return `part_${crypto.randomUUID().replaceAll('-', '')}`;
+}
+
 function readOrCreateParticipantId() {
   const existing = sessionStorage.getItem(PARTICIPANT_ID_KEY);
   if (existing) return existing;
-  const created = `part_${crypto.randomUUID().replaceAll('-', '')}`;
+  const created = createParticipantId();
   sessionStorage.setItem(PARTICIPANT_ID_KEY, created);
   return created;
 }

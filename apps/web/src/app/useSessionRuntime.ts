@@ -35,9 +35,11 @@ import type {FinishMode, Screen, ScenarioSummary} from './appTypes.js';
 import {
   computeLiveGameTimeMs,
   describeSessionActionError,
+  readInviteFromSearch,
   readReplayIdFromSearch,
   toErrorMessage,
 } from './appUtils.js';
+import {screenForExercisePhase} from '../pure/exercisePhaseScreen.js';
 import {useExercisePhaseSync} from './useExercisePhaseSync.js';
 import {useSessionBootstrap} from './useSessionBootstrap.js';
 import {useSessionClockSync} from './useSessionClockSync.js';
@@ -52,6 +54,10 @@ import type {
 
 const CONSENT_KEY = 'incident-recording-consent';
 const SAVE_RECORDING_KEY = 'incident-recording-save';
+/** Persists the active session's id so a reload can resume it (the write
+ * token is already persisted separately by HttpClient). See
+ * resumeSessionFromStorage / leaveSession. */
+const SESSION_ID_KEY = 'incident-session-id';
 /** A fresh-enough recovery-check result is reused instead of re-hitting the
  * dry-run endpoint (mirrors the DO-side 5s cache; this is a coarser
  * client-side dedupe on top of it). */
@@ -677,6 +683,113 @@ export function useSessionRuntime(options: {
     }
   }
 
+  /**
+   * Resumes a session across a reload: sessionId (SESSION_ID_KEY) and the
+   * write token (persisted separately by HttpClient) both survive an F5
+   * because they live in sessionStorage, unlike the rest of the app's React
+   * state. If both are present, refetch the session and land on the screen
+   * matching its current exercise phase. lobby/briefing/running phases set
+   * screen to 'lobby' and rely on the same SSE-driven cascade an
+   * invite-link guest already goes through (useExercisePhaseSync +
+   * the participant-join effect in App.tsx, both keyed off `screen`/
+   * `session` changing) — resolved/hotwash/aar have no such cascade from a
+   * cold 'lobby' start, so screenForExercisePhase's result is used directly
+   * for those. A failed refetch (404, expired session, etc.) means the
+   * session is gone, so the stored credentials are cleared and the app
+   * falls through to its normal top screen.
+   */
+  async function resumeSessionFromStorage() {
+    if (creatingSessionRef.current) return;
+    const storedSessionId = sessionStorage.getItem(SESSION_ID_KEY) ?? undefined;
+    const storedWriteToken = api.sessionAccessToken();
+    if (!storedSessionId || !storedWriteToken) return;
+    creatingSessionRef.current = true;
+    setAppError(undefined);
+    setIsStarting(true);
+    setSandboxReady(false);
+    try {
+      terminalBridgeRef.current?.destroyTerminal();
+      const snapshot = await api.getSession(storedSessionId);
+      const exercise = await api.getExerciseState(storedSessionId);
+      api.resetEventSequence();
+      eventEmitterRef.current?.reset();
+      liveReplayEventIdsRef.current.clear();
+      recordingRef.current?.resetRecordingClock();
+      elapsedMsRef.current = 0;
+      lastTickAtRef.current = 0;
+      finishingRef.current = false;
+      tabBeaconSentRef.current = false;
+      setScenario(snapshot.scenario);
+      setSession({sessionId: snapshot.sessionId, replayId: snapshot.replayId});
+      setTimeline([]);
+      setExerciseSnapshot(exercise);
+      setGameState(
+        createInitialGameState(
+          snapshot.scenario,
+          snapshot.sessionId,
+          snapshot.replayId,
+          createEmptyTerminalMirror(),
+          {
+            sessionStatus: snapshot.status,
+            speed: gameSpeed,
+            localParticipantId: participantId,
+            ...(snapshot.recoveryConfirmedAtMs !== undefined
+              ? {recoveryConfirmedAtMs: snapshot.recoveryConfirmedAtMs}
+              : {}),
+          }
+        )
+      );
+      const target = screenForExercisePhase(exercise.phase);
+      setScreen(target === 'result' || target === 'hotwash' ? target : 'lobby');
+      sandboxPrepareSessionIdRef.current = snapshot.sessionId;
+      void api
+        .prepareSession(snapshot.sessionId)
+        .then(() => {
+          if (sandboxPrepareSessionIdRef.current === snapshot.sessionId) {
+            setSandboxReady(true);
+          }
+        })
+        .catch((error: unknown) => {
+          if (sandboxPrepareSessionIdRef.current !== snapshot.sessionId) return;
+          setSandboxReady(false);
+          setAppError(toErrorMessage(error));
+        });
+    } catch {
+      sandboxPrepareSessionIdRef.current = undefined;
+      sessionStorage.removeItem(SESSION_ID_KEY);
+      api.setSessionAccessToken(undefined);
+    } finally {
+      creatingSessionRef.current = false;
+      setIsStarting(false);
+    }
+  }
+
+  /** Explicit "退出" from the lobby: best-effort notifies the server, then
+   * clears the resume credentials (SESSION_ID_KEY + write token) so a
+   * later reload doesn't try to resume this session, and resets to the top
+   * screen. */
+  async function leaveSession() {
+    if (!session) return;
+    const activeSessionId = session.sessionId;
+    terminalBridgeRef.current?.destroyTerminal();
+    await api.leaveParticipant(activeSessionId, {participantId}).catch(() => {
+      // Best-effort: the client is leaving regardless of whether the
+      // server could be notified.
+    });
+    sessionStorage.removeItem(SESSION_ID_KEY);
+    api.setSessionAccessToken(undefined);
+    eventEmitterRef.current?.reset();
+    liveReplayEventIdsRef.current.clear();
+    finishingRef.current = false;
+    tabBeaconSentRef.current = false;
+    setSession(undefined);
+    setScenario(undefined);
+    setGameState(undefined);
+    setExerciseSnapshot(undefined);
+    setTimeline([]);
+    setScreen('select');
+  }
+
   function submitChatMessage() {
     const state = gameStateRef.current;
     const replayId = sessionRef.current?.replayId;
@@ -706,6 +819,16 @@ export function useSessionRuntime(options: {
     setScreen,
     refs,
   });
+
+  useEffect(() => {
+    // Deep links (?replay=) and invite links (?join=&wt=) both take
+    // priority over resuming a previously stored session — App.tsx's own
+    // effect handles the invite case.
+    if (deepLinkReplayId || readInviteFromSearch()) return;
+    void resumeSessionFromStorage();
+    // Mount-only: resume is attempted once, from whatever sessionStorage
+    // holds at load time.
+  }, []);
 
   useEffect(() => {
     sessionRef.current = session;
@@ -739,6 +862,7 @@ export function useSessionRuntime(options: {
     currentGameTimeMs,
     createSessionForScenario,
     joinSessionFromInvite,
+    leaveSession,
     startPlay,
     advanceToBriefing,
     endSession,
