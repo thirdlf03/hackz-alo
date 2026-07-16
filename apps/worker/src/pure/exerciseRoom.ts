@@ -78,7 +78,7 @@ export function buildExerciseSnapshot(
   return {
     sessionId,
     phase: room.phase,
-    hostParticipantId: room.hostParticipantId,
+    hostParticipantId: effectiveHostParticipantId(room, nowIso),
     participants: room.participants.map((participant) =>
       markOnline(participant, nowIso)
     ),
@@ -166,6 +166,84 @@ export function updateParticipantRole(
     online: true,
     lastSeenAt: nowIso,
   }));
+}
+
+/**
+ * Marks a participant offline immediately (rather than waiting for their
+ * lastSeenAt to age past the 30s online window). Used when a participant
+ * explicitly reports leaving the room mid-session — the room's persisted
+ * `hostParticipantId` is reassigned to the next-joined online participant
+ * when the departing participant was the recorded host, so a former host
+ * doesn't silently reclaim the role just by reconnecting later (see
+ * `effectiveHostParticipantId`, which does allow that for a merely
+ * *temporary* disconnect rather than an explicit leave).
+ */
+export function leaveParticipant(
+  room: StoredExerciseRoom,
+  participantId: string | undefined,
+  nowIso = new Date().toISOString()
+): StoredExerciseRoom {
+  if (!participantId) return room;
+  const departed: StoredExerciseRoom = {
+    ...room,
+    participants: room.participants.map((participant) =>
+      participant.participantId === participantId
+        ? {...participant, online: false, lastSeenAt: nowIso}
+        : participant
+    ),
+  };
+  if (room.hostParticipantId !== participantId) return departed;
+  const nextHost = departed.participants
+    .filter(
+      (participant) =>
+        participant.participantId !== participantId &&
+        isParticipantOnline(participant, nowIso)
+    )
+    .sort((a, b) => Date.parse(a.joinedAt) - Date.parse(b.joinedAt))
+    .at(0);
+  return {...departed, hostParticipantId: nextHost?.participantId ?? null};
+}
+
+/**
+ * Marks a participant offline immediately, without reassigning the
+ * persisted host. Used for a *temporary* disconnect signal (tab hidden /
+ * closed) rather than an explicit leave — `effectiveHostParticipantId`
+ * still lets the original host reclaim authority once they reconnect.
+ * Pushes lastSeenAt safely outside the 30s online window (see
+ * `isParticipantOnline`) instead of merely flipping the display-only
+ * `online` flag, which `buildExerciseSnapshot` recomputes from
+ * lastSeenAt on every read regardless.
+ */
+export function markParticipantOffline(
+  room: StoredExerciseRoom,
+  participantId: string,
+  nowIso = new Date().toISOString()
+): StoredExerciseRoom {
+  const existing = findParticipant(room, participantId);
+  if (!existing) return room;
+  return upsertParticipant(room, {
+    ...existing,
+    online: false,
+    lastSeenAt: new Date(Date.parse(nowIso) - 60_000).toISOString(),
+  });
+}
+
+/**
+ * Whether any participant other than `participantId` is currently online.
+ * Used by the /timeout route to decide whether a single participant's
+ * departure should end the session for everyone (nobody else online) or
+ * merely mark that participant offline (others still playing).
+ */
+export function hasOtherOnlineParticipants(
+  room: StoredExerciseRoom,
+  participantId: string | undefined,
+  nowIso = new Date().toISOString()
+): boolean {
+  return room.participants.some(
+    (participant) =>
+      participant.participantId !== participantId &&
+      isParticipantOnline(participant, nowIso)
+  );
 }
 
 export function createTask(
@@ -403,12 +481,43 @@ export type HostGateDecision = {allowed: true} | {allowed: false};
  */
 export function canPerformRoleGatedAction(
   room: StoredExerciseRoom,
-  participantId: string | undefined
+  participantId: string | undefined,
+  nowIso = new Date().toISOString()
 ): HostGateDecision {
-  if (room.hostParticipantId === null) return {allowed: true};
-  return participantId === room.hostParticipantId
-    ? {allowed: true}
-    : {allowed: false};
+  const hostId = effectiveHostParticipantId(room, nowIso);
+  if (hostId === null) return {allowed: true};
+  return participantId === hostId ? {allowed: true} : {allowed: false};
+}
+
+/**
+ * The host who actually holds authority right now: the recorded
+ * `hostParticipantId` while they're online, otherwise the earliest-joined
+ * online participant as a stand-in (host failover). Falls back to the
+ * recorded host id (even offline) when nobody else is online, so a solo
+ * disconnect doesn't strand the room hostless. Returned as the
+ * `hostParticipantId` clients see in `buildExerciseSnapshot`, and used by
+ * `canPerformRoleGatedAction` — clients need no changes since they already
+ * key host-only UI off the snapshot's `hostParticipantId`
+ * (isHostParticipant).
+ */
+export function effectiveHostParticipantId(
+  room: StoredExerciseRoom,
+  nowIso = new Date().toISOString()
+): string | null {
+  // A null hostParticipantId means "no host was ever recorded" (legacy/
+  // compat rooms bootstrapped before host tracking existed) — that's the
+  // unrestricted-for-everyone case canPerformRoleGatedAction relies on, so
+  // it must stay null rather than being promoted to a stand-in.
+  if (room.hostParticipantId === null) return null;
+  const recordedHost = findParticipant(room, room.hostParticipantId);
+  if (recordedHost && isParticipantOnline(recordedHost, nowIso)) {
+    return room.hostParticipantId;
+  }
+  const standIn = room.participants
+    .filter((participant) => isParticipantOnline(participant, nowIso))
+    .sort((a, b) => Date.parse(a.joinedAt) - Date.parse(b.joinedAt))
+    .at(0);
+  return standIn?.participantId ?? room.hostParticipantId;
 }
 
 /**
@@ -601,7 +710,7 @@ function cleanId(value: unknown, prefix: string) {
   return `${prefix}_${crypto.randomUUID().replaceAll('-', '')}`;
 }
 
-function clampNumber(
+export function clampNumber(
   value: unknown,
   min: number,
   max: number,

@@ -13,8 +13,12 @@ const {
   createTask,
   deleteIncidentLog,
   deleteTask,
+  effectiveHostParticipantId,
   fireInject,
+  hasOtherOnlineParticipants,
   joinParticipant,
+  leaveParticipant,
+  markParticipantOffline,
   updateParticipantCursor,
   updateIncidentLog,
   updateTask,
@@ -284,6 +288,182 @@ test('canContributeRecords ignores offline participants when counting the room',
     staleAt
   );
   assert.equal(canContributeRecords(room, 'obs_1', checkAt).allowed, true);
+});
+
+test('effectiveHostParticipantId returns the recorded host while they are online', () => {
+  const freshAt = '2024-01-01T00:00:00.000Z';
+  const checkAt = '2024-01-01T00:00:10.000Z';
+  let room = createExerciseRoom(scenario);
+  room = joinParticipant(room, {participantId: 'host_1', role: 'ops'}, freshAt);
+  assert.equal(effectiveHostParticipantId(room, checkAt), 'host_1');
+});
+
+test('effectiveHostParticipantId fails over to the earliest-joined online participant when the recorded host goes stale', () => {
+  const hostJoinedAt = '2024-01-01T00:00:00.000Z';
+  const laterJoinedAt = '2024-01-01T00:00:20.000Z';
+  const evenLaterJoinedAt = '2024-01-01T00:00:25.000Z';
+  const checkAt = '2024-01-01T00:00:40.000Z';
+  let room = createExerciseRoom(scenario);
+  room = joinParticipant(
+    room,
+    {participantId: 'host_1', role: 'ops'},
+    hostJoinedAt
+  );
+  // host_1's heartbeat never refreshes past hostJoinedAt, so by checkAt
+  // (40s later) they're outside the 30s online window, while p_2/p_3
+  // (joined at 20s/25s) are still within it.
+  room = joinParticipant(
+    room,
+    {participantId: 'p_2', role: 'ops'},
+    laterJoinedAt
+  );
+  room = joinParticipant(
+    room,
+    {participantId: 'p_3', role: 'ops'},
+    evenLaterJoinedAt
+  );
+  assert.equal(effectiveHostParticipantId(room, checkAt), 'p_2');
+});
+
+test('effectiveHostParticipantId keeps the recorded (offline) host when nobody else is online', () => {
+  const hostJoinedAt = '2024-01-01T00:00:00.000Z';
+  const checkAt = '2024-01-01T00:00:40.000Z';
+  let room = createExerciseRoom(scenario);
+  room = joinParticipant(
+    room,
+    {participantId: 'host_1', role: 'ops'},
+    hostJoinedAt
+  );
+  assert.equal(effectiveHostParticipantId(room, checkAt), 'host_1');
+});
+
+test('effectiveHostParticipantId stays null for legacy rooms with no recorded host', () => {
+  let room = createExerciseRoom(scenario);
+  room = joinParticipant(room, {participantId: 'part_1', role: 'ops'});
+  room = {...room, hostParticipantId: null};
+  assert.equal(effectiveHostParticipantId(room), null);
+});
+
+test('buildExerciseSnapshot reports the failed-over host once the recorded host goes stale', () => {
+  const hostJoinedAt = '2024-01-01T00:00:00.000Z';
+  const laterJoinedAt = '2024-01-01T00:00:20.000Z';
+  const checkAt = '2024-01-01T00:00:40.000Z';
+  let room = createExerciseRoom(scenario);
+  room = joinParticipant(
+    room,
+    {participantId: 'host_1', role: 'ops'},
+    hostJoinedAt
+  );
+  room = joinParticipant(
+    room,
+    {participantId: 'p_2', role: 'ops'},
+    laterJoinedAt
+  );
+  const snapshot = buildExerciseSnapshot('sess_1', room, checkAt);
+  assert.equal(snapshot.hostParticipantId, 'p_2');
+});
+
+test('canPerformRoleGatedAction allows the stand-in host once the recorded host goes stale', () => {
+  const hostJoinedAt = '2024-01-01T00:00:00.000Z';
+  const laterJoinedAt = '2024-01-01T00:00:20.000Z';
+  const checkAt = '2024-01-01T00:00:40.000Z';
+  let room = createExerciseRoom(scenario);
+  room = joinParticipant(
+    room,
+    {participantId: 'host_1', role: 'ops'},
+    hostJoinedAt
+  );
+  room = joinParticipant(
+    room,
+    {participantId: 'p_2', role: 'ops'},
+    laterJoinedAt
+  );
+  assert.equal(canPerformRoleGatedAction(room, 'p_2', checkAt).allowed, true);
+  assert.equal(
+    canPerformRoleGatedAction(room, 'host_1', checkAt).allowed,
+    false
+  );
+});
+
+test('markParticipantOffline pushes lastSeenAt outside the online window immediately', () => {
+  const nowIso = '2024-01-01T00:00:00.000Z';
+  let room = createExerciseRoom(scenario);
+  room = joinParticipant(room, {participantId: 'p_1', role: 'ops'}, nowIso);
+  const offlineRoom = markParticipantOffline(room, 'p_1', nowIso);
+  assert.equal(
+    hasOtherOnlineParticipants(offlineRoom, undefined, nowIso),
+    false
+  );
+});
+
+test('markParticipantOffline is a no-op for an unknown participant', () => {
+  const room = createExerciseRoom(scenario);
+  assert.equal(markParticipantOffline(room, 'ghost'), room);
+});
+
+test('hasOtherOnlineParticipants excludes the given participant from the online count', () => {
+  const nowIso = '2024-01-01T00:00:00.000Z';
+  let room = createExerciseRoom(scenario);
+  room = joinParticipant(room, {participantId: 'p_1', role: 'ops'}, nowIso);
+  assert.equal(hasOtherOnlineParticipants(room, 'p_1', nowIso), false);
+  room = joinParticipant(room, {participantId: 'p_2', role: 'ops'}, nowIso);
+  assert.equal(hasOtherOnlineParticipants(room, 'p_1', nowIso), true);
+});
+
+test('leaveParticipant reassigns the persisted host to the next online joiner', () => {
+  const hostJoinedAt = '2024-01-01T00:00:00.000Z';
+  const laterJoinedAt = '2024-01-01T00:00:05.000Z';
+  const leaveAt = '2024-01-01T00:00:10.000Z';
+  let room = createExerciseRoom(scenario);
+  room = joinParticipant(
+    room,
+    {participantId: 'host_1', role: 'ops'},
+    hostJoinedAt
+  );
+  room = joinParticipant(
+    room,
+    {participantId: 'p_2', role: 'ops'},
+    laterJoinedAt
+  );
+  room = leaveParticipant(room, 'host_1', leaveAt);
+  assert.equal(room.hostParticipantId, 'p_2');
+});
+
+test('leaveParticipant does not reassign the host when a non-host participant leaves', () => {
+  const hostJoinedAt = '2024-01-01T00:00:00.000Z';
+  const laterJoinedAt = '2024-01-01T00:00:05.000Z';
+  const leaveAt = '2024-01-01T00:00:10.000Z';
+  let room = createExerciseRoom(scenario);
+  room = joinParticipant(
+    room,
+    {participantId: 'host_1', role: 'ops'},
+    hostJoinedAt
+  );
+  room = joinParticipant(
+    room,
+    {participantId: 'p_2', role: 'ops'},
+    laterJoinedAt
+  );
+  room = leaveParticipant(room, 'p_2', leaveAt);
+  assert.equal(room.hostParticipantId, 'host_1');
+});
+
+test('leaveParticipant nulls out the host when the departing host was the only participant', () => {
+  const hostJoinedAt = '2024-01-01T00:00:00.000Z';
+  const leaveAt = '2024-01-01T00:00:10.000Z';
+  let room = createExerciseRoom(scenario);
+  room = joinParticipant(
+    room,
+    {participantId: 'host_1', role: 'ops'},
+    hostJoinedAt
+  );
+  room = leaveParticipant(room, 'host_1', leaveAt);
+  assert.equal(room.hostParticipantId, null);
+});
+
+test('leaveParticipant is a no-op for an undefined participantId', () => {
+  const room = createExerciseRoom(scenario);
+  assert.equal(leaveParticipant(room, undefined), room);
 });
 
 test('areParticipantsReadyToStart ignores observers and stale participants', () => {
