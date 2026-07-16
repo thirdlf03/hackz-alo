@@ -1,4 +1,5 @@
-import type {ScenarioDefinition} from '@incident/shared';
+import type {ExerciseSnapshot, ScenarioDefinition} from '@incident/shared';
+import {areParticipantsReadyToStart} from '../../pure/participantsReady.js';
 import {difficultyOptions} from './SelectScreen.js';
 
 export function BriefingScreen(props: {
@@ -11,6 +12,7 @@ export function BriefingScreen(props: {
   pagerAvailable: boolean;
   pagerRegistered: boolean;
   pagerBusy: boolean;
+  exercise: ExerciseSnapshot | undefined;
   onBack: () => void;
   onSetRecordingConsent: (value: boolean) => void;
   onSetSaveRecording: (value: boolean) => void;
@@ -21,6 +23,14 @@ export function BriefingScreen(props: {
     difficultyOptions.findIndex(
       (option) => option.difficulty === props.scenario.difficulty
     ) + 1;
+  const participants = props.exercise?.participants ?? [];
+  const readyGateSatisfied = areParticipantsReadyToStart(participants);
+  const notReadyNames = participants
+    .filter(
+      (participant) => participant.role !== 'observer' && participant.online
+    )
+    .filter((participant) => !participant.ready)
+    .map((participant) => participant.displayName);
   return (
     <section class='panel briefing-panel' aria-labelledby='briefing-heading'>
       <button
@@ -87,21 +97,31 @@ export function BriefingScreen(props: {
         </div>
       )}
       {props.isHost ? (
-        <button
-          type='button'
-          class='briefing-start-button'
-          onClick={props.onStartPlay}
-          disabled={
-            props.isStarting || !props.sandboxReady || !props.recordingConsent
-          }
-          aria-describedby='briefing-consent-note'
-        >
-          {props.isStarting
-            ? 'シフト開始中…'
-            : props.sandboxReady
-              ? '▸ シフト開始'
-              : '環境準備中…'}
-        </button>
+        <>
+          <button
+            type='button'
+            class='briefing-start-button'
+            onClick={props.onStartPlay}
+            disabled={
+              props.isStarting ||
+              !props.sandboxReady ||
+              !props.recordingConsent ||
+              !readyGateSatisfied
+            }
+            aria-describedby='briefing-consent-note'
+          >
+            {props.isStarting
+              ? 'シフト開始中…'
+              : !readyGateSatisfied
+                ? '全員の準備完了を待っています'
+                : props.sandboxReady
+                  ? '▸ シフト開始'
+                  : '環境準備中…'}
+          </button>
+          {!readyGateSatisfied && notReadyNames.length > 0 && (
+            <p role='status'>未準備: {notReadyNames.join('、')}</p>
+          )}
+        </>
       ) : (
         <p role='status'>ホストの開始を待っています…</p>
       )}

@@ -519,6 +519,7 @@ export function App() {
           pagerAvailable={pagerPublicKey != null}
           pagerRegistered={pagerRegistered}
           pagerBusy={pagerBusy}
+          exercise={exerciseSnapshot}
           onBack={() => {
             setScreen('scenario-list');
           }}
