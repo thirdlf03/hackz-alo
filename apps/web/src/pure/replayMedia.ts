@@ -1,3 +1,5 @@
+import {filePathFromCommand} from './replayCommands.js';
+
 export interface TimelineEntry {
   id?: string;
   at: number;
@@ -41,6 +43,12 @@ const timelineEventTypes = new Set([
   'player_note',
 ]);
 
+const commandSemanticEventTypes = new Set([
+  'file_opened',
+  'service_restart',
+  'recovery_check',
+]);
+
 export function isTimelineEventType(type: string) {
   return timelineEventTypes.has(type);
 }
@@ -49,8 +57,20 @@ export function buildTimelineFromEvents(
   events: IndexedReplayEvent[],
   fallback: TimelineEntry[] = []
 ): BuiltTimelineEntry[] {
+  const semanticCommands = events.filter((event) =>
+    commandSemanticEventTypes.has(event.type)
+  );
   const fromEvents = events
-    .filter((event) => isTimelineEventType(event.type))
+    .filter(
+      (event) =>
+        isTimelineEventType(event.type) &&
+        !(
+          event.type === 'command_detected' &&
+          semanticCommands.some((semantic) =>
+            isPairedCommandEvent(event, semantic)
+          )
+        )
+    )
     .map((event) => ({
       id: event.event_id,
       at: event.at_ms / 1000,
@@ -71,6 +91,29 @@ export function buildTimelineFromEvents(
       label: event.label,
     }))
     .toSorted((a, b) => a.at - b.at);
+}
+
+function isPairedCommandEvent(
+  commandEvent: IndexedReplayEvent,
+  semanticEvent: IndexedReplayEvent
+) {
+  if (commandEvent.at_ms !== semanticEvent.at_ms) return false;
+  const summary = commandEvent.summary?.trim();
+  if (!summary?.startsWith('command: ')) return false;
+  const command = summary.slice('command: '.length);
+  if (semanticEvent.type === 'service_restart') {
+    return semanticEvent.summary?.trim() === `再起動: ${command}`;
+  }
+  if (semanticEvent.type === 'recovery_check') {
+    return semanticEvent.summary?.trim() === `復旧確認: ${command}`;
+  }
+  if (semanticEvent.type === 'file_opened') {
+    const path = filePathFromCommand(command);
+    return Boolean(
+      path && semanticEvent.summary?.trim() === `ファイル: ${path}`
+    );
+  }
+  return false;
 }
 
 export function filterImportantEvents(events: IndexedReplayEvent[]) {
@@ -198,22 +241,9 @@ export function gameTimeToVideoSeekSeconds(
   );
 }
 
-export function timelineDisplaySeconds(
-  gameSeconds: number,
-  hasVideo: boolean,
-  videoDurationSec: number,
-  durationMs: number,
-  recordingStartedAtGameMs?: number | null,
-  recordingClockSegments?: RecordingClockSegment[] | null
-) {
-  if (!hasVideo) return gameSeconds;
-  return gameTimeToVideoSeekSeconds(
-    gameSeconds,
-    videoDurationSec,
-    durationMs,
-    recordingStartedAtGameMs,
-    recordingClockSegments
-  );
+/** Keep timeline labels on the logical game clock, independent of video. */
+export function timelineEventDisplaySeconds(gameSeconds: number) {
+  return gameSeconds;
 }
 
 export function formatSeconds(seconds: number) {

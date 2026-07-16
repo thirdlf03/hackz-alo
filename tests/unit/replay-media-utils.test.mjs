@@ -13,7 +13,7 @@ const {
   parseBrowserInfo,
   parseRecordingClockSegments,
   parseRecordingStartedAtGameMs,
-  timelineDisplaySeconds,
+  timelineEventDisplaySeconds,
 } = await tsImport(
   '../../apps/web/src/replay/replayMediaUtils.ts',
   import.meta.url
@@ -54,6 +54,98 @@ test('buildTimelineFromEvents prefers API events and filters timeline types', ()
   assert.deepEqual(
     timeline.map((entry) => entry.label),
     ['シナリオ開始', 'command: ls']
+  );
+});
+
+test('buildTimelineFromEvents hides generic commands paired with semantic events', () => {
+  const timeline = buildTimelineFromEvents([
+    {
+      event_id: 'command-restart',
+      type: 'command_detected',
+      at_ms: 63_000,
+      summary: 'command: yamactl restart api',
+    },
+    {
+      event_id: 'restart',
+      type: 'service_restart',
+      at_ms: 63_000,
+      summary: '再起動: yamactl restart api',
+    },
+    {
+      event_id: 'command-ls',
+      type: 'command_detected',
+      at_ms: 70_000,
+      summary: 'command: ls -la',
+    },
+  ]);
+
+  assert.deepEqual(
+    timeline.map((entry) => entry.id),
+    ['restart', 'command-ls']
+  );
+});
+
+test('buildTimelineFromEvents deduplicates every paired command semantic type', () => {
+  const pairs = [
+    {
+      type: 'file_opened',
+      command: 'tail -n 50 /tmp/app.log',
+      semantic: 'ファイル: /tmp/app.log',
+    },
+    {
+      type: 'service_restart',
+      command: 'yamactl restart api',
+      semantic: '再起動: yamactl restart api',
+    },
+    {
+      type: 'recovery_check',
+      command: 'yamactl status api',
+      semantic: '復旧確認: yamactl status api',
+    },
+  ];
+  const events = pairs.flatMap((pair, index) => {
+    const at_ms = (index + 1) * 1000;
+    return [
+      {
+        event_id: `command-${String(index)}`,
+        type: 'command_detected',
+        at_ms,
+        summary: `command: ${pair.command}`,
+      },
+      {
+        event_id: `semantic-${String(index)}`,
+        type: pair.type,
+        at_ms,
+        summary: pair.semantic,
+      },
+    ];
+  });
+
+  assert.deepEqual(
+    buildTimelineFromEvents(events).map((entry) => entry.id),
+    ['semantic-0', 'semantic-1', 'semantic-2']
+  );
+});
+
+test('buildTimelineFromEvents preserves unrelated commands at the same time', () => {
+  const timeline = buildTimelineFromEvents([
+    {
+      event_id: 'command-ls',
+      type: 'command_detected',
+      at_ms: 63_000,
+      summary: 'command: ls -la',
+    },
+    {
+      event_id: 'restart',
+      type: 'service_restart',
+      at_ms: 63_000,
+      summary: '再起動: yamactl restart api',
+    },
+  ]);
+
+  assert.deepEqual(
+    timeline.map((entry) => entry.id),
+    ['command-ls', 'restart']
   );
 });
 
@@ -103,21 +195,10 @@ test('parseRecordingClockSegments ignores malformed metadata', () => {
   );
 });
 
-test('timelineDisplaySeconds maps timeline labels to video time when video is available', () => {
-  assert.equal(timelineDisplaySeconds(11, true, 15, 21_000, 6_000), 5);
-  assert.equal(
-    timelineDisplaySeconds(11, true, 15, 21_000, 6_000, [
-      {gameMs: 7_000, videoMs: 0, speed: 2},
-    ]),
-    2
-  );
-  assert.equal(
-    timelineDisplaySeconds(11, true, 0, 21_000, 6_000, [
-      {gameMs: 7_000, videoMs: 0, speed: 2},
-    ]),
-    2
-  );
-  assert.equal(timelineDisplaySeconds(11, false, 0, 21_000, 6_000), 11);
+test('timelineEventDisplaySeconds keeps logical event time past video end', () => {
+  assert.equal(timelineEventDisplaySeconds(63), 63);
+  assert.equal(timelineEventDisplaySeconds(70), 70);
+  assert.equal(timelineEventDisplaySeconds(90), 90);
 });
 
 test('inferRecordingStartedAtGameMs estimates late recorder start', () => {

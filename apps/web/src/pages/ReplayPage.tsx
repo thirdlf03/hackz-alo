@@ -14,10 +14,11 @@ import {
   buildTimelineFromEvents,
   formatDuration,
   formatSeconds,
+  gameTimeToVideoSeekSeconds,
   parseBrowserInfo,
   parseRecordingClockSegments,
   parseRecordingStartedAtGameMs,
-  timelineDisplaySeconds,
+  timelineEventDisplaySeconds,
   type IndexedReplayEvent,
   type TimelineEntry,
 } from '../replay/replayMediaUtils.js';
@@ -178,14 +179,15 @@ export function ReplayPage({replayId, timeline}: Props) {
       event_id: event.event_id,
       type: event.type,
       at_ms: Math.round(
-        timelineDisplaySeconds(
-          event.at_ms / 1000,
-          canUseVideoTimelineMapping,
-          effectiveVideoDuration,
-          meta?.duration_ms ?? 0,
-          recordingStartMs,
-          recordingClockSegments
-        ) * 1000
+        (canUseVideoTimelineMapping
+          ? gameTimeToVideoSeekSeconds(
+              event.at_ms / 1000,
+              effectiveVideoDuration,
+              meta?.duration_ms ?? 0,
+              recordingStartMs,
+              recordingClockSegments
+            )
+          : event.at_ms / 1000) * 1000
       ),
       summary: event.summary ?? null,
     }));
@@ -219,9 +221,9 @@ export function ReplayPage({replayId, timeline}: Props) {
   }, [tab, showHighlightsTab]);
 
   function timelineVideoSeconds(gameSeconds: number) {
-    return timelineDisplaySeconds(
+    if (!canUseVideoTimelineMapping) return gameSeconds;
+    return gameTimeToVideoSeekSeconds(
       gameSeconds,
-      canUseVideoTimelineMapping,
       effectiveVideoDuration,
       meta?.duration_ms ?? 0,
       recordingStartMs,
@@ -458,14 +460,18 @@ export function ReplayPage({replayId, timeline}: Props) {
                           }}
                         >
                           <span class='timeline-time'>
-                            {formatSeconds(videoSeconds)}
+                            {formatSeconds(
+                              timelineEventDisplaySeconds(event.at)
+                            )}
                           </span>
                           <span class='timeline-label'>{event.label}</span>
                         </button>
                       ) : (
                         <span>
                           <span class='timeline-time'>
-                            {formatSeconds(videoSeconds)}
+                            {formatSeconds(
+                              timelineEventDisplaySeconds(event.at)
+                            )}
                           </span>
                           <span class='timeline-label'>{event.label}</span>
                         </span>
