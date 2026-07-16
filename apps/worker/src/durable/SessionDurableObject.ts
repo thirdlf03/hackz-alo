@@ -43,9 +43,7 @@ import {SessionResourceHub} from './sessionResourceRoutes.js';
 import {
   areParticipantsReadyToStart,
   canPerformRoleGatedAction,
-  hasOtherOnlineParticipants,
   isParticipantOnline,
-  markParticipantOffline,
   setExercisePhase,
 } from '../pure/exerciseRoom.js';
 import {
@@ -506,10 +504,11 @@ export class SessionDurableObject implements DurableObject {
 
     const participantId = await this.timeoutNotifierParticipantId(request);
     if (participantId) {
-      const room = await this.exercise.loadOrCreate(session);
-      if (hasOtherOnlineParticipants(room, participantId)) {
-        const offlineRoom = markParticipantOffline(room, participantId);
-        const snapshot = await this.exercise.save(session, offlineRoom);
+      const snapshot = await this.exercise.markOfflineIfOthersOnline(
+        session,
+        participantId
+      );
+      if (snapshot) {
         this.sseHub.broadcast('presence', snapshot);
         this.sseHub.broadcast('exercise_state', snapshot);
         return jsonOk({session: this.snapshotFor(session)});
@@ -714,12 +713,8 @@ export class SessionDurableObject implements DurableObject {
         await this.state.storage.put('session', finished);
       },
     });
-    const room = await this.exercise.loadOrCreate(finished);
-    await this.exercise.save(finished, setExercisePhase(room, 'resolved'));
-    this.sseHub.broadcast(
-      'exercise_state',
-      await this.exercise.snapshot(finished)
-    );
+    const snapshot = await this.exercise.resolvePhase(finished);
+    this.sseHub.broadcast('exercise_state', snapshot);
     return finished;
   }
 

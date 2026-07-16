@@ -27,6 +27,7 @@ import {
   deleteTask,
   fireInject,
   generateAfterActionReport,
+  hasOtherOnlineParticipants,
   heartbeatParticipant,
   joinParticipant,
   leaveParticipant,
@@ -245,6 +246,40 @@ export class SessionExerciseHub {
         participantId
       );
       return this.saveResponse(session, room, 'presence');
+    });
+  }
+
+  /**
+   * Same "mark offline instead of ending the session" logic as
+   * `participantOffline`, but for the `/timeout` departure-beacon path in
+   * SessionDurableObject (see `timeout()`): that path needs to check
+   * `hasOtherOnlineParticipants` and, if false, fall through to the
+   * full-session finish instead. Routed through `runExclusive` so this
+   * read-modify-write (and its online-participant check) can't interleave
+   * with any other exercise-room mutation. Returns the saved snapshot when
+   * the participant was marked offline, or `null` when nobody else is
+   * online (caller should finish the session instead).
+   */
+  async markOfflineIfOthersOnline(session: StoredSession, participantId: string) {
+    return this.runExclusive(async () => {
+      const room = await this.loadOrCreate(session);
+      if (!hasOtherOnlineParticipants(room, participantId)) return null;
+      const offlineRoom = markParticipantOffline(room, participantId);
+      return this.save(session, offlineRoom);
+    });
+  }
+
+  /**
+   * Advances the exercise room to the `resolved` phase as part of
+   * finishing a session (see SessionDurableObject.finishSession()).
+   * Routed through `runExclusive` so this load/save pair can't interleave
+   * with a concurrent mutation (e.g. a task/inject edit racing the
+   * session's end).
+   */
+  async resolvePhase(session: StoredSession) {
+    return this.runExclusive(async () => {
+      const room = await this.loadOrCreate(session);
+      return this.save(session, setExercisePhase(room, 'resolved'));
     });
   }
 
