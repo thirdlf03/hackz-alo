@@ -157,6 +157,10 @@ button:disabled {
 }
 
 .app-error {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
   width: min(100% - 36px, 880px);
   margin: 18px auto 0;
   border: 1px solid var(--border-error);
@@ -168,6 +172,36 @@ button:disabled {
 
 .panel .app-error {
   color: var(--text-error);
+}
+
+.app-error-close {
+  flex-shrink: 0;
+  min-height: auto;
+  min-width: auto;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font-size: var(--font-body);
+  line-height: 1;
+  padding: 0 2px;
+}
+
+.connection-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: min(100% - 36px, 880px);
+  margin: 18px auto 0;
+  border: 1px solid var(--tone-amber);
+  border-radius: var(--radius-l);
+  padding: 10px 12px;
+  color: var(--text-warning);
+  background: rgba(58, 41, 5, 0.35);
+}
+
+.connection-banner button {
+  flex-shrink: 0;
 }
 
 .panel {

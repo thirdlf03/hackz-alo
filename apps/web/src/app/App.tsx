@@ -47,6 +47,7 @@ import {
   readInviteFromSearch,
 } from './appUtils.js';
 import {isHostParticipant} from '../pure/isHostParticipant.js';
+import {isSseEligibleScreen} from '../pure/sseConnection.js';
 import '@xterm/xterm/css/xterm.css';
 
 const CONSENT_KEY = 'incident-recording-consent';
@@ -240,6 +241,8 @@ export function App() {
     endSession,
     checkRecovery,
     submitChatMessage,
+    sseStatus,
+    reconnectSse,
   } = sessionRuntime;
 
   const isHost = isHostParticipant(exerciseSnapshot, participantId);
@@ -456,9 +459,27 @@ export function App() {
         onOpenReplay={openReplay}
         onSetGameSpeed={setGameSpeed}
       />
+      {isSseEligibleScreen(screen) &&
+        (sseStatus === 'reconnecting' || sseStatus === 'closed') && (
+          <div class='connection-banner' role='status'>
+            <span>サーバーとの接続が切れました。再接続中…</span>
+            <button type='button' onClick={() => reconnectSse()}>
+              再接続
+            </button>
+          </div>
+        )}
+
       {appError && (
         <p class='app-error' role='alert'>
-          {appError}
+          <span>{appError}</span>
+          <button
+            type='button'
+            class='app-error-close'
+            aria-label='閉じる'
+            onClick={() => setAppError(undefined)}
+          >
+            ×
+          </button>
         </p>
       )}
 
