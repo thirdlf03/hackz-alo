@@ -31,4 +31,4 @@ jobs:
         run: pnpm run deploy:smoke
         env:
           INCIDENT_WORKER_URL: ${{ secrets.INCIDENT_WORKER_URL }}
-          INCIDENT_SMOKE_ADMIN_SECRET: ${{ secrets.ADMIN_SECRET }}
+          INCIDENT_SMOKE_ADMIN_SECRET: ${{ secrets.INCIDENT_ADMIN_SECRET }}
