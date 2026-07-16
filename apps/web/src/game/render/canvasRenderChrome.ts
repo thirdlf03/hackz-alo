@@ -19,6 +19,7 @@ import {
   displayFont,
 } from './gamePalette.js';
 import {canOperateSandbox} from '../../pure/rolePermissions.js';
+import {participantColorIndex} from '../../pure/participantColor.js';
 import {
   alertBandRect,
   commandWarningRect,
@@ -420,11 +421,13 @@ function drawParticipantCursors(
     palette.textClock,
   ];
   const presentIds = new Set<string>();
-  state.room.participants.forEach((participant, index) => {
+  state.room.participants.forEach((participant) => {
     if (participant.participantId === state.localParticipantId) return;
     if (!participant.cursor?.visible || !participant.online) return;
     presentIds.add(participant.participantId);
-    const color = colors[index % colors.length] ?? palette.accentCyan;
+    const color =
+      colors[participantColorIndex(participant.participantId, colors.length)] ??
+      palette.accentCyan;
     const target = participant.cursor;
     const previous = remoteCursorDisplay.get(participant.participantId);
     let x = target.x;
