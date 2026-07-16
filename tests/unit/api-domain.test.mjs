@@ -94,18 +94,11 @@ test('SessionApi covers session lifecycle, editor routes, and SSE handlers', asy
   }
   globalThis.EventSource = MockEventSource;
 
-  const beacons = [];
-  Object.defineProperty(globalThis, 'navigator', {
-    value: {
-      sendBeacon: (url, body) => {
-        beacons.push({url, body});
-        return true;
-      },
-    },
-    configurable: true,
-    writable: true,
-  });
-  globalThis.fetch = async () => new Response('{}');
+  const fetchCalls = [];
+  globalThis.fetch = async (url, init) => {
+    fetchCalls.push({url, init});
+    return new Response('{}');
+  };
 
   const http = mockHttp();
   const sessions = new SessionApi(http);
@@ -150,10 +143,19 @@ test('SessionApi covers session lifecycle, editor routes, and SSE handlers', asy
   await sessions.resolveSession('session-1');
   await sessions.retireSession('session-1');
   await sessions.timeoutSession('session-1');
-  sessions.notifySessionTimeout('session-1');
+  sessions.notifySessionTimeout('session-1', 'participant-1');
 
-  assert.equal(beacons.length, 1);
-  assert.match(beacons[0]?.url ?? '', /timeout$/);
+  const timeoutFetchCall = fetchCalls.find((call) =>
+    String(call.url).includes('/timeout')
+  );
+  assert.ok(timeoutFetchCall);
+  assert.equal(timeoutFetchCall.init?.method, 'POST');
+  assert.equal(timeoutFetchCall.init?.keepalive, true);
+  assert.equal(timeoutFetchCall.init?.headers?.authorization, 'Bearer writer-token');
+  assert.equal(
+    JSON.parse(timeoutFetchCall.init?.body ?? '{}').participantId,
+    'participant-1'
+  );
   assert.match(
     http.calls.find((call) => call.path.includes('/clock'))?.path ?? '',
     /clock$/
@@ -169,24 +171,25 @@ test('SessionApi covers session lifecycle, editor routes, and SSE handlers', asy
   );
 });
 
-test('SessionApi notifySessionTimeout falls back to fetch when sendBeacon is unavailable', async () => {
+test('SessionApi notifySessionTimeout sends participantId via fetch keepalive without a write token', async () => {
   const posts = [];
-  Object.defineProperty(globalThis, 'navigator', {
-    value: {},
-    configurable: true,
-    writable: true,
-  });
   globalThis.fetch = async (url, init) => {
     posts.push({url, init});
     return new Response('{}');
   };
 
   const sessions = new SessionApi(mockHttp());
-  sessions.notifySessionTimeout('session-2');
+  sessions.notifySessionTimeout('session-2', 'participant-9');
 
   assert.equal(posts.length, 1);
   assert.equal(posts[0]?.init?.method, 'POST');
+  assert.equal(posts[0]?.init?.keepalive, true);
   assert.match(String(posts[0]?.url), /timeout$/);
+  assert.equal(posts[0]?.init?.headers?.authorization, undefined);
+  assert.equal(
+    JSON.parse(posts[0]?.init?.body ?? '{}').participantId,
+    'participant-9'
+  );
 });
 
 test('ReplayApi waits for server video instead of client-side chunk merge', async () => {

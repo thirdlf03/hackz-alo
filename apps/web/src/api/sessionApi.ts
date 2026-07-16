@@ -499,33 +499,35 @@ export class SessionApi {
     );
   }
 
-  /** Best-effort cleanup when the tab is closing during play. Solo play
-   * only — see markParticipantOffline for the multiplayer equivalent that
-   * doesn't end the session for everyone else. */
-  notifySessionTimeout(sessionId: string) {
+  /** Best-effort departure beacon when the tab is closing/hidden during
+   * play (pagehide, or 90s hidden). Always includes participantId: the
+   * server (SessionDurableObject.timeout()) checks for other online
+   * participants and only marks this one offline instead of ending the
+   * session when it isn't the last one standing. Uses fetch keepalive
+   * rather than sendBeacon so the write-token Authorization header can
+   * still be attached — sendBeacon cannot carry custom headers. */
+  notifySessionTimeout(sessionId: string, participantId: string) {
     const url = `/api/sessions/${encodeURIComponent(sessionId)}/timeout`;
-    const body = new Blob(['{}'], {type: 'application/json'});
-    if (
-      typeof navigator !== 'undefined' &&
-      typeof navigator.sendBeacon === 'function'
-    ) {
-      navigator.sendBeacon(url, body);
-      return;
-    }
+    const token = this.http.getWriteToken();
     void fetch(url, {
       method: 'POST',
-      body: '{}',
-      headers: {'content-type': 'application/json'},
+      body: JSON.stringify({participantId}),
+      headers: {
+        'content-type': 'application/json',
+        ...(token ? {authorization: `Bearer ${token}`} : {}),
+      },
       keepalive: true,
     });
   }
 
-  /** Best-effort presence signal for a multiplayer tab going hidden/
-   * closing during play: marks this participant offline without ending
-   * the session for the others (see /participants/offline on the
-   * server). Uses fetch keepalive rather than sendBeacon so the
-   * write-token Authorization header can still be attached — sendBeacon
-   * cannot carry custom headers. */
+  /** Marks a participant offline without ending the session for the
+   * others (see /participants/offline on the server). Not currently
+   * called from the pagehide/hidden-tab guards — that path now goes
+   * through notifySessionTimeout, whose server handler makes the same
+   * "other participants still online" decision itself — but kept for
+   * other explicit-offline use cases. Uses fetch keepalive rather than
+   * sendBeacon so the write-token Authorization header can still be
+   * attached — sendBeacon cannot carry custom headers. */
   markParticipantOffline(sessionId: string, participantId: string) {
     const url = `/api/sessions/${encodeURIComponent(sessionId)}/participants/offline`;
     const token = this.http.getWriteToken();

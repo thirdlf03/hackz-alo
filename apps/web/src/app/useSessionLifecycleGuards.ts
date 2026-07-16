@@ -2,34 +2,28 @@ import {useEffect, useRef} from 'preact/hooks';
 import type {SessionRuntimeBindings} from './sessionRuntimeTypes.js';
 
 const TAB_HIDDEN_TIMEOUT_MS = 90_000;
-// A departing solo player (1 participant) still needs the classic
-// notifySessionTimeout finish — there's nobody else for markParticipantOffline
-// to leave running. See sessionExerciseHandlers.ts's participantOffline /
-// SessionDurableObject.timeout() for the server-side counterpart.
-const MULTIPLAYER_PARTICIPANT_THRESHOLD = 2;
 
 export function useSessionLifecycleGuards(bindings: SessionRuntimeBindings) {
-  const {api, screen, refs, exerciseSnapshot, participantId} = bindings;
+  const {api, screen, refs, participantId} = bindings;
 
-  // Read via refs (not the effect dependency array) so the pagehide/
+  // Read via a ref (not the effect dependency array) so the pagehide/
   // visibility listeners below don't need to be torn down and re-added on
-  // every exercise snapshot update (which happens far more often than
-  // `screen` changes) — only the *latest* participant count matters at
-  // the moment the tab actually hides/closes.
-  const exerciseSnapshotRef = useRef(exerciseSnapshot);
-  exerciseSnapshotRef.current = exerciseSnapshot;
+  // every participantId update — only the *latest* value matters at the
+  // moment the tab actually hides/closes.
   const participantIdRef = useRef(participantId);
   participantIdRef.current = participantId;
 
+  // The server (SessionDurableObject.timeout()) decides whether this is
+  // the last online participant (session finishes) or not (this
+  // participant is marked offline, session keeps running for the
+  // others) — see sessionExerciseHandlers.ts's markOfflineIfOthersOnline.
+  // Deciding this on the client from exerciseSnapshot.participants was
+  // unreliable: that array includes participants who already left
+  // (leaveParticipant only flips an online flag, it doesn't remove them),
+  // so a stale participant count could misclassify a solo departure as
+  // multiplayer or vice versa.
   const notifyDeparture = (sessionId: string) => {
-    const isMultiplayer =
-      (exerciseSnapshotRef.current?.participants.length ?? 0) >=
-      MULTIPLAYER_PARTICIPANT_THRESHOLD;
-    if (isMultiplayer) {
-      api.markParticipantOffline(sessionId, participantIdRef.current);
-    } else {
-      api.notifySessionTimeout(sessionId);
-    }
+    api.notifySessionTimeout(sessionId, participantIdRef.current);
   };
 
   useEffect(() => {
