@@ -102,6 +102,7 @@ export interface ApiClientSurface
       | 'heartbeatParticipant'
       | 'updateParticipantCursor'
       | 'updateParticipantRole'
+      | 'leaveParticipant'
       | 'setParticipantReady'
       | 'advanceExercisePhase'
       | 'createTask'
@@ -292,6 +293,7 @@ export class ApiClient {
       'heartbeatParticipant',
       'updateParticipantCursor',
       'updateParticipantRole',
+      'leaveParticipant',
       'setParticipantReady',
       'advanceExercisePhase',
       'createTask',

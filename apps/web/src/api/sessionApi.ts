@@ -254,6 +254,13 @@ export class SessionApi {
     );
   }
 
+  leaveParticipant(sessionId: string, input: {participantId: string}) {
+    return this.http.post<{exercise: ExerciseSnapshot}>(
+      `/api/sessions/${encodeURIComponent(sessionId)}/participants/leave`,
+      input
+    );
+  }
+
   setParticipantReady(
     sessionId: string,
     input: {participantId: string; ready: boolean}

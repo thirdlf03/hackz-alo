@@ -33,6 +33,7 @@ export function LobbyScreen(props: {
   onSetParticipantRole: (role: ParticipantRole) => void;
   onReady: () => void;
   onContinue: () => void;
+  onLeave: () => void;
 }) {
   const [inviteCopied, setInviteCopied] = useState(false);
   const selectedRoleInfo = roleInfoFor(props.participantRole);
@@ -164,6 +165,9 @@ export function LobbyScreen(props: {
         ) : (
           <p role='status'>ホストの開始を待っています</p>
         )}
+        <button type='button' onClick={props.onLeave}>
+          退出
+        </button>
       </div>
     </section>
   );
