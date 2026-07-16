@@ -604,6 +604,7 @@ export function useSessionRuntime(options: {
         phase: 'briefing',
       })
       .catch((error: unknown) => {
+        setScreen('lobby');
         setAppError(describeSessionActionError(error, 'phase'));
       });
   }
