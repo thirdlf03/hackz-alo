@@ -76,6 +76,7 @@ export interface SessionRuntimeBindings {
           label: string;
         }>)
   ) => void;
+  setAppError: (message: string | undefined) => void;
   patchGameStateRef: (
     updater: (state: GameRenderState) => GameRenderState,
     patchOptions?: {render?: boolean; collectTransitions?: boolean}

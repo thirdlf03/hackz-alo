@@ -460,6 +460,7 @@ export function useSessionRuntime(options: {
     setGameState,
     setScreen,
     setTimeline,
+    setAppError,
     patchGameStateRef,
     currentGameTimeMs,
     endSession,

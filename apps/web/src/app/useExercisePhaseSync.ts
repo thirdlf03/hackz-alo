@@ -25,6 +25,7 @@ export function useExercisePhaseSync(bindings: SessionRuntimeBindings) {
     setGameState,
     setTimeline,
     setScreen,
+    setAppError,
   } = bindings;
 
   useEffect(() => {
@@ -84,6 +85,7 @@ export function useExercisePhaseSync(bindings: SessionRuntimeBindings) {
         );
       } catch (error) {
         console.error(error);
+        setAppError('ターミナル接続に失敗しました');
       } finally {
         setScreen('play');
       }
